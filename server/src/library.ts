@@ -403,6 +403,12 @@ export function createLibrary({ db, dataDir }: { db: Database; dataDir: string }
         allowReexport: true,
       });
       if (result.status === "added") db.query("DELETE FROM rejections WHERE id = ?").run(id);
+      if (result.status === "duplicate") {
+        // The same file was added since by another route: it can no longer be added.
+        db.query(
+          "UPDATE rejections SET reason = 'duplicate', matched_file_name = ?, matched_select_id = ? WHERE id = ?",
+        ).run(result.match.fileName, result.match.selectId, id);
+      }
       return result;
     },
 
@@ -466,7 +472,7 @@ function toRejection(row: RejectionRow): Rejection {
 const matchName = (match: Match) =>
   match.selectId === null ? `${match.fileName}, since deleted` : match.fileName;
 
-function duplicateMessage(match: Match) {
+export function duplicateMessage(match: Match) {
   return `Already added as ${matchName(match)}.`;
 }
 

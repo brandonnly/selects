@@ -417,6 +417,31 @@ describe("the inbox", () => {
     expect(await rejections()).toEqual([]);
   });
 
+  test("a held re-export added since by another route turns into a duplicate", async () => {
+    await upload("portrait");
+    const { rejection: held } = await json(await upload("portraitReexport"));
+    drop("portraitReexport");
+    await scan();
+    await request(`/api/rejections/${held.id}/accept`, { method: "POST" });
+    const [fromInbox] = await rejections();
+
+    const accepted = await request(`/api/rejections/${fromInbox?.id}/accept`, { method: "POST" });
+
+    expect(accepted.status).toBe(409);
+    expect(await json(accepted)).toEqual({
+      status: "duplicate",
+      message: "Already added as portrait-reexport.jpg.",
+    });
+    expect(await rejections()).toMatchObject([
+      {
+        fileName: "portrait-reexport.jpg",
+        reason: "duplicate",
+        message: "Already added as portrait-reexport.jpg.",
+        canAccept: false,
+      },
+    ]);
+  });
+
   test("dismissing an inbox rejection leaves the file in the rejected folder", async () => {
     drop("text");
     await scan();

@@ -5,12 +5,12 @@ import { Elysia, t } from "elysia";
 import rootPackage from "../../package.json";
 import type { Config } from "./config";
 import { databaseStatus } from "./db";
-import { createLibrary, type Library } from "./library";
+import { createLibrary, duplicateMessage, type Library } from "./library";
 import { passwordGate } from "./password";
 import { serveUi } from "./ui";
 import { MAX_UPLOAD_BYTES, receiveUpload } from "./upload";
 
-export type { Rejection, Select } from "./library";
+export type { Rejection, ScanResult, Select, UploadResult } from "./library";
 
 export type AppOptions = {
   config: Config;
@@ -66,7 +66,7 @@ function createRoutes({ config, db, webDir, library, maxUploadBytes = MAX_UPLOAD
         case "gone":
           return status(410, { status: "gone" as const, message: "The file is no longer there." });
         case "duplicate":
-          return status(409, { status: "duplicate" as const, message: "Already in the library." });
+          return status(409, { status: "duplicate" as const, message: duplicateMessage(result.match) });
         case "unsupported":
         case "reexport":
           return status(409, { status: result.status, message: "Could not be added." });
