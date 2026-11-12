@@ -1,0 +1,69 @@
+.coderabbit.yaml
+  s_df242022ec62fc::t_28e5bbfcee5d49 1-16
+.gitignore
+  s_df242022ec62fc::t_622c27ab9d8b2e 1-17
+AGENTS.md
+  s_df242022ec62fc::t_4d83398e0afe2e 1-57
+CLAUDE.md
+  s_df242022ec62fc::t_fd9c3e17f89e7c 1
+GLOSSARY.md
+  s_df242022ec62fc::t_485cfc9b4fd7a7 1-19
+LICENSE
+  s_df242022ec62fc::t_28b4c3518ffb36 1-21
+README.md
+  s_df242022ec62fc::t_d93aa1afb5a9a8 1-26
+brand/README.md
+  s_df242022ec62fc::t_121310ef4c3bee 1-40
+brand/favicon/favicon.svg
+  s_df242022ec62fc::t_f99e304836ff56 1
+brand/favicon/site.webmanifest
+  s_df242022ec62fc::t_379fa2a82ed716 1-31
+brand/logo/selects-icon.svg
+  s_df242022ec62fc::t_2836983e49b6cd 1
+brand/scripts/build.mjs
+  s_df242022ec62fc::t_9d99e2ef923d62 1-64
+brand/scripts/bun.lock
+  s_df242022ec62fc::t_6c5397c0e4c8ba 1-39
+brand/scripts/package.json
+  s_df242022ec62fc::t_459378f939c05e 1-7
+brand/tokens/README.md
+  s_df242022ec62fc::t_2f6b78c8d13ae1 1-27
+brand/tokens/selects.css
+  s_df242022ec62fc::t_1f13022d61f149 1-57
+cubic.yaml
+  s_df242022ec62fc::t_27f19c45939251 1-16
+docs/PRODUCT.md
+  s_df242022ec62fc::t_f43aec10427f30 1-166
+docs/adr/0001-mit-license.md
+  s_df242022ec62fc::t_7015fa38ae7961 1-25
+docs/adr/0002-stack.md
+  s_df242022ec62fc::t_540b8c72ef2697 1-32
+docs/adr/0003-instagram-publishing.md
+  s_df242022ec62fc::t_09885efdc7f23d 1-33
+docs/agents/domain.md
+  s_df242022ec62fc::t_6d70743b57657a 1-51
+docs/agents/issue-tracker.md
+  s_df242022ec62fc::t_2022dc2aef67ab 1-41
+docs/agents/pull-requests.md
+  s_df242022ec62fc::t_e33ae6aac7f856 1-40
+docs/agents/triage-labels.md
+  s_df242022ec62fc::t_8611dd4ce73cba 1-15
+t3.json
+  s_df242022ec62fc::t_af2c7e860a61ea 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3d8d4f78513c2fc118dc32ccbed9237ffcd73f1f",
+  "prompts": {},
+  "sessions": {
+    "s_df242022ec62fc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "052c6081-9144-430f-9cef-5829ae6e77e9",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
