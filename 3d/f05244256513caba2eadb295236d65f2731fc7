@@ -1,0 +1,33 @@
+.env.example
+  s_c4e8006bf0d88c::t_3d11c3cf4d5353 12
+.github/workflows/ci.yml
+  s_c4e8006bf0d88c::t_a097f2a53dbfcd 13
+AGENTS.md
+  s_c4e8006bf0d88c::t_8fe5f92341c5ea 19-21
+README.md
+  s_c4e8006bf0d88c::t_c53b760d15cd8d 37-38
+server/src/app.test.ts
+  s_c4e8006bf0d88c::t_97dd2eae27cae6 213-221
+server/src/db.ts
+  s_c4e8006bf0d88c::t_1836503de5ef35 31-32,34-39,41-42
+server/src/main.ts
+  s_c4e8006bf0d88c::t_458c8ef8038c64 21-27
+server/src/password.ts
+  s_c4e8006bf0d88c::t_c22fe6f15504b5 78-79,84,89-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3df05244256513caba2eadb295236d65f2731fc7",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
