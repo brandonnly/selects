@@ -1,0 +1,57 @@
+/* Selects tokens for shadcn/ui on Tailwind v4. Import after Tailwind. Rules: README.md. */
+
+:root {
+  --radius: 0.5rem;
+  --background: #faf6ef;
+  --foreground: #26262a;
+  --card: #ffffff;
+  --card-foreground: #26262a;
+  --popover: #ffffff;
+  --popover-foreground: #26262a;
+  --primary: #26262a;
+  --primary-foreground: #faf6ef;
+  --secondary: #ede3d3;
+  --secondary-foreground: #26262a;
+  --muted: #f2e9dc;
+  --muted-foreground: #6f6557;
+  --accent: #ede3d3;
+  --accent-foreground: #26262a;
+  --destructive: #b42318;
+  --border: #e3d8c6;
+  --input: #e3d8c6;
+  --ring: #ff4b3e;
+  --brand: #ff4b3e;
+  --brand-foreground: #26262a;
+  --kraft: #a8987d;
+  --kraft-light: #c9bba4;
+}
+
+.dark {
+  --background: #1b1b1e;
+  --foreground: #f2e9dc;
+  --card: #26262a;
+  --card-foreground: #f2e9dc;
+  --popover: #26262a;
+  --popover-foreground: #f2e9dc;
+  --primary: #f2e9dc;
+  --primary-foreground: #26262a;
+  --secondary: #34343a;
+  --secondary-foreground: #f2e9dc;
+  --muted: #2e2e33;
+  --muted-foreground: #b3a68f;
+  --accent: #34343a;
+  --accent-foreground: #f2e9dc;
+  --destructive: #f2695c;
+  --border: #3b3b42;
+  --input: #3b3b42;
+  --ring: #ff5a4e;
+  --brand: #ff5a4e;
+  --brand-foreground: #1b1b1e;
+}
+
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-kraft: var(--kraft);
+  --color-kraft-light: var(--kraft-light);
+}

@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.cache/
+.DS_Store
+
+# Secrets: commit .env.example only
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Runtime data: photos, database, backups
+data/
+
+# Private working files
+.tmp/

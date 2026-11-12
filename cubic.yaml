@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://cubic.dev/schema/cubic-repository-config.schema.json
+
+version: 1
+
+reviews:
+  custom_instructions: >-
+    This repository is public. Apply the "Public repository" rules in AGENTS.md and flag any secret,
+    credential, personal data, real photograph, real coordinate or machine-specific detail in code,
+    fixtures, logs or docs. Check new dependencies, fonts and copied code against
+    docs/adr/0001-mit-license.md. For UI, apply brand/tokens/README.md. Cite the rule for each
+    finding and report only failure scenarios a user can reach.
+  ignore:
+    files:
+      - "brand/logo/**"
+      - "brand/favicon/**"
+      - "brand/social/**"
