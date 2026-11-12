@@ -1,0 +1,33 @@
+web/src/components/select-details.tsx
+  s_5577def0fb59cd::t_9f3dde70fb93fe 1-118
+  s_5577def0fb59cd::t_44fb2dbf3d19c8 119-120
+web/src/lib/capture.test.ts
+  s_5577def0fb59cd::t_18f617f7a81c95 1-66
+web/src/components/ui/button.tsx
+  s_5577def0fb59cd::t_97b6c6fae684f5 1-37
+web/src/lib/capture.ts
+  s_5577def0fb59cd::t_e56c66eb3c5554 1-40
+  s_5577def0fb59cd::t_c06ddf07570b0a 41-50
+web/src/lib/upload.ts
+  s_5577def0fb59cd::t_0c73ef733f97ff 1-51
+  s_5577def0fb59cd::t_492e6f1db381f2 52-54
+web/src/screens/library.tsx
+  s_5577def0fb59cd::t_1793ccbeac751a 1-8,11-23,25-277,279-281,284-323
+  s_5577def0fb59cd::t_a08a176f024f81 278,282-283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "552d0b172d28b0bce6a6eb9e7a04f43252d81e43",
+  "prompts": {},
+  "sessions": {
+    "s_5577def0fb59cd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "804c8ff7-92a5-46cf-b08d-e07c868086a0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
