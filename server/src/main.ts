@@ -18,7 +18,13 @@ try {
 }
 
 const db = openDatabase(config.dataDir, migrations);
-const server = Bun.serve({ port: config.port, fetch: createApp({ config, db, webDir }).fetch });
+const server = Bun.serve({
+  port: config.port,
+  fetch: createApp({ config, db, webDir }).fetch,
+  // Never Bun's development error page: it prints the stack and source to the client.
+  development: false,
+  error: () => new Response("Internal server error", { status: 500 }),
+});
 
 console.log(`Selects is listening on port ${server.port}.`);
 if (config.password === undefined)

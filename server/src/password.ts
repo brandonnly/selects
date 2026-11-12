@@ -75,13 +75,23 @@ function readCookie(header: string | null, name: string): string | undefined {
 
 /**
  * Only same-app paths: one leading slash, never `//` or `/\`, which browsers treat as a host,
- * and never the login page itself.
+ * no control characters, which browsers strip before reading the path, and never the login page
+ * itself.
  */
 function safeNext(value: unknown): string {
   if (typeof value !== "string" || !value.startsWith("/")) return "/";
   if (value.startsWith("//") || value.startsWith("/\\")) return "/";
+  if (hasControlCharacter(value)) return "/";
   if (new URL(value, "http://selects.invalid").pathname === "/login") return "/";
   return value;
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
 }
 
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);

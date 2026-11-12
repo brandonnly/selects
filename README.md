@@ -34,7 +34,8 @@ bun run dev
 Open the address Vite prints. The development database lives in the git-ignored `data/`.
 
 Every environment variable is listed in [.env.example](.env.example). Copy it to `.env` to
-change a port or set a password.
+change a port. The password applies to the built app: under `bun run dev` it guards the API but
+the dev server has no password page, so leave it unset there.
 
 ## Running the built app
 

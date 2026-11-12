@@ -16,8 +16,9 @@ served by one process. The UI calls the API through Eden, typed by `App` in `ser
 - `bun run typecheck`, `bun run lint` and `bun test` must pass before a push; CI runs them and
   `bun run build` on every pull request. `bun run format` fixes formatting.
 - `bun run build`, then `bun run start` for the production path.
-- Environment variables are read only in `server/src/config.ts`; add each new one there and to
-  `.env.example`.
+- The server reads environment variables only in `server/src/config.ts`; add each new one there
+  and to `.env.example`. The dev tooling (`server/src/dev.ts`, `web/vite.config.ts`) reads the
+  ports and data directory itself.
 - Schema changes are new entries appended to `server/src/migrations.ts`, never edits to old ones.
 
 ## Public repository

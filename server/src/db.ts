@@ -28,18 +28,18 @@ export function openDatabase(dataDir: string, migrations: readonly Migration[]):
 }
 
 function migrate(db: Database, migrations: readonly Migration[]) {
-  const current = schemaVersion(db);
-  if (current > migrations.length) {
-    throw new Error(
-      `The database is at schema version ${current}, newer than this version of Selects knows (${migrations.length}).`,
-    );
-  }
-  if (current === migrations.length) return;
-  // All pending migrations apply together or not at all.
+  // All pending migrations apply together or not at all. The version is read under the write
+  // lock, so two processes opening the same database never apply a migration twice.
   db.transaction(() => {
+    const current = schemaVersion(db);
+    if (current > migrations.length) {
+      throw new Error(
+        `The database is at schema version ${current}, newer than this version of Selects knows (${migrations.length}).`,
+      );
+    }
     for (const sql of migrations.slice(current)) db.run(sql);
-    db.run(`PRAGMA user_version = ${migrations.length}`);
-  })();
+    if (current < migrations.length) db.run(`PRAGMA user_version = ${migrations.length}`);
+  }).immediate();
 }
 
 function schemaVersion(db: Database): number {

@@ -210,7 +210,15 @@ describe("the optional password", () => {
   });
 
   test("never redirects off the app after logging in", async () => {
-    for (const next of ["//elsewhere.test/", "https://elsewhere.test/", "/\\elsewhere.test"]) {
+    for (const next of [
+      "//elsewhere.test/",
+      "https://elsewhere.test/",
+      "/\\elsewhere.test",
+      "/\t/elsewhere.test/",
+      "/\n/elsewhere.test/",
+      "/\r\n/elsewhere.test/",
+      "/\u007f/elsewhere.test/",
+    ]) {
       const login = await logIn(locked(), "correct horse", next);
 
       expect(login.headers.get("location")).toBe("/");
