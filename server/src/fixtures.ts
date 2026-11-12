@@ -6,7 +6,7 @@
  * Run `bun run fixtures [dir]` to write them to a folder (default `.tmp/fixtures`).
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import sharp from "sharp";
 
 export type Exif = {
@@ -406,5 +406,5 @@ function insertPngExif(png: Buffer, block: Buffer): Buffer {
 if (import.meta.main) {
   const dir = resolve(process.argv[2] ?? ".tmp/fixtures");
   const written = await generateFixtures(dir);
-  for (const path of Object.values(written)) console.log(path);
+  for (const path of Object.values(written)) console.log(basename(path));
 }

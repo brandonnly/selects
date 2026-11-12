@@ -29,13 +29,20 @@ export function SelectDetails({
     setError(false);
   }, [select]);
 
+  // The select on show now, so an answer that arrives after the dialog moved on is ignored.
+  const shown = useRef(select?.id);
+  shown.current = select?.id;
+
   const remove = async () => {
     if (select === undefined) return;
+    const { id } = select;
     setDeleting(true);
-    const { error: failed } = await api.selects({ id: select.id }).delete();
+    const { error: failed } = await api.selects({ id }).delete();
     setDeleting(false);
-    if (failed) setError(true);
-    else onDeleted();
+    if (shown.current !== id) return;
+    // A 404 means it was deleted elsewhere in the meantime, which is the same outcome.
+    if (!failed || failed.status === 404) onDeleted();
+    else setError(true);
   };
 
   const fields = select === undefined ? [] : captureFields(select);

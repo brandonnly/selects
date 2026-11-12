@@ -208,8 +208,8 @@ export function createLibrary({
     mkdirSync(dirs.originals, { recursive: true });
     mkdirSync(dirs.thumbnails, { recursive: true });
     const original = originalPath({ id, format: photo.format });
-    await writeThumbnail(path, thumbnailPath(id));
     try {
+      await writeThumbnail(path, thumbnailPath(id));
       copyFileSync(path, original);
       db.transaction(() => {
         db.query(
@@ -358,7 +358,7 @@ export function createLibrary({
           };
         case "reexport": {
           mkdirSync(dirs.held, { recursive: true });
-          const held = join(dirs.held, `${randomUUID()}${extname(options.fileName).toLowerCase()}`);
+          const held = join(dirs.held, randomUUID());
           moveFile(path, held);
           const rejection = recordRejection(
             { ...options, source: "upload", storedPath: held },
@@ -516,7 +516,11 @@ function freePath(dir: string, name: string): string {
   const extension = extname(name);
   const stem = basename(name, extension);
   let candidate = join(dir, name);
-  for (let n = 2; existsSync(candidate); n++) candidate = join(dir, `${stem} (${n})${extension}`);
+  for (let n = 2; existsSync(candidate); n++) {
+    const numbered = `${stem} (${n})${extension}`;
+    // A name already at the filesystem's limit has no room for the number.
+    candidate = join(dir, Buffer.byteLength(numbered) <= 255 ? numbered : `${randomUUID()}${extension}`);
+  }
   return candidate;
 }
 

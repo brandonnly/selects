@@ -190,6 +190,9 @@ function captureTime(value: unknown): string | null {
     typeof value === "string" && /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(value);
   if (!match) return null;
   const [, year, month, day, hour, minute, second] = match;
-  if (year === "0000" || month === "00" || day === "00") return null;
-  return `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+  // Only a moment that exists: a camera with no clock set writes zeros, and a damaged file anything.
+  const iso = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+  const date = new Date(`${iso}Z`);
+  if (year === "0000" || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 19) !== iso) return null;
+  return iso;
 }

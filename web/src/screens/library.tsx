@@ -32,6 +32,7 @@ export function LibraryScreen() {
   });
   const [open, setOpen] = useState<Select | undefined>();
   const fileInput = useRef<HTMLInputElement>(null);
+  const uploading = useRef<Promise<void>>(Promise.resolve());
 
   const refresh = useCallback(async () => {
     const [library, rejected] = await Promise.all([api.selects.get(), api.rejections.get()]);
@@ -60,7 +61,14 @@ export function LibraryScreen() {
       ...batch.map(({ file, key }) => ({ key, name: file.name, progress: 0, state: "waiting" as const })),
     ]);
     const markPosted = alreadyPosted;
-    await eachLimited(batch, PARALLEL_UPLOADS, async ({ file, key }) => {
+    // One batch at a time, so picking more files while some upload never raises the number in flight.
+    const before = uploading.current;
+    uploading.current = before.then(() => sendBatch(batch, markPosted));
+    await uploading.current;
+  };
+
+  const sendBatch = (batch: { file: File; key: number }[], markPosted: boolean) =>
+    eachLimited(batch, PARALLEL_UPLOADS, async ({ file, key }) => {
       update(key, { state: "uploading" });
       const result = await uploadFile(file, {
         alreadyPosted: markPosted,
@@ -72,7 +80,6 @@ export function LibraryScreen() {
         void refresh();
       }
     });
-  };
 
   const scanInbox = async () => {
     setScan({ state: "scanning" });
@@ -227,7 +234,7 @@ function UploadRow({ item }: { item: UploadItem }) {
       {item.state !== "done" && (
         <div
           role="progressbar"
-          aria-label={`Uploading ${item.name}`}
+          aria-label={`${text} ${item.name}`}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(item.progress * 100)}

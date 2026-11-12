@@ -88,7 +88,7 @@ function createRoutes({
       "/api/uploads",
       async ({ request, query, status }) => {
         // A browser sends this type across sites only after asking, and nothing here says yes.
-        if (request.headers.get("content-type")?.split(";")[0]?.trim() !== UPLOAD_TYPE) {
+        if (request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== UPLOAD_TYPE) {
           return status(415, {
             status: "unsupported" as const,
             message: `Send the file as ${UPLOAD_TYPE}.`,
@@ -145,9 +145,14 @@ function createRoutes({
 
 const UPLOAD_TYPE = "application/octet-stream";
 
-/** A browser or tool may send a whole path as the name; only its last part is kept. */
+/**
+ * A browser or tool may send a whole path as the name; only its last part is kept, without
+ * control characters. The name is shown and never used as a path.
+ */
 function lastPathPart(name: string) {
-  return name.split(/[/\\]/).filter(Boolean).pop() ?? name;
+  const last = name.split(/[/\\]/).filter(Boolean).pop() ?? "";
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is removed.
+  return last.replace(/[\u0000-\u001f\u007f]/g, "").trim() || "upload";
 }
 
 /**

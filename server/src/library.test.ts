@@ -12,7 +12,7 @@ import {
   utimesSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import sharp from "sharp";
 import { createApp } from "./app";
 import { loadConfig } from "./config";
@@ -50,7 +50,7 @@ const request = (path: string, init?: RequestInit) =>
   app.fetch(new Request(`http://selects.test${path}`, init));
 
 const upload = (name: FixtureName, options: { alreadyPosted?: boolean; as?: string } = {}) => {
-  const query = new URLSearchParams({ name: options.as ?? fixtures[name].split("/").pop() ?? name });
+  const query = new URLSearchParams({ name: options.as ?? basename(fixtures[name]) });
   if (options.alreadyPosted) query.set("alreadyPosted", "true");
   return request(`/api/uploads?${query}`, {
     method: "POST",
@@ -352,6 +352,34 @@ describe("marking uploads as already posted", () => {
     expect(await library()).toMatchObject([{ fileName: "portrait.jpg", alreadyPosted: true, inPool: false }]);
   });
 
+  test("takes the upload type in any letter case and drops control characters from the name", async () => {
+    const response = await request(`/api/uploads?name=${encodeURIComponent("por\u0000trait.jpg")}`, {
+      method: "POST",
+      headers: { "content-type": "Application/Octet-Stream" },
+      body: readFileSync(fixtures.portrait),
+    });
+
+    expect(response.status).toBe(201);
+    expect(await library()).toMatchObject([{ fileName: "portrait.jpg" }]);
+  });
+
+  test("leaves out a capture time that names no real moment", async () => {
+    const impossible = join(fixtureDir, "impossible.jpg");
+    const photo = { ...fixtureSpecs.portrait.photo, scene: 11, format: "jpeg" as const };
+    await Bun.write(
+      impossible,
+      await makePhoto({ ...photo, exif: { ...photo.exif, capturedAt: "2024:13:45 25:61:61" } }),
+    );
+
+    const response = await request("/api/uploads?name=impossible.jpg", {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: readFileSync(impossible),
+    });
+
+    expect((await json(response)).select).toMatchObject({ capturedAt: null, camera: "Fixture Optics FX-1" });
+  });
+
   test("keeps only the last part of an uploaded file's path as its name", async () => {
     await upload("portrait", { as: "../../some\\folder/portrait.jpg" });
 
@@ -415,7 +443,7 @@ describe("the inbox", () => {
   /** Copies a fixture into the inbox as a file that finished copying a minute ago. */
   const drop = (name: FixtureName, as?: string) => {
     mkdirSync(inbox(), { recursive: true });
-    const target = join(inbox(), as ?? fixtures[name].split("/").pop() ?? name);
+    const target = join(inbox(), as ?? basename(fixtures[name]));
     copyFileSync(fixtures[name], target);
     const aMinuteAgo = new Date(Date.now() - 60_000);
     utimesSync(target, aMinuteAgo, aMinuteAgo);
