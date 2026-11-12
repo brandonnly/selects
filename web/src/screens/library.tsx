@@ -67,7 +67,10 @@ export function LibraryScreen() {
         onProgress: (progress) => update(key, { progress, state: progress >= 1 ? "reading" : "uploading" }),
       });
       update(key, { state: "done", progress: 1, result });
-      if (result.status === "added" || result.status === "reexport") void refresh();
+      // A duplicate uploaded as already posted marks the select it matches, so it refreshes too.
+      if (result.status === "added" || result.status === "reexport" || result.status === "duplicate") {
+        void refresh();
+      }
     });
   };
 
