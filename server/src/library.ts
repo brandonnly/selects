@@ -58,7 +58,7 @@ type Match = { fileName: string; selectId: string | null };
 export type IngestResult =
   | { status: "added"; select: Select }
   | { status: "unsupported" }
-  | { status: "duplicate"; match: Match }
+  | { status: "duplicate"; match: Match; markedPosted: boolean }
   | { status: "reexport"; match: Match };
 
 export type UploadResult =
@@ -125,7 +125,16 @@ type RejectionRow = {
  * Files dropped in `inbox/` are ingested by `scanInbox`. A refused one moves to
  * `inbox/rejected/`, and its reason is recorded for the UI.
  */
-export function createLibrary({ db, dataDir }: { db: Database; dataDir: string }) {
+export function createLibrary({
+  db,
+  dataDir,
+  inboxSettleMs = INBOX_SETTLE_MS,
+}: {
+  db: Database;
+  dataDir: string;
+  /** How long an inbox file must have gone unchanged before it is taken. */
+  inboxSettleMs?: number;
+}) {
   const dirs = {
     originals: join(dataDir, "originals"),
     thumbnails: join(dataDir, "thumbnails"),
@@ -171,13 +180,24 @@ export function createLibrary({ db, dataDir }: { db: Database; dataDir: string }
     return found === undefined ? undefined : { fileName: found.file_name, selectId: found.select_id };
   }
 
-  /** Moves the file at `path` into the Library, or leaves it where it is when it is refused. */
+  /**
+   * Takes the file at `path` into the Library, or leaves it where it is when it is refused. The
+   * file is copied, recorded, and only then removed, so a crash at any point loses nothing: at
+   * worst a copy is left behind, and the file is seen again as a duplicate.
+   */
   async function ingestNow(path: string, options: IngestOptions): Promise<IngestResult> {
     const photo = await inspectPhoto(path);
     if (photo === undefined) return { status: "unsupported" };
 
     const duplicate = findDuplicate(photo);
-    if (duplicate !== undefined) return { status: "duplicate", match: duplicate };
+    if (duplicate !== undefined) {
+      // The photo is already here, so "already posted" applies to the select that holds it.
+      const markedPosted = options.alreadyPosted === true && duplicate.selectId !== null;
+      if (markedPosted) {
+        db.query("UPDATE selects SET already_posted = 1 WHERE id = ?").run(duplicate.selectId);
+      }
+      return { status: "duplicate", match: duplicate, markedPosted };
+    }
     if (!options.allowReexport) {
       const reexport = findReexport(photo);
       if (reexport !== undefined) return { status: "reexport", match: reexport };
@@ -190,7 +210,7 @@ export function createLibrary({ db, dataDir }: { db: Database; dataDir: string }
     const original = originalPath({ id, format: photo.format });
     await writeThumbnail(path, thumbnailPath(id));
     try {
-      moveFile(path, original);
+      copyFileSync(path, original);
       db.transaction(() => {
         db.query(
           `INSERT INTO selects (id, file_name, source, format, bytes, width, height, camera, lens,
@@ -223,12 +243,11 @@ export function createLibrary({ db, dataDir }: { db: Database; dataDir: string }
         ).run(photo.sha256, photo.phash, photo.capturedAt, options.fileName, id, addedAt);
       })();
     } catch (error) {
-      // Put the file back where it came from, so a failed ingest loses nothing.
-      if (existsSync(original) && !existsSync(path)) moveFile(original, path);
       rmSync(original, { force: true });
       rmSync(thumbnailPath(id), { force: true });
       throw error;
     }
+    rmSync(path, { force: true });
     const added = selectRow(id);
     if (added === null) throw new Error("The new select was not saved");
     return { status: "added", select: toSelect(added) };
@@ -265,25 +284,32 @@ export function createLibrary({ db, dataDir }: { db: Database; dataDir: string }
   async function scanInboxNow(): Promise<ScanResult> {
     mkdirSync(dirs.rejected, { recursive: true });
     const result: ScanResult = { added: 0, rejected: 0 };
-    const settled = Date.now() - INBOX_SETTLE_MS;
+    const settled = Date.now() - inboxSettleMs;
     for (const entry of readdirSync(dirs.inbox, { withFileTypes: true })) {
       if (!entry.isFile() || entry.name.startsWith(".")) continue;
       const path = join(dirs.inbox, entry.name);
-      if (statSync(path).mtimeMs > settled) continue;
+      // One file that fails stays for the next scan and never holds up the rest.
+      try {
+        // The change time, which every write moves and no copier can set: a file still being
+        // written is left alone even when the copier kept the photo's old modified time.
+        if (inboxSettleMs > 0 && statSync(path).ctimeMs > settled) continue;
 
-      const ingested = await ingest(path, { fileName: entry.name, source: "inbox" });
-      if (ingested.status === "added") {
-        result.added++;
-        continue;
+        const ingested = await ingest(path, { fileName: entry.name, source: "inbox" });
+        if (ingested.status === "added") {
+          result.added++;
+          continue;
+        }
+        const target = freePath(dirs.rejected, entry.name);
+        moveFile(path, target);
+        recordRejection(
+          { fileName: entry.name, source: "inbox", storedPath: target, alreadyPosted: false },
+          ingested.status,
+          "match" in ingested ? ingested.match : undefined,
+        );
+        result.rejected++;
+      } catch (error) {
+        console.error("An inbox file could not be processed and was left in place:", error);
       }
-      const target = freePath(dirs.rejected, entry.name);
-      moveFile(path, target);
-      recordRejection(
-        { fileName: entry.name, source: "inbox", storedPath: target, alreadyPosted: false },
-        ingested.status,
-        "match" in ingested ? ingested.match : undefined,
-      );
-      result.rejected++;
     }
     return result;
   }
@@ -324,7 +350,12 @@ export function createLibrary({ db, dataDir }: { db: Database; dataDir: string }
         case "unsupported":
           return { status: "unsupported", message: UNSUPPORTED };
         case "duplicate":
-          return { status: "duplicate", message: duplicateMessage(result.match) };
+          return {
+            status: "duplicate",
+            message: result.markedPosted
+              ? `${duplicateMessage(result.match)} Marked as already posted.`
+              : duplicateMessage(result.match),
+          };
         case "reexport": {
           mkdirSync(dirs.held, { recursive: true });
           const held = join(dirs.held, `${randomUUID()}${extname(options.fileName).toLowerCase()}`);

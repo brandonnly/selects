@@ -21,12 +21,21 @@ export type AppOptions = {
   library?: Library;
   /** Defaults to MAX_UPLOAD_BYTES. */
   maxUploadBytes?: number;
+  /** How long an inbox file must have gone unchanged before a scan takes it. */
+  inboxSettleMs?: number;
 };
 
 const notFound = { error: "Not found" } as const;
 
-function createRoutes({ config, db, webDir, library, maxUploadBytes = MAX_UPLOAD_BYTES }: AppOptions) {
-  const lib = library ?? createLibrary({ db, dataDir: config.dataDir });
+function createRoutes({
+  config,
+  db,
+  webDir,
+  library,
+  maxUploadBytes = MAX_UPLOAD_BYTES,
+  inboxSettleMs,
+}: AppOptions) {
+  const lib = library ?? createLibrary({ db, dataDir: config.dataDir, inboxSettleMs });
   const uploadDir = join(config.dataDir, "uploads");
 
   return new Elysia()
@@ -78,6 +87,13 @@ function createRoutes({ config, db, webDir, library, maxUploadBytes = MAX_UPLOAD
     .post(
       "/api/uploads",
       async ({ request, query, status }) => {
+        // A browser sends this type across sites only after asking, and nothing here says yes.
+        if (request.headers.get("content-type")?.split(";")[0]?.trim() !== UPLOAD_TYPE) {
+          return status(415, {
+            status: "unsupported" as const,
+            message: `Send the file as ${UPLOAD_TYPE}.`,
+          });
+        }
         const received = await receiveUpload(request, uploadDir, maxUploadBytes);
         if (received.status === "too-large") {
           return status(413, {
@@ -90,7 +106,7 @@ function createRoutes({ config, db, webDir, library, maxUploadBytes = MAX_UPLOAD
         }
         try {
           const result = await lib.addUpload(received.path, {
-            fileName: query.name,
+            fileName: lastPathPart(query.name),
             alreadyPosted: query.alreadyPosted === true,
           });
           switch (result.status) {
@@ -127,6 +143,33 @@ function createRoutes({ config, db, webDir, library, maxUploadBytes = MAX_UPLOAD
     });
 }
 
+const UPLOAD_TYPE = "application/octet-stream";
+
+/** A browser or tool may send a whole path as the name; only its last part is kept. */
+function lastPathPart(name: string) {
+  return name.split(/[/\\]/).filter(Boolean).pop() ?? name;
+}
+
+/**
+ * True when a request that changes something was sent by a page on another origin. Browsers
+ * say so in `Sec-Fetch-Site`, or in `Origin` where that header is not sent (plain HTTP on a
+ * LAN). Tools that send neither are let through.
+ */
+function isCrossOrigin(request: Request): boolean {
+  if (request.method === "GET" || request.method === "HEAD") return false;
+  const site = request.headers.get("sec-fetch-site");
+  if (site !== null) return site !== "same-origin" && site !== "none";
+  const origin = request.headers.get("origin");
+  if (origin === null) return false;
+  const host =
+    request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? new URL(request.url).host;
+  try {
+    return new URL(origin).host !== host;
+  } catch {
+    return true;
+  }
+}
+
 function formatSize(bytes: number) {
   const mb = bytes / (1024 * 1024);
   return mb >= 1 ? `${Math.round(mb)} MB` : `${Math.round(bytes / 1024)} KB`;
@@ -145,6 +188,9 @@ export function createApp(options: AppOptions) {
   const gate = password === undefined ? undefined : passwordGate(password, dataDir);
 
   return {
-    fetch: async (request: Request): Promise<Response> => (await gate?.(request)) ?? routes.handle(request),
+    fetch: async (request: Request): Promise<Response> => {
+      if (isCrossOrigin(request)) return Response.json({ error: "Forbidden" }, { status: 403 });
+      return (await gate?.(request)) ?? routes.handle(request);
+    },
   };
 }

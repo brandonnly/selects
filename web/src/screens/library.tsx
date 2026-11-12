@@ -303,6 +303,7 @@ function RejectionRow({ rejection, onChange }: { rejection: Rejection; onChange:
       <div className="flex gap-2">
         {rejection.canAccept && (
           <Button
+            variant="outline"
             size="sm"
             disabled={busy}
             onClick={() => act(() => api.rejections({ id: rejection.id }).accept.post())}

@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -33,7 +34,12 @@ let app: ReturnType<typeof createApp>;
 beforeEach(() => {
   dataDir = mkdtempSync(join(tmpdir(), "selects-library-"));
   db = openDatabase(dataDir, migrations);
-  app = createApp({ config: loadConfig({ DATA_DIR: dataDir }), db, webDir: join(dataDir, "no-ui") });
+  app = createApp({
+    config: loadConfig({ DATA_DIR: dataDir }),
+    db,
+    webDir: join(dataDir, "no-ui"),
+    inboxSettleMs: 0,
+  });
 });
 afterEach(() => {
   db.close();
@@ -46,7 +52,11 @@ const request = (path: string, init?: RequestInit) =>
 const upload = (name: FixtureName, options: { alreadyPosted?: boolean; as?: string } = {}) => {
   const query = new URLSearchParams({ name: options.as ?? fixtures[name].split("/").pop() ?? name });
   if (options.alreadyPosted) query.set("alreadyPosted", "true");
-  return request(`/api/uploads?${query}`, { method: "POST", body: readFileSync(fixtures[name]) });
+  return request(`/api/uploads?${query}`, {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: readFileSync(fixtures[name]),
+  });
 };
 
 // biome-ignore lint/suspicious/noExplicitAny: each test's assertions check the body's shape.
@@ -253,6 +263,7 @@ describe("duplicates", () => {
 
     const response = await request("/api/uploads?name=burst.jpg", {
       method: "POST",
+      headers: { "content-type": "application/octet-stream" },
       body: readFileSync(burst),
     });
 
@@ -284,7 +295,69 @@ describe("duplicates", () => {
   });
 });
 
+describe("requests from other sites", () => {
+  test("refuses an upload a page on another site could send without asking", async () => {
+    const response = await request("/api/uploads?name=x.jpg", {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: readFileSync(fixtures.portrait),
+    });
+
+    expect(response.status).toBe(415);
+    expect(await library()).toEqual([]);
+  });
+
+  test("refuses any change sent from another origin", async () => {
+    const { select } = await json(await upload("portrait"));
+    const crossSite: Record<string, string>[] = [
+      { "sec-fetch-site": "cross-site" },
+      { "sec-fetch-site": "same-site" },
+      { origin: "http://elsewhere.test" },
+    ];
+    for (const headers of crossSite) {
+      const scan = await request("/api/inbox/scan", { method: "POST", headers });
+      const remove = await request(`/api/selects/${select.id}`, { method: "DELETE", headers });
+
+      expect([scan.status, remove.status]).toEqual([403, 403]);
+    }
+    expect(await library()).toHaveLength(1);
+  });
+
+  test("allows changes from the app's own pages and from tools that send no origin", async () => {
+    const own: Record<string, string>[] = [
+      { "sec-fetch-site": "same-origin" },
+      { origin: "http://selects.test" },
+      {},
+    ];
+    for (const headers of own) {
+      expect((await request("/api/inbox/scan", { method: "POST", headers })).status).toBe(200);
+    }
+  });
+
+  test("still serves pages and reads to a visitor arriving from another site", async () => {
+    const response = await request("/api/selects", { headers: { "sec-fetch-site": "cross-site" } });
+
+    expect(response.status).toBe(200);
+  });
+});
+
 describe("marking uploads as already posted", () => {
+  test("marks the select already in the Library when the same file is uploaded as posted", async () => {
+    await upload("portrait");
+
+    const response = await upload("portrait", { alreadyPosted: true });
+
+    expect(response.status).toBe(409);
+    expect((await json(response)).message).toBe("Already added as portrait.jpg. Marked as already posted.");
+    expect(await library()).toMatchObject([{ fileName: "portrait.jpg", alreadyPosted: true, inPool: false }]);
+  });
+
+  test("keeps only the last part of an uploaded file's path as its name", async () => {
+    await upload("portrait", { as: "../../some\\folder/portrait.jpg" });
+
+    expect(await library()).toMatchObject([{ fileName: "portrait.jpg" }]);
+  });
+
   test("keeps them in the Library but out of the pool", async () => {
     await upload("portrait", { alreadyPosted: true });
     await upload("square");
@@ -463,12 +536,36 @@ describe("the inbox", () => {
   });
 
   test("leaves a file that is still being written for a later scan", async () => {
+    const waiting = createApp({
+      config: loadConfig({ DATA_DIR: dataDir }),
+      db,
+      webDir: join(dataDir, "no-ui"),
+    });
+    // The copier kept the photo's old modified time; the file itself changed a moment ago.
     const path = drop("square");
-    const now = new Date();
-    utimesSync(path, now, now);
 
-    expect(await scan()).toEqual({ added: 0, rejected: 0 });
+    const response = await waiting.fetch(
+      new Request("http://selects.test/api/inbox/scan", { method: "POST" }),
+    );
+
+    expect(await json(response)).toEqual({ added: 0, rejected: 0 });
     expect(existsSync(path)).toBe(true);
+  });
+
+  test("a file that fails to ingest stays in the inbox and is taken by a later scan", async () => {
+    drop("square");
+    drop("portrait");
+    mkdirSync(join(dataDir, "thumbnails"), { recursive: true });
+    chmodSync(join(dataDir, "thumbnails"), 0o500);
+    try {
+      expect(await scan()).toEqual({ added: 0, rejected: 0 });
+      expect(readdirSync(inbox()).sort()).toEqual(["portrait.jpg", "rejected", "square.png"]);
+    } finally {
+      chmodSync(join(dataDir, "thumbnails"), 0o700);
+    }
+
+    expect(await scan()).toEqual({ added: 2, rejected: 0 });
+    expect(readdirSync(inbox())).toEqual(["rejected"]);
   });
 
   test("ignores hidden files and folders", async () => {
