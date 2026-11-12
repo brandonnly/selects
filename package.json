@@ -14,6 +14,7 @@
     "dev:web": "bun run --cwd web dev",
     "build": "bun run --cwd web build",
     "start": "bun --env-file=.env server/src/main.ts",
+    "fixtures": "bun server/src/fixtures.ts",
     "typecheck": "bun run --cwd server typecheck && bun run --cwd web typecheck",
     "lint": "biome check .",
     "format": "biome check --write ."
