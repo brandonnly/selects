@@ -1,0 +1,23 @@
+{
+  "name": "selects",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "bun run --parallel dev:server dev:web",
+    "dev:server": "bun --env-file=.env --watch server/src/dev.ts",
+    "dev:web": "bun run --cwd web dev",
+    "build": "bun run --cwd web build",
+    "start": "bun --env-file=.env server/src/main.ts",
+    "typecheck": "bun run --cwd server typecheck && bun run --cwd web typecheck",
+    "lint": "biome check .",
+    "format": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.7"
+  }
+}
