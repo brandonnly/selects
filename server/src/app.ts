@@ -36,6 +36,7 @@ function createRoutes({ config, db, webDir, library, maxUploadBytes = MAX_UPLOAD
       return status(503, { version: rootPackage.version, database });
     })
     .get("/api/selects", () => lib.list())
+    .get("/api/pool", () => lib.pool())
     .get("/api/selects/:id/original", ({ params, status }) => {
       const original = lib.original(params.id);
       if (original === undefined) return status(404, notFound);
@@ -54,6 +55,7 @@ function createRoutes({ config, db, webDir, library, maxUploadBytes = MAX_UPLOAD
       lib.remove(params.id) ? status(204) : status(404, notFound),
     )
     .get("/api/rejections", () => lib.rejections())
+    .post("/api/inbox/scan", () => lib.scanInbox())
     .post("/api/rejections/:id/accept", async ({ params, status }) => {
       const result = await lib.acceptRejection(params.id);
       switch (result.status) {
@@ -78,7 +80,10 @@ function createRoutes({ config, db, webDir, library, maxUploadBytes = MAX_UPLOAD
       async ({ request, query, status }) => {
         const received = await receiveUpload(request, uploadDir, maxUploadBytes);
         if (received.status === "too-large") {
-          return status(413, { status: "too-large" as const, message: "Larger than the 200 MB limit." });
+          return status(413, {
+            status: "too-large" as const,
+            message: `Larger than the ${formatSize(maxUploadBytes)} limit.`,
+          });
         }
         if (received.status === "empty") {
           return status(400, { status: "empty" as const, message: "The file is empty." });
@@ -120,6 +125,11 @@ function createRoutes({ config, db, webDir, library, maxUploadBytes = MAX_UPLOAD
       }
       return serveUi(webDir, path);
     });
+}
+
+function formatSize(bytes: number) {
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1 ? `${Math.round(mb)} MB` : `${Math.round(bytes / 1024)} KB`;
 }
 
 /** The routes, as the UI's Eden client sees them. */

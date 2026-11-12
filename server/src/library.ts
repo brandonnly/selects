@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
-import { extname, join } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { basename, extname, join } from "node:path";
 import {
   type CaptureData,
   EXTENSIONS,
@@ -77,6 +77,11 @@ const REEXPORT_DISTANCE = 10;
 
 const UNSUPPORTED = "Not a JPEG, PNG or TIFF.";
 
+/** A file in the inbox modified more recently than this may still be copying in. */
+const INBOX_SETTLE_MS = 10_000;
+
+export type ScanResult = { added: number; rejected: number };
+
 type SelectRow = {
   id: string;
   file_name: string;
@@ -116,12 +121,17 @@ type RejectionRow = {
  * In the data directory, originals are kept byte for byte under random IDs in `originals/`,
  * each with a thumbnail in `thumbnails/`. A likely re-export from an upload waits in `held/`
  * until it is added anyway or dismissed.
+ *
+ * Files dropped in `inbox/` are ingested by `scanInbox`. A refused one moves to
+ * `inbox/rejected/`, and its reason is recorded for the UI.
  */
 export function createLibrary({ db, dataDir }: { db: Database; dataDir: string }) {
   const dirs = {
     originals: join(dataDir, "originals"),
     thumbnails: join(dataDir, "thumbnails"),
     held: join(dataDir, "held"),
+    inbox: join(dataDir, "inbox"),
+    rejected: join(dataDir, "inbox", "rejected"),
   };
 
   const originalPath = (row: Pick<SelectRow, "id" | "format">) =>
@@ -252,8 +262,51 @@ export function createLibrary({ db, dataDir }: { db: Database; dataDir: string }
     return toRejection(saved);
   }
 
+  async function scanInboxNow(): Promise<ScanResult> {
+    mkdirSync(dirs.rejected, { recursive: true });
+    const result: ScanResult = { added: 0, rejected: 0 };
+    const settled = Date.now() - INBOX_SETTLE_MS;
+    for (const entry of readdirSync(dirs.inbox, { withFileTypes: true })) {
+      if (!entry.isFile() || entry.name.startsWith(".")) continue;
+      const path = join(dirs.inbox, entry.name);
+      if (statSync(path).mtimeMs > settled) continue;
+
+      const ingested = await ingest(path, { fileName: entry.name, source: "inbox" });
+      if (ingested.status === "added") {
+        result.added++;
+        continue;
+      }
+      const target = freePath(dirs.rejected, entry.name);
+      moveFile(path, target);
+      recordRejection(
+        { fileName: entry.name, source: "inbox", storedPath: target, alreadyPosted: false },
+        ingested.status,
+        "match" in ingested ? ingested.match : undefined,
+      );
+      result.rejected++;
+    }
+    return result;
+  }
+
+  let scanning: Promise<ScanResult> | undefined;
+
   return {
     ingest,
+
+    /** The folder watched for new files. */
+    inboxDir: dirs.inbox,
+
+    /**
+     * Ingests every file in the inbox, moving refused ones to `inbox/rejected/`. Hidden files,
+     * folders and files modified in the last few seconds are left alone. A scan asked for while
+     * one runs shares its result.
+     */
+    scanInbox(): Promise<ScanResult> {
+      scanning ??= scanInboxNow().finally(() => {
+        scanning = undefined;
+      });
+      return scanning;
+    },
 
     /**
      * Adds an uploaded file. A byte-identical or unsupported file is refused outright; a likely
@@ -292,6 +345,17 @@ export function createLibrary({ db, dataDir }: { db: Database; dataDir: string }
         .query<SelectRow, []>("SELECT * FROM selects ORDER BY added_at DESC, rowid DESC")
         .all()
         .map(toSelect);
+    },
+
+    /**
+     * The IDs of selects that may be picked, oldest first: never those marked as already
+     * posted. The picker builds on this.
+     */
+    pool(): string[] {
+      return db
+        .query<{ id: string }, []>("SELECT id FROM selects WHERE already_posted = 0 ORDER BY added_at, rowid")
+        .all()
+        .map((row) => row.id);
     },
 
     original(id: string): { path: string; type: string } | undefined {
@@ -408,6 +472,15 @@ function duplicateMessage(match: Match) {
 
 function reexportMessage(match: Match) {
   return `Looks like a re-export of ${matchName(match)}: the same picture, taken at the same moment.`;
+}
+
+/** `dir/name`, or `dir/name (2)` and so on when that is taken. */
+function freePath(dir: string, name: string): string {
+  const extension = extname(name);
+  const stem = basename(name, extension);
+  let candidate = join(dir, name);
+  for (let n = 2; existsSync(candidate); n++) candidate = join(dir, `${stem} (${n})${extension}`);
+  return candidate;
 }
 
 /** Renames, or copies and removes when the target is on another filesystem. */

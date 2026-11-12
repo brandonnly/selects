@@ -1,6 +1,15 @@
 import type { Database } from "bun:sqlite";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
@@ -272,5 +281,176 @@ describe("duplicates", () => {
 
   test("deleting an unknown select is a 404", async () => {
     expect((await remove("nope")).status).toBe(404);
+  });
+});
+
+describe("marking uploads as already posted", () => {
+  test("keeps them in the Library but out of the pool", async () => {
+    await upload("portrait", { alreadyPosted: true });
+    await upload("square");
+
+    expect(
+      (await library()).map(({ fileName, alreadyPosted, inPool }) => ({ fileName, alreadyPosted, inPool })),
+    ).toEqual([
+      { fileName: "square.png", alreadyPosted: false, inPool: true },
+      { fileName: "portrait.jpg", alreadyPosted: true, inPool: false },
+    ]);
+    expect(await json(await request("/api/pool"))).toEqual([(await library())[0]?.id]);
+  });
+
+  test("still blocks their duplicates, as for any select", async () => {
+    await upload("portrait", { alreadyPosted: true });
+
+    expect((await upload("portrait")).status).toBe(409);
+  });
+
+  test("carries the mark through a re-export that is added anyway", async () => {
+    await upload("portrait");
+    const { rejection } = await json(await upload("portraitReexport", { alreadyPosted: true }));
+
+    const { select } = await json(
+      await request(`/api/rejections/${rejection.id}/accept`, { method: "POST" }),
+    );
+
+    expect(select).toMatchObject({ alreadyPosted: true, inPool: false });
+  });
+});
+
+describe("upload size", () => {
+  test("refuses a file over the limit and keeps nothing of it", async () => {
+    app = createApp({
+      config: loadConfig({ DATA_DIR: dataDir }),
+      db,
+      webDir: join(dataDir, "no-ui"),
+      maxUploadBytes: 10 * 1024,
+    });
+
+    const response = await upload("portrait");
+
+    expect(response.status).toBe(413);
+    expect(await json(response)).toEqual({ status: "too-large", message: "Larger than the 10 KB limit." });
+    expect(await library()).toEqual([]);
+  });
+});
+
+describe("the inbox", () => {
+  const inbox = () => join(dataDir, "inbox");
+  const rejectedDir = () => join(inbox(), "rejected");
+  const scan = async () => json(await request("/api/inbox/scan", { method: "POST" }));
+  const rejections = async () => (await json(await request("/api/rejections"))) as Record<string, unknown>[];
+
+  /** Copies a fixture into the inbox as a file that finished copying a minute ago. */
+  const drop = (name: FixtureName, as?: string) => {
+    mkdirSync(inbox(), { recursive: true });
+    const target = join(inbox(), as ?? fixtures[name].split("/").pop() ?? name);
+    copyFileSync(fixtures[name], target);
+    const aMinuteAgo = new Date(Date.now() - 60_000);
+    utimesSync(target, aMinuteAgo, aMinuteAgo);
+    return target;
+  };
+
+  test("ingests a dropped file on the next scan and moves it out", async () => {
+    drop("landscape");
+
+    expect(await scan()).toEqual({ added: 1, rejected: 0 });
+
+    const [select] = await library();
+    expect(select).toMatchObject({
+      fileName: "landscape.tif",
+      source: "inbox",
+      format: "tiff",
+      inPool: true,
+    });
+    expect(readdirSync(inbox()).filter((name) => name !== "rejected")).toEqual([]);
+    const original = await request(`/api/selects/${select?.id}/original`);
+    expect(Buffer.from(await original.arrayBuffer()).equals(readFileSync(fixtures.landscape))).toBe(true);
+  });
+
+  test("moves unsupported and duplicate files to rejected, with their reasons", async () => {
+    await upload("portrait");
+    drop("text");
+    drop("portrait", "copy.jpg");
+
+    expect(await scan()).toEqual({ added: 0, rejected: 2 });
+
+    expect(readdirSync(rejectedDir()).sort()).toEqual(["copy.jpg", "notes.txt"]);
+    expect(readdirSync(inbox())).toEqual(["rejected"]);
+    const reasons = (await rejections()).map(({ source, fileName, reason, message, canAccept }) => ({
+      source,
+      fileName,
+      reason,
+      message,
+      canAccept,
+    }));
+    expect(reasons).toContainEqual({
+      source: "inbox",
+      fileName: "notes.txt",
+      reason: "unsupported",
+      message: "Not a JPEG, PNG or TIFF.",
+      canAccept: false,
+    });
+    expect(reasons).toContainEqual({
+      source: "inbox",
+      fileName: "copy.jpg",
+      reason: "duplicate",
+      message: "Already added as portrait.jpg.",
+      canAccept: false,
+    });
+  });
+
+  test("moves a likely re-export to rejected, from where it can be added anyway", async () => {
+    await upload("portrait");
+    drop("portraitReexport");
+
+    expect(await scan()).toEqual({ added: 0, rejected: 1 });
+    const [rejection] = await rejections();
+    expect(rejection).toMatchObject({ reason: "reexport", canAccept: true });
+
+    const accepted = await request(`/api/rejections/${rejection?.id}/accept`, { method: "POST" });
+
+    expect(accepted.status).toBe(201);
+    expect((await json(accepted)).select).toMatchObject({
+      fileName: "portrait-reexport.jpg",
+      source: "inbox",
+    });
+    expect(readdirSync(rejectedDir())).toEqual([]);
+    expect(await rejections()).toEqual([]);
+  });
+
+  test("dismissing an inbox rejection leaves the file in the rejected folder", async () => {
+    drop("text");
+    await scan();
+    const [rejection] = await rejections();
+
+    expect((await request(`/api/rejections/${rejection?.id}`, { method: "DELETE" })).status).toBe(204);
+
+    expect(await rejections()).toEqual([]);
+    expect(readdirSync(rejectedDir())).toEqual(["notes.txt"]);
+  });
+
+  test("never overwrites a file already in the rejected folder", async () => {
+    drop("text");
+    await scan();
+    drop("text");
+    await scan();
+
+    expect(readdirSync(rejectedDir()).sort()).toEqual(["notes (2).txt", "notes.txt"]);
+  });
+
+  test("leaves a file that is still being written for a later scan", async () => {
+    const path = drop("square");
+    const now = new Date();
+    utimesSync(path, now, now);
+
+    expect(await scan()).toEqual({ added: 0, rejected: 0 });
+    expect(existsSync(path)).toBe(true);
+  });
+
+  test("ignores hidden files and folders", async () => {
+    drop("text", ".notes.txt");
+    mkdirSync(join(inbox(), "later"));
+
+    expect(await scan()).toEqual({ added: 0, rejected: 0 });
+    expect(readdirSync(inbox()).sort()).toEqual([".notes.txt", "later", "rejected"]);
   });
 });
