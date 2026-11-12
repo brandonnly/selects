@@ -1,0 +1,53 @@
+import { useEffect, useState } from "react";
+import { api } from "@/api";
+import { Screen } from "./screen";
+
+type About =
+  | { state: "loading" }
+  | { state: "ready"; version: string; database: string }
+  | { state: "unreachable" };
+
+export function SettingsScreen() {
+  const [about, setAbout] = useState<About>({ state: "loading" });
+
+  useEffect(() => {
+    let live = true;
+    api.health.get().then(({ data, error }) => {
+      if (!live) return;
+      if (data) {
+        setAbout({
+          state: "ready",
+          version: data.version,
+          database: `OK, schema ${data.database.schemaVersion}`,
+        });
+      } else if (error?.status === 503) {
+        setAbout({ state: "ready", version: error.value.version, database: "Unavailable" });
+      } else {
+        setAbout({ state: "unreachable" });
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  return (
+    <Screen title="Settings">
+      <section aria-labelledby="about" className="flex flex-col gap-3">
+        <h2 id="about" className="text-sm font-medium text-muted-foreground">
+          About
+        </h2>
+        {about.state === "unreachable" ? (
+          <p className="text-sm text-destructive">Can't reach the server.</p>
+        ) : (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+            <dt className="text-muted-foreground">Version</dt>
+            <dd data-testid="version">{about.state === "ready" ? about.version : "…"}</dd>
+            <dt className="text-muted-foreground">Database</dt>
+            <dd data-testid="database">{about.state === "ready" ? about.database : "…"}</dd>
+          </dl>
+        )}
+      </section>
+    </Screen>
+  );
+}
