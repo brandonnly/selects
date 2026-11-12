@@ -20,7 +20,13 @@ export function SettingsScreen() {
           version: data.version,
           database: `OK, schema ${data.database.schemaVersion}`,
         });
-      } else if (error?.status === 503) {
+      } else if (
+        // Eden also reports a failed request as 503, with an Error in place of the body.
+        error?.status === 503 &&
+        typeof error.value === "object" &&
+        error.value !== null &&
+        "version" in error.value
+      ) {
         setAbout({ state: "ready", version: error.value.version, database: "Unavailable" });
       } else {
         setAbout({ state: "unreachable" });

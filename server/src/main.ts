@@ -23,7 +23,10 @@ const server = Bun.serve({
   fetch: createApp({ config, db, webDir }).fetch,
   // Never Bun's development error page: it prints the stack and source to the client.
   development: false,
-  error: () => new Response("Internal server error", { status: 500 }),
+  error: (error) => {
+    console.error(error);
+    return new Response("Internal server error", { status: 500 });
+  },
 });
 
 console.log(`Selects is listening on port ${server.port}.`);
@@ -34,9 +37,11 @@ if (!existsSync(resolve(webDir, "index.html"))) {
 }
 
 const shutdown = () => {
-  server.stop();
-  db.close();
-  process.exit(0);
+  // Let requests in flight finish before the database closes.
+  server.stop().finally(() => {
+    db.close();
+    process.exit(0);
+  });
 };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);

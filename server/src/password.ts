@@ -45,8 +45,10 @@ export function passwordGate(password: string, dataDir: string): Gate {
     }
 
     const session = readCookie(request.headers.get("cookie"), COOKIE);
-    if (session !== undefined && session.length === expectedHex.length) {
-      if (timingSafeEqual(Buffer.from(session), Buffer.from(expectedHex))) return undefined;
+    if (session !== undefined) {
+      const candidate = Buffer.from(session);
+      const wanted = Buffer.from(expectedHex);
+      if (candidate.length === wanted.length && timingSafeEqual(candidate, wanted)) return undefined;
     }
 
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {

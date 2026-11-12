@@ -113,6 +113,7 @@ describe("the built UI", () => {
     for (const path of ["/..%2foutside.txt", "/%2e%2e/outside.txt", "/assets/..%2f..%2foutside.txt"]) {
       const response = await get(appWith({}, webDir), path);
 
+      expect(response.status).toBe(404);
       expect(await response.text()).not.toContain("not for the browser");
     }
   });
@@ -241,8 +242,11 @@ describe("the optional password", () => {
   });
 
   test("ignores a forged session cookie", async () => {
-    const cookie = "selects_session=forged";
+    // The last is as many characters as a real session, but more bytes.
+    for (const forged of ["forged", "0".repeat(64), "\u00e9".repeat(64)]) {
+      const cookie = `selects_session=${forged}`;
 
-    expect((await get(locked(), "/api/health", { headers: { cookie } })).status).toBe(401);
+      expect((await get(locked(), "/api/health", { headers: { cookie } })).status).toBe(401);
+    }
   });
 });

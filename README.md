@@ -45,8 +45,8 @@ bun run start
 ```
 
 `bun run build` builds the UI into `web/dist`. `bun run start` runs one process that serves the
-API under `/api` and the built UI everywhere else. It needs `DATA_DIR` set; it stops and names
-any variable that is missing or invalid.
+API under `/api` and the built UI everywhere else. It needs `DATA_DIR` set: a missing `DATA_DIR`
+or an invalid `PORT` stops startup and names the variable.
 
 ## Checks
 

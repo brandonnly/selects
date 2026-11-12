@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { databaseStatus, type Migration, openDatabase } from "./db";
@@ -47,7 +47,14 @@ describe("openDatabase", () => {
 
     const db = openDatabase(dir, [createNotes]);
     expect(databaseStatus(db)).toEqual({ status: "ok", schemaVersion: 1 });
+    expect(() => db.run("INSERT INTO notes (body, title) VALUES ('b', 't')")).toThrow();
     db.close();
+  });
+
+  test("creates the database readable by its owner only", () => {
+    openDatabase(dir, [createNotes]).close();
+
+    expect(statSync(join(dir, "selects.db")).mode & 0o777).toBe(0o600);
   });
 
   test("refuses a database newer than this version of the app", () => {

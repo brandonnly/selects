@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { closeSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -15,7 +15,10 @@ const FILE_NAME = "selects.db";
 /** Opens the database in `dataDir`, creating both if needed, and applies pending migrations. */
 export function openDatabase(dataDir: string, migrations: readonly Migration[]): Database {
   mkdirSync(dataDir, { recursive: true });
-  const db = new Database(join(dataDir, FILE_NAME), { create: true, strict: true });
+  const file = join(dataDir, FILE_NAME);
+  // Created owner-only before SQLite opens it; SQLite gives its journal files the same mode.
+  closeSync(openSync(file, "a", 0o600));
+  const db = new Database(file, { create: true, strict: true });
   try {
     db.run("PRAGMA journal_mode = WAL");
     db.run("PRAGMA foreign_keys = ON");
@@ -50,7 +53,8 @@ function schemaVersion(db: Database): number {
 export function databaseStatus(db: Database): DatabaseStatus {
   try {
     return { status: "ok", schemaVersion: schemaVersion(db) };
-  } catch {
+  } catch (error) {
+    console.error("Database status check failed:", error);
     return { status: "error" };
   }
 }
