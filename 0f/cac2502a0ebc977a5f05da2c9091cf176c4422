@@ -1,0 +1,53 @@
+.dockerignore
+  s_c4e8006bf0d88c::t_b21c23d0640aee 1-23
+.env.example
+  s_c4e8006bf0d88c::t_777f3e257375b7 5,8
+.github/scripts/smoke-test-image.sh
+  s_c4e8006bf0d88c::t_b8953be7651fbc 1-136
+.github/workflows/ci.yml
+  s_c4e8006bf0d88c::t_931cf3b82e2552 32-43
+.github/workflows/release.yml
+  s_c4e8006bf0d88c::t_fc9c89a8ae34c0 1-150
+Dockerfile
+  s_c4e8006bf0d88c::t_88fd6f33aed315 1-75
+README.md
+  s_c4e8006bf0d88c::t_f29ecc753268dd 12-13,53-220,253,262-263,304-305,314-322
+brand/favicon/site.webmanifest
+  s_c4e8006bf0d88c::t_4f5bb07bd0a4f5 4-6
+brand/scripts/build.mjs
+  s_c4e8006bf0d88c::t_3bf045ddd3798a 51-53
+docs/adr/0010-packaging.md
+  s_c4e8006bf0d88c::t_2e6b86dcd43829 1-56
+server/src/app.test.ts
+  s_c4e8006bf0d88c::t_efa762286dc946 3,163,182-247,307,315
+server/src/app.ts
+  s_c4e8006bf0d88c::t_e039ce17fa9dac 429-445,519-528
+server/src/data-dir.test.ts
+  s_c4e8006bf0d88c::t_ce615fb1bf7d9c 1-36
+server/src/data-dir.ts
+  s_c4e8006bf0d88c::t_599e10ba30cf69 1-20
+server/src/main.ts
+  s_c4e8006bf0d88c::t_fd1bb9cdbd1c32 6,37-42
+unraid/selects.xml
+  s_c4e8006bf0d88c::t_69701052b73cac 1-39
+web/index.html
+  s_c4e8006bf0d88c::t_fbccbb7dd3e747 7-8,12
+web/src/pwa.test.ts
+  s_c4e8006bf0d88c::t_e3da9c6819cd03 1-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0fcac2502a0ebc977a5f05da2c9091cf176c4422",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
