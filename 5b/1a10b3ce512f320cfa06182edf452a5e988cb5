@@ -1,0 +1,29 @@
+bun.lock
+  s_4006560c52cb12::t_14e675bd09d4c3 17,614-615
+server/package.json
+  s_4006560c52cb12::t_e0d740185e4c54 15
+server/src/frame.test.ts
+  s_4006560c52cb12::t_2ae533f9d3b515 1-125
+server/src/frame.ts
+  s_4006560c52cb12::t_bbcae315dae260 1-2,4,95-222
+server/src/opentype.d.ts
+  s_4006560c52cb12::t_cf718a40f1269e 1-24
+server/src/typefaces.ts
+  s_4006560c52cb12::t_da1e833ab56776 1-4,18-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5b1a10b3ce512f320cfa06182edf452a5e988cb5",
+  "prompts": {},
+  "sessions": {
+    "s_4006560c52cb12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da0f7775-eeec-4f85-8315-af9d873f806d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
