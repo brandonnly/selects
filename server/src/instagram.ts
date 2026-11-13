@@ -129,6 +129,10 @@ export function createInstagramApi({ baseUrl }: { baseUrl: string }): InstagramA
       | { message?: unknown; code?: unknown; error_subcode?: unknown; is_transient?: unknown }
       | undefined;
     if (response.ok && body !== undefined && error === undefined) return body;
+    // An answer that says it worked and cannot be read was cut off on the way: worth another try.
+    if (response.ok && body === undefined) {
+      throw new InstagramError("transient", "Instagram's answer could not be read.");
+    }
 
     const code = typeof error?.code === "number" ? error.code : undefined;
     const subcode = typeof error?.error_subcode === "number" ? error.error_subcode : undefined;
