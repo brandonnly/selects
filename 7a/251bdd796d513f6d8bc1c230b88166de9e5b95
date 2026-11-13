@@ -1,0 +1,30 @@
+web/src/components/notification-settings.tsx
+  s_eddee4d6e42c35::t_8a3d3951da6849 1,3-163,165-168,170-173,175-207,209-219,227-290,296-363,366-382,397-485,500-515,519-526
+  s_eddee4d6e42c35::t_e182b3155d7fc8 2,164,169,174,208,383-396,486-499
+  s_eddee4d6e42c35::t_e0f6dd9b39749e 220-226,291-295,364-365,516-518
+web/src/components/backup-status.tsx
+  s_eddee4d6e42c35::t_c56c98c2f21999 1-42,45-47,50-55
+  s_eddee4d6e42c35::t_e0f6dd9b39749e 43-44,48-49
+web/src/lib/notifications.ts
+  s_eddee4d6e42c35::t_32f18f492edd5d 1-44
+web/src/lib/notifications.test.ts
+  s_eddee4d6e42c35::t_32f18f492edd5d 1-43
+web/src/screens/settings.tsx
+  s_eddee4d6e42c35::t_e0f6dd9b39749e 3,5,49,56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7a251bdd796d513f6d8bc1c230b88166de9e5b95",
+  "prompts": {},
+  "sessions": {
+    "s_eddee4d6e42c35": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b0d3f500-05ba-429c-87a0-663797fd627a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
