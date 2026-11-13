@@ -426,6 +426,23 @@ function createRoutes(
 
 const UPLOAD_TYPE = "application/octet-stream";
 
+/**
+ * The files of `brand/favicon`, which the build copies to the UI's root: the only files served
+ * without the password. They are the public brand icons and the web manifest.
+ */
+const PUBLIC_FILES = new Set([
+  "/site.webmanifest",
+  "/favicon.svg",
+  "/favicon-32.png",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/icon-maskable-192.png",
+  "/icon-maskable-512.png",
+]);
+
+const isRead = (request: Request) => request.method === "GET" || request.method === "HEAD";
+
 /** `"lens,iso"` turns on those two fields and every other one off. */
 function fieldSwitches(list: string): Record<FrameField, boolean> {
   const on = new Set(list.split(","));
@@ -499,7 +516,16 @@ export function createApp(options: AppOptions) {
       if (isCrossOrigin(request)) return Response.json({ error: "Forbidden" }, { status: 403 });
       // A notice of Selects' own, aimed back at it by a webhook set to its own address.
       if (request.headers.has(NOTICE_HEADER)) return Response.json({ error: "Forbidden" }, { status: 403 });
-      return (await gate?.(request)) ?? routes.handle(request);
+      const refused = await gate?.(request);
+      if (refused === undefined) return routes.handle(request);
+      if (isRead(request) && new URL(request.url).pathname === "/api/health") {
+        // A container's health check has no session: it learns only whether the app is up.
+        const up = databaseStatus(options.db).status === "ok";
+        return Response.json({ status: up ? "ok" : "error" }, { status: up ? 200 : 503 });
+      }
+      // Browsers fetch the manifest and icons without the cookie when installing the app.
+      if (isRead(request) && PUBLIC_FILES.has(new URL(request.url).pathname)) return routes.handle(request);
+      return refused;
     },
   };
 }

@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { createApp } from "./app";
 import { HOUR } from "./clock";
 import { ConfigError, loadConfig } from "./config";
+import { prepareDataDir } from "./data-dir";
 import { openDatabase } from "./db";
 import { startFakes } from "./fakes";
 import { createLibrary, errorKind } from "./library";
@@ -30,6 +31,12 @@ try {
   if (!(error instanceof ConfigError)) throw error;
   console.error(error.message);
   console.error("See .env.example for every variable.");
+  process.exit(1);
+}
+
+const dataDirProblem = prepareDataDir(config.dataDir);
+if (dataDirProblem !== undefined) {
+  console.error(dataDirProblem);
   process.exit(1);
 }
 

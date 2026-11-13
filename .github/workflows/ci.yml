@@ -29,3 +29,15 @@ jobs:
       - run: bun run lint
       - run: bun test
       - run: bun run build
+
+  image:
+    name: Build the image and smoke-test it
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Built for the runner's platform and kept on the runner: nothing is pushed.
+      - run: docker build --tag selects:ci .
+      - run: .github/scripts/smoke-test-image.sh selects:ci
