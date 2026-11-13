@@ -115,4 +115,56 @@ describe("buildCaption", () => {
 
     expect(built.caption.split("\n")[0]).toBe("10.5000, -40.2500");
   });
+
+  test("one hashtag set is chosen at random for each caption", () => {
+    const withSets = templates({ hashtagSets: [film, night] });
+    const build = (random: () => number) =>
+      buildCaption({ capture: none, templates: withSets, coordinateFormat: "dms", random });
+
+    expect(build(() => 0)).toMatchObject({ caption: "#film #35mm", hashtagSet: "Film" });
+    expect(build(() => 0.49)).toMatchObject({ caption: "#film #35mm", hashtagSet: "Film" });
+    expect(build(() => 0.5)).toMatchObject({ caption: "#night #longexposure #city", hashtagSet: "Night" });
+    expect(build(() => 0.999)).toMatchObject({ hashtagSet: "Night" });
+  });
+
+  test("by default the choice is random, and reaches every set", () => {
+    const chosen = new Set(
+      Array.from(
+        { length: 200 },
+        () =>
+          buildCaption({
+            capture: none,
+            templates: templates({ hashtagSets: [film, night] }),
+            coordinateFormat: "dms",
+          }).hashtagSet,
+      ),
+    );
+
+    expect(chosen).toEqual(new Set(["Film", "Night"]));
+  });
+
+  test("a named set can be asked for, as a preview does", () => {
+    const built = buildCaption({
+      capture: none,
+      templates: templates({ hashtagSets: [film, night] }),
+      coordinateFormat: "dms",
+      hashtagSet: "Night",
+      random: () => 0,
+    });
+
+    expect(built).toMatchObject({ caption: "#night #longexposure #city", hashtagSet: "Night" });
+  });
+
+  test("with no hashtag sets, the hashtags line is left out", () => {
+    const built = buildCaption({
+      capture: full,
+      templates: templates({ hashtagSets: [] }),
+      coordinateFormat: "dms",
+    });
+
+    expect(built).toMatchObject({
+      caption: `10°30'00"N 40°15'00"W\nFixture Optics FX-1 · Fixture 35mm F1.4`,
+      hashtagSet: null,
+    });
+  });
 });

@@ -18,18 +18,40 @@ export type CaptionInput = {
   capture: CaptureData;
   templates: CaptionTemplates;
   coordinateFormat: FrameSettings["coordinateFormat"];
+  /** The set to use, by name, in place of a random one: for a preview. */
+  hashtagSet?: string;
+  /** Picks the hashtag set: a number from 0 up to but not including 1. Default: Math.random. */
+  random?: () => number;
 };
 
-export type Caption = { caption: string; altText: string };
+export type Caption = {
+  caption: string;
+  altText: string;
+  /** The name of the hashtag set chosen, or null when there are none. */
+  hashtagSet: string | null;
+};
 
-/** A select's caption and alt text. */
-export function buildCaption({ capture, templates, coordinateFormat }: CaptionInput): Caption {
-  const set = templates.hashtagSets[0];
+/** A select's caption and alt text, with one of the hashtag sets chosen at random. */
+export function buildCaption({
+  capture,
+  templates,
+  coordinateFormat,
+  hashtagSet,
+  random = Math.random,
+}: CaptionInput): Caption {
+  const sets = templates.hashtagSets;
+  const set =
+    sets.find((candidate) => candidate.name === hashtagSet) ??
+    sets[Math.min(sets.length - 1, Math.floor(random() * sets.length))];
   const values: Values = {
     ...fieldValues(capture, coordinateFormat),
     hashtags: set === undefined || set.tags.length === 0 ? null : set.tags.join(" "),
   };
-  return { caption: fill(templates.caption, values), altText: fill(templates.altText, values) };
+  return {
+    caption: fill(templates.caption, values),
+    altText: fill(templates.altText, values),
+    hashtagSet: set?.name ?? null,
+  };
 }
 
 type Token = FrameField | "hashtags";
