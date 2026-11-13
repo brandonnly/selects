@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 import type { Captures } from "./capture";
 import type { Library } from "./library";
 import type { PickRules } from "./pick";
-import { runKey, SCHEDULE_LIMITS, type Scheduler } from "./scheduler";
+import { runKey, SCHEDULE_LIMITS, type Scheduler, SLOT_ID } from "./scheduler";
 import type { Settings } from "./settings";
 import type { Weekday } from "./slots";
 
@@ -11,7 +11,7 @@ const NOTHING_ELSE = "Nothing else to choose: the queue and the pool hold no oth
 
 const slotSchema = t.Object(
   {
-    id: t.String({ minLength: 1, maxLength: 64 }),
+    id: t.String({ pattern: SLOT_ID.source }),
     days: t.Array(t.Integer({ minimum: 1, maximum: 7 }), { minItems: 1, maxItems: 7 }),
     time: t.String({ pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }),
     spreadMinutes: t.Integer({ minimum: 0, maximum: SCHEDULE_LIMITS.spreadMinutes }),

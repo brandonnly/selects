@@ -95,6 +95,11 @@ function weekday(date: string): Weekday {
   return (day === 0 ? 7 : day) as Weekday;
 }
 
+/** The instant a slot comes round on a local date, or undefined when the date is not one of its days. */
+export function occurrenceOn(slot: Slot, date: string, timeZone: string): number | undefined {
+  return slot.days.includes(weekday(date)) ? zonedInstant(date, slot.time, timeZone) : undefined;
+}
+
 /** Every time a slot comes round with `from <= at < to`, in time order. */
 export function occurrences(
   slots: readonly Slot[],

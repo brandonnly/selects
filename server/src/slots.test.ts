@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isTimeZone, localDate, occurrences, type Slot, zonedInstant } from "./slots";
+import { isTimeZone, localDate, occurrenceOn, occurrences, type Slot, zonedInstant } from "./slots";
 
 const at = (iso: string) => Date.parse(iso);
 const daily = (time: string, id = "a"): Slot => ({ id, days: [1, 2, 3, 4, 5, 6, 7], time, spreadMinutes: 0 });
@@ -87,5 +87,13 @@ describe("timezones", () => {
     expect(isTimeZone("Europe/Berlin")).toBe(true);
     expect(isTimeZone("Mars/Olympus_Mons")).toBe(false);
     expect(isTimeZone("")).toBe(false);
+  });
+});
+
+describe("occurrenceOn", () => {
+  test("is a slot's time on a local date, or nothing on a day it does not run", () => {
+    const mondays: Slot = { id: "m", days: [1], time: "09:00", spreadMinutes: 0 };
+    expect(occurrenceOn(mondays, "2026-11-16", "Asia/Tokyo")).toBe(at("2026-11-16T00:00:00Z"));
+    expect(occurrenceOn(mondays, "2026-11-17", "Asia/Tokyo")).toBeUndefined();
   });
 });

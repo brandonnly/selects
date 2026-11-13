@@ -144,6 +144,13 @@ describe("the schedule", () => {
       graceMinutes: 120,
     });
     expect(time.status).toBe(422);
+    // A slot's ID names its runs in a URL: only letters, digits, - and _.
+    const id = await send("PUT", "/api/schedule", {
+      slots: [{ ...NOON, id: "a/b" }],
+      timeZone: "UTC",
+      graceMinutes: 120,
+    });
+    expect(id.status).toBe(422);
     expect((await request("/api/schedule")).body.schedule.slots).toEqual([]);
   });
 

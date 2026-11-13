@@ -208,6 +208,99 @@ describe("slots", () => {
     expect(publisher.posts()).toHaveLength(1);
   });
 
+  describe("a skip survives an edit", () => {
+    // Every day at 08:00; at 09:00 on Friday, Saturday's run is a day ahead.
+    const EARLY = { slots: [everyDay("08:00")], timeZone: "UTC", graceMinutes: 120 };
+
+    async function skipTomorrow() {
+      const context = await setup();
+      await addSelect("portrait");
+      context.scheduler.setSchedule(EARLY);
+      expect(context.scheduler.skip("daily", "2026-11-14")).toMatchObject({ state: "skipped" });
+      return context;
+    }
+
+    test("to its spread", async () => {
+      const { scheduler, publisher } = await skipTomorrow();
+      scheduler.setSchedule({ ...EARLY, slots: [everyDay("08:00", "daily", 30)] });
+      expect(scheduler.upcoming()[0]).toMatchObject({ date: "2026-11-14", state: "skipped" });
+      await runUntil(scheduler, publisher, "2026-11-14T10:00:00Z");
+      expect(publisher.posts()).toEqual([]);
+    });
+
+    test("to its days and the grace period", async () => {
+      const { scheduler, publisher } = await skipTomorrow();
+      scheduler.setSchedule({ ...EARLY, slots: [{ ...everyDay("08:00"), days: [5, 6] }], graceMinutes: 30 });
+      await runUntil(scheduler, publisher, "2026-11-14T10:00:00Z");
+      expect(publisher.posts()).toEqual([]);
+    });
+
+    test("to its time or the timezone: the skip stays with that day", async () => {
+      const { scheduler, publisher } = await skipTomorrow();
+      scheduler.setSchedule({ ...EARLY, slots: [everyDay("08:30")] });
+      scheduler.setSchedule({ ...EARLY, slots: [everyDay("08:30")], timeZone: "Europe/Lisbon" });
+      expect(scheduler.upcoming()[0]).toMatchObject({ date: "2026-11-14", state: "skipped" });
+      await runUntil(scheduler, publisher, "2026-11-14T10:00:00Z");
+      expect(publisher.posts()).toEqual([]);
+      // The next day's run still posts.
+      await runUntil(scheduler, publisher, "2026-11-15T10:00:00Z");
+      expect(publisher.posts()).toHaveLength(1);
+    });
+  });
+
+  test("a slot that was missed and is moved later the same day posts at its new time", async () => {
+    const { scheduler, publisher } = await setup();
+    await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("10:00")], timeZone: "UTC", graceMinutes: 0 });
+    clock.advance(at("2026-11-13T11:00:00Z") - clock.now());
+    await scheduler.tick();
+    expect(scheduler.history()[0]?.state).toBe("missed");
+    scheduler.setSchedule({ slots: [everyDay("15:00")], timeZone: "UTC", graceMinutes: 0 });
+    await runUntil(scheduler, publisher, "2026-11-13T15:01:00Z", 30_000);
+    expect(publisher.posts()).toHaveLength(1);
+  });
+
+  test("saving the same schedule with a day repeated changes nothing", async () => {
+    const { scheduler, publisher } = await setup({ random: () => 0.5 });
+    await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00", "daily", 60)], timeZone: "UTC", graceMinutes: 120 });
+    expect(scheduler.upcoming()[0]?.dueAt).toBe(at("2026-11-13T12:30:00Z"));
+    await runUntil(scheduler, publisher, "2026-11-13T12:10:00Z");
+    const repeated = { ...everyDay("12:00", "daily", 60), days: [1, 1, 2, 3, 4, 5, 6, 7] } as Slot;
+    expect(scheduler.setSchedule({ slots: [repeated], timeZone: "UTC", graceMinutes: 120 })).toEqual({
+      ok: true,
+    });
+    expect(scheduler.schedule().slots[0]?.days).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    await runUntil(scheduler, publisher, "2026-11-13T12:31:00Z", MINUTE);
+    expect(publisher.posts()).toHaveLength(1);
+  });
+
+  test("a slot ID must be letters, digits, - or _, and unique", async () => {
+    const { scheduler } = await setup();
+    for (const id of ["a/b", "x y", "", "é", "a".repeat(65)]) {
+      const result = scheduler.setSchedule({
+        slots: [everyDay("12:00", id)],
+        timeZone: "UTC",
+        graceMinutes: 120,
+      });
+      expect(result.ok).toBe(false);
+    }
+    expect(
+      scheduler.setSchedule({
+        slots: [everyDay("12:00", "same"), everyDay("13:00", "same")],
+        timeZone: "UTC",
+        graceMinutes: 120,
+      }),
+    ).toEqual({ ok: false, problems: ["Two slots have the same ID."] });
+    expect(
+      scheduler.setSchedule({
+        slots: [everyDay("12:00", "Morning_post-2")],
+        timeZone: "UTC",
+        graceMinutes: 120,
+      }),
+    ).toEqual({ ok: true });
+  });
+
   test("a timezone that is not one is refused", async () => {
     const { scheduler } = await setup();
     const result = scheduler.setSchedule({ slots: [], timeZone: "Mars/Olympus_Mons", graceMinutes: 120 });

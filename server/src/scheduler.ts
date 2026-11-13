@@ -4,7 +4,7 @@ import { type Clock, DAY, MINUTE } from "./clock";
 import { errorKind, type Library } from "./library";
 import { type Candidate, choose, DEFAULT_PICK_RULES, eligible, type PickRules } from "./pick";
 import type { Publisher } from "./publisher";
-import { isTimeZone, occurrences, type Slot } from "./slots";
+import { isTimeZone, occurrenceOn, occurrences, type Slot } from "./slots";
 
 /** The schedule as the owner sets it. */
 export type Schedule = {
@@ -212,6 +212,9 @@ export function createScheduler(options: SchedulerOptions) {
       .map((row) => candidate(row.select_id))
       .filter((found) => found !== undefined);
 
+  /** Drawn once and stored with the row: a whole minute from 0 to the spread, never drawn again. */
+  const drawSpread = (slot: Slot) => Math.floor(random() * (slot.spreadMinutes + 1)) * MINUTE;
+
   const inPool = (id: string | null) => id !== null && library.get(id)?.inPool === true;
 
   /** Records each slot coming round from the grace period back to a day ahead, spread drawn once. */
@@ -232,9 +235,7 @@ export function createScheduler(options: SchedulerOptions) {
       const slot = schedule.slots.find((s) => s.id === found.slotId);
       // A slot never posts for a time before it was added or last changed.
       if (slot === undefined || found.at < slot.since) continue;
-      // Drawn here and stored with the row: a whole minute from 0 to the spread, never drawn again.
-      const spread = Math.floor(random() * (slot.spreadMinutes + 1)) * MINUTE;
-      insert.run(found.slotId, found.date, found.at, found.at + spread);
+      insert.run(found.slotId, found.date, found.at, found.at + drawSpread(slot));
     }
   }
 
@@ -498,7 +499,11 @@ export function createScheduler(options: SchedulerOptions) {
       };
     },
 
-    /** Saves the schedule. A slot added or changed posts only from its next time on. */
+    /**
+     * Saves the schedule. A slot added or changed posts only from its next time on. A skip stays
+     * with the day it was made for, whatever is edited; a slot moved later than a time it missed
+     * that day comes round again at the new time.
+     */
     setSchedule(next: Schedule): { ok: true } | { ok: false; problems: string[] } {
       const problems = scheduleProblems(next);
       if (problems.length > 0) return { ok: false, problems };
@@ -506,25 +511,50 @@ export function createScheduler(options: SchedulerOptions) {
       const before = stored();
       const zoneChanged = before.timeZone !== next.timeZone;
       const slots: StoredSlot[] = next.slots.map((slot) => {
+        const days = [...new Set(slot.days)].sort();
         const old = before.slots.find((s) => s.id === slot.id);
         const same =
           old !== undefined &&
           !zoneChanged &&
           old.time === slot.time &&
           old.spreadMinutes === slot.spreadMinutes &&
-          JSON.stringify([...old.days].sort()) === JSON.stringify([...slot.days].sort());
-        return { ...slot, days: [...new Set(slot.days)].sort(), since: same ? old.since : now };
+          JSON.stringify(old.days) === JSON.stringify(days);
+        return { ...slot, days, since: same ? old.since : now };
       });
       db.transaction(() => {
         writeSetting("schedule", { ...next, slots });
-        // A slot to come that changed or went is planned again, or not at all.
+        const remove = db.query("DELETE FROM slot_runs WHERE slot_id = ? AND date = ?");
+        const move = db.query("UPDATE slot_runs SET slot_at = ?, due_at = ? WHERE slot_id = ? AND date = ?");
         for (const row of db
-          .query<RunRow, []>("SELECT * FROM slot_runs WHERE state IN ('planned', 'skipped')")
+          .query<RunRow, []>("SELECT * FROM slot_runs WHERE state NOT IN ('posting', 'posted', 'dry-run')")
           .all()) {
           const slot = slots.find((s) => s.id === row.slot_id);
-          if (slot === undefined || slot.since === now) {
-            db.query("DELETE FROM slot_runs WHERE slot_id = ? AND date = ?").run(row.slot_id, row.date);
+          const toCome = row.state === "planned" || row.state === "skipped";
+          if (slot === undefined) {
+            if (toCome) remove.run(row.slot_id, row.date);
+            continue;
           }
+          if (slot.since !== now) continue;
+          const slotAt = occurrenceOn(slot, row.date, next.timeZone);
+          if (!toCome) {
+            // Missed, paused or not posted earlier that day: a later new time comes round again.
+            if (slotAt !== undefined && slotAt > now && slotAt !== row.slot_at)
+              remove.run(row.slot_id, row.date);
+            continue;
+          }
+          // No longer one of its days: nothing comes round, and nothing is left to skip.
+          if (slotAt === undefined) {
+            remove.run(row.slot_id, row.date);
+            continue;
+          }
+          const old = before.slots.find((s) => s.id === slot.id);
+          const spread =
+            old?.spreadMinutes === slot.spreadMinutes
+              ? Math.min(row.due_at - row.slot_at, slot.spreadMinutes * MINUTE)
+              : drawSpread(slot);
+          // Moved before now: it posts from its next time on. A skip stays, for that day.
+          if (row.state === "planned" && slotAt + spread <= now) remove.run(row.slot_id, row.date);
+          else move.run(slotAt, slotAt + spread, row.slot_id, row.date);
         }
       })();
       plan(now);
@@ -674,12 +704,17 @@ export function runKey(id: string): { slotId: string; date: string } | undefined
   return { slotId: id.slice(0, at), date: id.slice(at + 1) };
 }
 
+/** What a slot's ID may be: it names the slot in a URL. */
+export const SLOT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
 function scheduleProblems(schedule: Schedule): string[] {
   const problems: string[] = [];
   if (!isTimeZone(schedule.timeZone)) problems.push(`${schedule.timeZone} is not a timezone.`);
   if (schedule.slots.length > SCHEDULE_LIMITS.slots) problems.push(`At most ${SCHEDULE_LIMITS.slots} slots.`);
   const ids = new Set(schedule.slots.map((slot) => slot.id));
   if (ids.size !== schedule.slots.length) problems.push("Two slots have the same ID.");
+  if (schedule.slots.some((slot) => !SLOT_ID.test(slot.id)))
+    problems.push("A slot's ID is 1 to 64 letters, digits, - or _.");
   for (const slot of schedule.slots) {
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(slot.time)) problems.push(`${slot.time} is not a time.`);
     if (slot.days.length === 0) problems.push(`The slot at ${slot.time} has no days.`);
