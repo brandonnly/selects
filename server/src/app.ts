@@ -124,7 +124,7 @@ function createRoutes({
     })
     .get(
       "/api/selects/:id/frame",
-      async ({ params, query, status }) => {
+      async ({ params, query, status, request }) => {
         const select = lib.get(params.id);
         const original = lib.original(params.id);
         if (select === undefined || original === undefined) return status(404, notFound);
@@ -139,7 +139,10 @@ function createRoutes({
         };
         let jpeg: Buffer;
         try {
-          jpeg = await renderer.render({ path: original.path, capture: select }, frame, { width });
+          jpeg = await renderer.render({ path: original.path, capture: select }, frame, {
+            width,
+            signal: request.signal,
+          });
         } catch (error) {
           // The error's message can carry the photo's path, so only its kind is logged.
           console.error(`A frame could not be rendered (${errorKind(error)}).`);

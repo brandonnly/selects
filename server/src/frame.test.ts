@@ -363,9 +363,24 @@ describe("photos and text at the edges", () => {
 
   test("more renders than run at once all finish", async () => {
     const one = await source("square");
+    const shared = renderer();
     const frames = await Promise.all(
-      Array.from({ length: 6 }, () => renderer().render(one, settings(), { width: 240 })),
+      Array.from({ length: 6 }, () => shared.render(one, settings(), { width: 240 })),
     );
     expect(frames.every((frame) => frame.byteLength > 0)).toBe(true);
+  });
+
+  test("a render given up on while waiting its turn is not made", async () => {
+    const one = await source("square");
+    const shared = renderer();
+    const gone = new AbortController();
+    const first = [shared.render(one, settings()), shared.render(one, settings())];
+    const waiting = shared.render(one, settings(), { signal: gone.signal });
+    gone.abort();
+
+    await expect(waiting).rejects.toThrow("given up");
+    await Promise.all(first);
+    // Its turn went back: another render still gets through.
+    expect((await shared.render(one, settings(), { width: 240 })).byteLength).toBeGreaterThan(0);
   });
 });

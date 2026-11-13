@@ -131,6 +131,8 @@ export type FrameSource = { path: string; capture: CaptureData };
 export type RenderOptions = {
   /** Scales the finished frame down to this width, for a preview. Default: full size. */
   width?: number;
+  /** Aborted when nobody wants the frame any more: a render still waiting its turn is skipped. */
+  signal?: AbortSignal;
 };
 
 type Box = { left: number; top: number; width: number; height: number };
@@ -198,6 +200,7 @@ export function createFrameRenderer({ dataDir }: { dataDir: string }) {
     async render(source: FrameSource, settings: FrameSettings, options: RenderOptions = {}): Promise<Buffer> {
       await turn.take();
       try {
+        if (options.signal?.aborted) throw new Error("The frame was given up on before its turn");
         return await renderFrame(source, settings, options);
       } finally {
         turn.give();

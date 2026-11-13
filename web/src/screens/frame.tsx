@@ -134,7 +134,6 @@ export function FrameScreen() {
       // Sent unless the server is known to hold exactly this: a save still on its way or waiting
       // its turn may leave it holding something else.
       if (json === confirmed.current && unanswered.current === 0) return;
-      lastSaved.current = json;
       fetch("/api/frame", {
         method: "PUT",
         headers: { "content-type": "application/json" },
@@ -379,7 +378,8 @@ function FontOverrideNote({ override }: { override: FontOverride | null }) {
   if (!override.usable) {
     return (
       <span className="text-xs text-destructive">
-        {override.fileName} in the data folder can't be read, so the typeface chosen here is used.
+        {override.fileName} in the data folder can't be used: it can't be read or lacks a character frames
+        print. The typeface chosen here is used.
       </span>
     );
   }
