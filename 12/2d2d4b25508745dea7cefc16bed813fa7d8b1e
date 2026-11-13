@@ -1,0 +1,21 @@
+server/src/captions.test.ts
+  s_c4e8006bf0d88c::t_1bdb6712c16922 100
+server/src/captions.ts
+  s_c4e8006bf0d88c::t_8cff6e7ef87dd9 206,213-214,228,232-234,277
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "122d2d4b25508745dea7cefc16bed813fa7d8b1e",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
