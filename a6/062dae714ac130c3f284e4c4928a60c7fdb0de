@@ -1,0 +1,27 @@
+docs/adr/0004-caption-templates.md
+  s_c4e8006bf0d88c::t_524725339c0866 26-27
+server/src/caption-routes.ts
+  s_c4e8006bf0d88c::t_3060363b8f5b8f 66-73
+server/src/captions.test.ts
+  s_c4e8006bf0d88c::t_784343d2ddc774 103-111
+server/src/captions.ts
+  s_c4e8006bf0d88c::t_a85c5e0873d539 261-268
+web/src/screens/captions.tsx
+  s_c4e8006bf0d88c::t_301615982ce734 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a6062dae714ac130c3f284e4c4928a60c7fdb0de",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
