@@ -1,0 +1,23 @@
+server/src/captions.test.ts
+  s_e242c501dd158b::t_453361f4b7897d 118-165
+  s_e242c501dd158b::t_aa58f1b0658999 166-169
+server/src/captions.ts
+  s_e242c501dd158b::t_a48fe2cc846e28 21-24,27-32,34-45,50-53
+  s_e242c501dd158b::t_b5b6336efad781 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fb6266ff5dc54631e660f4830ae8205788604409",
+  "prompts": {},
+  "sessions": {
+    "s_e242c501dd158b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9094f290-7dab-41e0-a49f-28ad7706fcee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
