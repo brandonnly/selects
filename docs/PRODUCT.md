@@ -67,8 +67,9 @@ single-tenant: there are no users, roles or second accounts. Everything personal
 - A slot missed while the app was down posts late only within a grace period (two hours by
   default). Otherwise it is skipped; missed slots never stack.
 - A failed publish retries three times over about fifteen minutes, then notifies, returns the
-  select to the pool and leaves the schedule running. Slots pass that select over for a week, or
-  until its owner tries it again, so the queue and pool behind it keep posting
+  select to the pool and leaves the schedule running. A queued select keeps its place in the
+  queue. When Instagram refused the select itself, slots pass it over for a week, or until its
+  owner tries it again, so the queue and pool behind it keep posting
   ([ADR 0007](adr/0007-scheduling.md)).
 - A pause switch stops all posting. Any select can be posted immediately.
 - Dry run renders and logs each post without publishing.

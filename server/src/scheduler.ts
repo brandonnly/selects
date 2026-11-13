@@ -292,7 +292,10 @@ export function createScheduler(options: SchedulerOptions) {
   type Hold = { postId: string; until: number; error: string | null };
   /**
    * Selects held back from slots: those whose latest post (dry runs aside) failed for good less
-   * than `HOLD_MS` ago and whose owner has not cleared the hold. A later post replaces the hold.
+   * than `HOLD_MS` ago because of the select itself (Instagram refused its image or caption), and
+   * whose owner has not cleared the hold. A failure that was not the select's (a refused token,
+   * Instagram not answering, an edit made while it retried) holds nothing: the next slot tries it
+   * again. A later post replaces the hold.
    */
   const holds = (now: number): Map<string, Hold> => {
     noteFailures(now);
@@ -302,6 +305,7 @@ export function createScheduler(options: SchedulerOptions) {
          FROM post_failures JOIN posts ON posts.id = post_failures.post_id
          JOIN post_selects ON post_selects.post_id = posts.id
          WHERE post_failures.cleared = 0 AND post_failures.failed_at > ? AND posts.state = 'failed'
+           AND posts.failure_kind = 'select'
            AND post_selects.select_id IS NOT NULL
            AND posts.id = (
              SELECT latest.id FROM posts AS latest JOIN post_selects AS its ON its.post_id = latest.id
@@ -662,11 +666,14 @@ export function createScheduler(options: SchedulerOptions) {
     );
   }
 
+  /** When this process last finished a tick. */
+  let lastTick: number | undefined;
   let running: Promise<void> | undefined;
   async function tickNow() {
     const now = clock.now();
     // A tick this recent means Selects was running: a slot found late was a tick held up.
-    const last = readSetting<number>("scheduleTickedAt");
+    // Kept in memory, so a tick just after a restart is never taken for a tick held up.
+    const last = lastTick;
     const running = last !== undefined && now - last <= RUNNING_WITHIN * interval;
     plan(now);
     writeSetting("scheduleTickedAt", now);
@@ -676,6 +683,7 @@ export function createScheduler(options: SchedulerOptions) {
     prune(now);
     // Posting may take minutes: the next tick counts from the end of this one.
     writeSetting("scheduleTickedAt", clock.now());
+    lastTick = clock.now();
   }
 
   const planned = (slotId: string, date: string) => {
@@ -781,8 +789,11 @@ export function createScheduler(options: SchedulerOptions) {
               : drawSpread(slot);
           // Moved to a time already past: it posts from its next time on, whatever its spread. A
           // skip stays, for that day.
-          if (row.state === "planned" && slotAt <= now) remove.run(row.slot_id, row.date);
-          else move.run(slotAt, slotAt + spread, row.slot_id, row.date);
+          if (row.state === "planned" && slotAt <= now) {
+            // Its time unchanged and already past, still waiting on its spread: it stands as
+            // drawn, so an edit to its days or spread never drops today's post.
+            if (slotAt !== row.slot_at) remove.run(row.slot_id, row.date);
+          } else move.run(slotAt, slotAt + spread, row.slot_id, row.date);
         }
       })();
       plan(now);

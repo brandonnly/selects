@@ -267,6 +267,25 @@ describe("slots", () => {
     expect(publisher.posts()).toHaveLength(1);
   });
 
+  test("an edit to a slot's days after its time, while it waits on its spread, leaves today's post", async () => {
+    const { scheduler, publisher } = await setup({ random: () => 0.75 });
+    await addSelect("portrait");
+    const slot: Slot = { ...everyDay("12:00"), days: [1, 2, 3, 4, 5], spreadMinutes: 60 };
+    scheduler.setSchedule({ slots: [slot], timeZone: "UTC", graceMinutes: 120 });
+    await runUntil(scheduler, publisher, "2026-11-13T12:10:00Z");
+    expect(publisher.posts()).toHaveLength(0);
+
+    // Saturday is added; its time and spread are as they were.
+    scheduler.setSchedule({
+      slots: [{ ...slot, days: [1, 2, 3, 4, 5, 6] }],
+      timeZone: "UTC",
+      graceMinutes: 120,
+    });
+    await runUntil(scheduler, publisher, "2026-11-13T13:05:00Z");
+
+    expect(publisher.posts()).toHaveLength(1);
+  });
+
   test("a slot moved to a time already past does not post later today through its spread", async () => {
     // A spread of 60 drawn as its whole: the 18:00 slot is due at 19:00.
     const { scheduler, publisher } = await setup({ random: () => 0.99 });
@@ -1104,7 +1123,7 @@ describe("publishing", () => {
     expect(scheduler.history()[0]?.post?.error).toContain("refused");
   });
 
-  test("a queued select whose post fails for good goes back to its place, held back while the queue posts", async () => {
+  test("a queued select whose post failed through no fault of its own goes back to its place and is next", async () => {
     let refuse = true;
     const { scheduler, publisher } = await setup({
       wrapApi: (api) => ({
@@ -1131,11 +1150,10 @@ describe("publishing", () => {
     expect(scheduler.queue()).toEqual([a, b]);
     refuse = false;
     await runUntil(scheduler, publisher, "2026-11-14T12:30:00Z");
-    expect(postedSelects(publisher)).toEqual([a, b]);
-    // Cleared by its owner, it is next.
-    scheduler.clearHold(a);
+    // Instagram not answering was not the select's doing: nothing holds it, and it is tried again.
+    expect(postedSelects(publisher)).toEqual([a, a]);
     await runUntil(scheduler, publisher, "2026-11-15T12:30:00Z");
-    expect(postedSelects(publisher)).toEqual([a, b, a]);
+    expect(postedSelects(publisher)).toEqual([a, a, b]);
   });
 
   test("a post that fails for good returns its select to the pool, and the schedule keeps running", async () => {

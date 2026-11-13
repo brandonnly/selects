@@ -171,7 +171,7 @@ export function PickRulesEditor({
         Posts: 1 to {LIMITS.posts}. Kilometres: 1 to {LIMITS.km.toLocaleString("en-US")}.
       </p>
       {!parsed.complete && (
-        <p className="text-sm text-destructive">
+        <p role="status" className="text-sm text-destructive">
           The numbers marked above aren't saved until they're fixed: until then each keeps what was saved.
           Everything else saves as usual.
         </p>

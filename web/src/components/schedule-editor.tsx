@@ -263,7 +263,7 @@ export function ScheduleEditor({
         </label>
       </div>
       {!parsed.complete && (
-        <p className="text-sm text-destructive">
+        <p role="status" className="text-sm text-destructive">
           The fields marked above aren't saved until they're fixed: until then each keeps what was saved, and
           a new slot is saved once it has its days. Everything else saves as usual. To drop a slot, use its
           remove button.

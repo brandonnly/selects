@@ -302,6 +302,9 @@ export const migrations: readonly Migration[] = [
   );
   CREATE INDEX slot_runs_due ON slot_runs (state, due_at);
 
+  -- Why a post failed for good: 'select' when Instagram refused the select's own image or
+  -- caption, so trying it again as it is would fail again. Null for any other failure.
+  ALTER TABLE posts ADD COLUMN failure_kind TEXT CHECK (failure_kind IN ('select'));
   -- When Selects saw each post fail for good. While a select's latest post is a failure seen
   -- less than 7 days ago and not cleared by its owner, slots pass the select over.
   CREATE TABLE post_failures (

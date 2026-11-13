@@ -55,8 +55,9 @@ posted or whose post fails for good, and how a restart is kept from posting a sl
   screen as needing attention, with why. It stays listed, and passed over, until it is postable
   again or leaves the pool: each plan checks again up to 20 of those listed, the longest
   unchecked first. A slot with nothing else left is recorded as empty.
-- **A select whose post failed for good is held back for 7 days.** When a select's latest post
-  (dry runs aside), scheduled or by Post now, has failed for good, slots pass it over, in the
+- **A select Instagram refused is held back for 7 days.** When a select's latest post
+  (dry runs aside), scheduled or by Post now, has failed for good because Instagram refused the
+  select itself (its image or its caption), slots pass it over, in the
   queue and the pool, for 7 days from when Selects saw the failure (within a tick), or until its
   owner presses Try again on the Queue screen, which clears the hold at once. It keeps its place
   in the queue, out of the head's way, and is listed as needing attention with the failure's
@@ -128,10 +129,14 @@ posted or whose post fails for good, and how a restart is kept from posting a sl
   catching up.
 - A slot found more than a minute late while Selects runs (a tick held up, the machine asleep)
   is late: it posts only within the grace period, and only the latest. It is recorded as found
-  late when the last tick was recent, and as missed after a longer gap.
+  late when this process's last tick was recent, and as missed after a longer gap or a restart.
 - A select Instagram refuses for good no longer takes every slot: it is tried again a week
   later, or when its owner says so, and the queue and pool behind it keep posting meanwhile. A
-  select marked as not posted by hand is held back the same way.
+  failure that was not the select's (a refused token, Instagram not answering through every
+  retry, an edit made while it retried, a post marked as not posted by hand) holds nothing: the
+  next slot tries that select again.
+- An edit to a slot's days or spread after its time has passed, while it waits on its spread,
+  leaves that day's post as drawn. Only moving its time to one already past drops that day.
 - With thousands of selects, a plan stays quick: at most 50 checks, and one pass of the pick
   rules per step. A select fixed after it was listed as needing attention may wait a few plans
   before it is checked again and picked.

@@ -35,14 +35,16 @@ export function QueueScreen() {
       if (data && fresh.readIsFresh(read)) setView(data);
       failed = error !== null;
     } catch {}
-    setLoadError((current) => ({ ...current, schedule: failed }));
+    // A failure of a read that a change has since overtaken says nothing about now.
+    if (!failed || fresh.readIsFresh(read)) setLoadError((current) => ({ ...current, schedule: failed }));
   }, [fresh]);
   /** Shows a change's answer when it is the latest; otherwise the latest one's answer shows. */
   const showAnswer = useCallback(
     (latest: boolean, data: ScheduleView | null | undefined) => {
-      if (!latest) return;
-      if (data) setView(data);
-      else void loadSchedule();
+      // An answer that is not the latest may still be the last to arrive: what the server
+      // holds is read again (and shown only once no change is on its way).
+      if (!latest || !data) void loadSchedule();
+      else setView(data);
     },
     [loadSchedule],
   );

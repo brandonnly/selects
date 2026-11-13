@@ -189,6 +189,8 @@ type PostRow = {
   permalink: string | null;
   error: string | null;
   report: string | null;
+  /** 'select' when the select itself was refused; null for any other failure. */
+  failure_kind: string | null;
   mode: InstagramMode | null;
   /** The Instagram account the post was confirmed for. Null before version 7 and for a dry run with none. */
   account_id: string | null;
@@ -210,6 +212,8 @@ class PostFailure extends Error {
     readonly retry: boolean,
     /** Try again at once, and do not count this attempt: it never had a fair chance. */
     readonly again = false,
+    /** The select itself was refused: its image or its caption. Trying it again as it is fails again. */
+    readonly select = false,
   ) {
     super(message);
   }
@@ -566,7 +570,12 @@ export function createPublisher(options: PublisherOptions) {
         // Instagram fetched the frame when the container was made: it need not stay in the bucket.
         await dropObject(id);
       } else if (final) {
-        update({ state: "failed", error: failure.message, next_attempt_at: null });
+        update({
+          state: "failed",
+          error: failure.message,
+          next_attempt_at: null,
+          failure_kind: failure.select ? "select" : null,
+        });
         console.error(
           `Post ${id} failed after ${number} attempt${number === 1 ? "" : "s"}: ${failure.message}`,
         );
@@ -678,7 +687,12 @@ export function createPublisher(options: PublisherOptions) {
         capture: content.fingerprint,
       });
       if (content.check.problems.length > 0) {
-        throw new PostFailure(`The caption can't be posted. ${content.check.problems.join(" ")}`, false);
+        throw new PostFailure(
+          `The caption can't be posted. ${content.check.problems.join(" ")}`,
+          false,
+          false,
+          true,
+        );
       }
       // Nothing a privacy rule or an edit changed since this attempt built its content, and still
       // what the post was confirmed with.
@@ -734,7 +748,7 @@ export function createPublisher(options: PublisherOptions) {
       const status = await api.containerStatus(token, containerId);
       if (status === "FINISHED") return;
       if (status !== "IN_PROGRESS")
-        throw new PostFailure(`Instagram could not process the image (${status}).`, true);
+        throw new PostFailure(`Instagram could not process the image (${status}).`, true, false, true);
       if (clock.now() - started + intervalMs > limitMs) break;
       await clock.sleep(intervalMs);
     }
@@ -822,7 +836,7 @@ export function createPublisher(options: PublisherOptions) {
           false,
         );
       }
-      if (error.kind === "refused") return new PostFailure(error.message, false);
+      if (error.kind === "refused") return new PostFailure(error.message, false, false, true);
       return new PostFailure(error.message, true);
     }
     if (error instanceof BucketError) return new PostFailure(error.message, true);
