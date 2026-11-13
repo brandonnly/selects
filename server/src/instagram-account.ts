@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { type Clock, DAY } from "./clock";
+import type { InstagramMode } from "./config";
 import { type InstagramApi, InstagramError } from "./instagram";
 
 /** The connected account as the API shows it. Never the token. */
@@ -45,16 +46,23 @@ export function createInstagramAccount({
   db,
   api,
   clock,
+  mode = "fake",
 }: {
   db: Database;
   api: InstagramApi;
   clock: Clock;
+  /**
+   * Which Instagram the account belongs to. Each mode keeps its own account, so a run against
+   * the fake never reads, refreshes or replaces the real account's token.
+   */
+  mode?: InstagramMode;
 }) {
-  const row = () => db.query<Row, []>("SELECT * FROM instagram_account WHERE id = 1").get();
+  const table = mode === "live" ? "instagram_account" : "instagram_account_fake";
+  const row = () => db.query<Row, []>(`SELECT * FROM ${table} WHERE id = 1`).get();
 
   const save = (values: Row) => {
     db.query(
-      `INSERT INTO instagram_account (id, token, user_id, username, status, connected_at, refreshed_at, expires_at, refresh)
+      `INSERT INTO ${table} (id, token, user_id, username, status, connected_at, refreshed_at, expires_at, refresh)
        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET token = excluded.token, user_id = excluded.user_id,
          username = excluded.username, status = excluded.status, connected_at = excluded.connected_at,
@@ -87,14 +95,12 @@ export function createInstagramAccount({
       const fresh = await api.refresh(found.token);
       // Only if the token is still the one refreshed: it may have been replaced meanwhile.
       db.query(
-        "UPDATE instagram_account SET token = ?, refreshed_at = ?, expires_at = ?, refresh = 'refreshed', status = 'connected' WHERE id = 1 AND token = ?",
+        `UPDATE ${table} SET token = ?, refreshed_at = ?, expires_at = ?, refresh = 'refreshed', status = 'connected' WHERE id = 1 AND token = ?`,
       ).run(fresh.token, clock.now(), clock.now() + fresh.expiresInSeconds * 1000, found.token);
     } catch (error) {
-      db.query("UPDATE instagram_account SET refresh = 'failed' WHERE id = 1 AND token = ?").run(found.token);
+      db.query(`UPDATE ${table} SET refresh = 'failed' WHERE id = 1 AND token = ?`).run(found.token);
       if (error instanceof InstagramError && error.kind === "token") {
-        db.query("UPDATE instagram_account SET status = 'invalid' WHERE id = 1 AND token = ?").run(
-          found.token,
-        );
+        db.query(`UPDATE ${table} SET status = 'invalid' WHERE id = 1 AND token = ?`).run(found.token);
         console.error("Instagram no longer accepts the token. Paste a new one in Settings.");
         return;
       }
@@ -163,7 +169,7 @@ export function createInstagramAccount({
     },
 
     disconnect(): void {
-      db.query("DELETE FROM instagram_account WHERE id = 1").run();
+      db.query(`DELETE FROM ${table} WHERE id = 1`).run();
     },
 
     /** The token and account to publish with, or undefined when none is connected and accepted. */
@@ -175,7 +181,7 @@ export function createInstagramAccount({
 
     /** Records that Instagram refused the token while publishing. */
     markInvalid(token: string): void {
-      db.query("UPDATE instagram_account SET status = 'invalid' WHERE id = 1 AND token = ?").run(token);
+      db.query(`UPDATE ${table} SET status = 'invalid' WHERE id = 1 AND token = ?`).run(token);
     },
 
     /** Refreshes the token once it is a day old. Run every hour, and before each publish. */

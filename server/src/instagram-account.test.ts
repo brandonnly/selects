@@ -195,3 +195,23 @@ describe("refreshing the token", () => {
     expect(output).not.toContain(TOKEN);
   });
 });
+
+describe("the account of each Instagram mode", () => {
+  test("is kept apart: a run against the fake never reads or rewrites the real account's token", async () => {
+    const api = createInstagramApi({ baseUrl: fake.url });
+    const live = createInstagramAccount({ db, api, clock, mode: "live" });
+    fake.addAccount("IGfake-live-token-0007", { userId: "1784140007", username: "live_owner" });
+    await live.connect("IGfake-live-token-0007");
+
+    const other = createInstagramAccount({ db, api, clock, mode: "fake" });
+    expect(other.view()).toBeNull();
+    fake.addAccount("IGfake-fake-token-0008", { userId: "1784140008", username: "fake_owner" });
+    await other.connect("IGfake-fake-token-0008");
+    clock.advance(3 * 24 * 60 * 60 * 1000);
+    await other.refreshIfDue();
+    other.disconnect();
+
+    expect(live.view()?.username).toBe("live_owner");
+    expect(live.credentials()?.token).toBe("IGfake-live-token-0007");
+  });
+});

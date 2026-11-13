@@ -218,10 +218,25 @@ export const migrations: readonly Migration[] = [
   `,
   // 7: what a post was confirmed with, so it is never sent to another account or with other
   // content: the account, and a fingerprint of everything it is built from but the location,
-  // which may still be withheld later. Bucket objects to delete record which bucket holds them.
+  // which may still be withheld later. Bucket objects to delete record which bucket holds them,
+  // and the fake account has its own table.
   `
   ALTER TABLE posts ADD COLUMN account_id TEXT;
   ALTER TABLE posts ADD COLUMN confirmed TEXT;
   ALTER TABLE bucket_cleanup ADD COLUMN mode TEXT;
+
+  -- The account connected in fake mode, kept apart so the fake never reads or rewrites the
+  -- real account's token.
+  CREATE TABLE instagram_account_fake (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    token TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('connected', 'invalid')),
+    connected_at INTEGER NOT NULL,
+    refreshed_at INTEGER NOT NULL,
+    expires_at INTEGER,
+    refresh TEXT NOT NULL DEFAULT 'refreshed' CHECK (refresh IN ('refreshed', 'too-new', 'failed'))
+  );
   `,
 ];

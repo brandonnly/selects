@@ -82,7 +82,7 @@ function setup(
   captionStore.setTemplates(TEMPLATES);
   const realApi = createInstagramApi({ baseUrl: instagram.url });
   const api = options.wrapApi?.(realApi) ?? realApi;
-  const account = createInstagramAccount({ db, api, clock });
+  const account = createInstagramAccount({ db, api, clock, mode: options.mode ?? "fake" });
   const bucket = createBucket(
     new BucketSettings(fakeBucket.endpoint, fakeBucket.name, "auto", options.publicBaseUrl, FAKE_BUCKET_KEYS),
   );

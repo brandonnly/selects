@@ -139,7 +139,7 @@ function createServices({
   const api =
     instagram ??
     (config.instagram === "live" ? createInstagramApi({ baseUrl: LIVE_INSTAGRAM_URL }) : noInstagram());
-  const account = createInstagramAccount({ db, api, clock });
+  const account = createInstagramAccount({ db, api, clock, mode: config.instagram });
   const publisher = createPublisher({
     db,
     dataDir: config.dataDir,
