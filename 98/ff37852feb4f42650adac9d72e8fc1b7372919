@@ -1,0 +1,19 @@
+unraid/selects.xml
+  s_9f8c542a508e22::t_4eada284adf4dd 1-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98ff37852feb4f42650adac9d72e8fc1b7372919",
+  "prompts": {},
+  "sessions": {
+    "s_9f8c542a508e22": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7f2a488-3a64-43e0-bdcf-e81f50f4578f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
