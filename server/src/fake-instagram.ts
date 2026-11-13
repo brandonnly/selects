@@ -158,9 +158,8 @@ export function createFakeInstagram({
           return graphError(400, 100, "Invalid grant_type");
         // Meta refreshes a long-lived token only once it is a day old.
         if (clock.now() - account.issuedAt < DAY) {
-          return graphError(400, 190, "The access token is too new to be refreshed.", {
-            error_subcode: 2207051,
-          });
+          // The shape of Meta's answer here is unverified; Selects goes by the words "too new".
+          return graphError(400, 190, "The access token is too new to be refreshed.");
         }
         const fresh = `${token.split("~")[0]}~${newId()}`;
         tokens.set(fresh, { ...account, issuedAt: clock.now(), expired: false });

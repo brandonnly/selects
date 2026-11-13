@@ -43,8 +43,10 @@ export type InstagramApi = {
  * - `transient`: Instagram or the network failed; worth trying again.
  * - `refused`: Instagram refused the request itself (the image, the account, spam, anything
  *   else it answered with a 4xx); trying the same again will not help.
+ * - `too-new`: refresh only; the token is too new to be refreshed, as Meta refreshes a token
+ *   only once it is a day old. Recognised by its message, which is unverified against Meta.
  */
-export type InstagramErrorKind = "token" | "permission" | "rate-limit" | "transient" | "refused";
+export type InstagramErrorKind = "token" | "permission" | "rate-limit" | "transient" | "refused" | "too-new";
 
 export class InstagramError extends Error {
   override name = "InstagramError";
@@ -148,12 +150,17 @@ export function createInstagramApi({ baseUrl }: { baseUrl: string }): InstagramA
     async refresh(token) {
       const body = await call(token, `${baseUrl}/refresh_access_token?grant_type=ig_refresh_token`, {
         tokenInQuery: true,
+      }).catch((error: unknown) => {
+        if (error instanceof InstagramError && /too new/i.test(error.message)) {
+          throw new InstagramError("too-new", error.message);
+        }
+        throw error;
       });
       const expiresIn = Number(body.expires_in);
-      return {
-        token: text(body.access_token, "token"),
-        expiresInSeconds: Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 60 * 24 * 60 * 60,
-      };
+      if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
+        throw new InstagramError("transient", "Instagram's answer had no expiry.");
+      }
+      return { token: text(body.access_token, "token"), expiresInSeconds: expiresIn };
     },
 
     async createContainer(token, userId, post) {

@@ -127,7 +127,7 @@ function InstagramAccount({
             {account.status === "invalid" ? (
               <span className="text-destructive">No longer accepted. Paste a new token.</span>
             ) : (
-              `Refreshed automatically. Expires ${new Date(account.expiresAt).toLocaleDateString(undefined, { dateStyle: "medium" })}.`
+              <TokenExpiry account={account} />
             )}
           </dd>
         </dl>
@@ -194,6 +194,31 @@ function InstagramAccount({
       )}
     </div>
   );
+}
+
+function TokenExpiry({ account }: { account: AccountView }) {
+  const expires =
+    account.expiresAt === null
+      ? null
+      : new Date(account.expiresAt).toLocaleDateString(undefined, { dateStyle: "medium" });
+  if (account.refresh === "failed") {
+    return (
+      <span className="flex flex-col gap-1">
+        <span className="text-destructive">
+          This token could not be refreshed. Instagram stops accepting it when it expires
+          {expires === null ? "" : ` on ${expires}`}, unless a refresh works first.
+        </span>
+        <span className="text-muted-foreground">
+          Selects tries again every day. Check that it is a long-lived token from the Instagram API with
+          Instagram Login, or paste a new one.
+        </span>
+      </span>
+    );
+  }
+  if (expires === null) {
+    return <>Too new to refresh yet: its expiry shows once Selects refreshes it, a day after it was made.</>;
+  }
+  return <>Refreshed automatically. Expires {expires}.</>;
 }
 
 function BucketStatus({ bucket }: { bucket: Publishing["bucket"] }) {

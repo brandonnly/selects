@@ -8,12 +8,19 @@ export type AccountView = {
   /** `invalid`: Instagram no longer accepts the token, and a new one must be pasted. */
   status: "connected" | "invalid";
   connectedAt: number;
-  /** When the token in use expires, in milliseconds since the epoch. */
-  expiresAt: number;
+  /**
+   * When the token in use expires, in milliseconds since the epoch. Null until a refresh has
+   * told it: the expiry of a pasted token is never guessed.
+   */
+  expiresAt: number | null;
+  /**
+   * How the last refresh went: `too-new` when the token was too new to refresh when pasted (it is
+   * refreshed once a day old), `failed` when it could not be refreshed for another reason.
+   */
+  refresh: RefreshState;
 };
 
-/** A long-lived token lasts 60 days; one pasted that cannot be refreshed yet is taken as new. */
-const LONG_LIVED_MS = 60 * DAY;
+export type RefreshState = "refreshed" | "too-new" | "failed";
 
 /** A token is refreshed once it is this old: Meta refreshes a token only from a day old. */
 const REFRESH_AFTER_MS = DAY;
@@ -25,7 +32,8 @@ type Row = {
   status: "connected" | "invalid";
   connected_at: number;
   refreshed_at: number;
-  expires_at: number;
+  expires_at: number | null;
+  refresh: RefreshState;
 };
 
 /**
@@ -46,11 +54,11 @@ export function createInstagramAccount({
 
   const save = (values: Row) => {
     db.query(
-      `INSERT INTO instagram_account (id, token, user_id, username, status, connected_at, refreshed_at, expires_at)
-       VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO instagram_account (id, token, user_id, username, status, connected_at, refreshed_at, expires_at, refresh)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET token = excluded.token, user_id = excluded.user_id,
          username = excluded.username, status = excluded.status, connected_at = excluded.connected_at,
-         refreshed_at = excluded.refreshed_at, expires_at = excluded.expires_at`,
+         refreshed_at = excluded.refreshed_at, expires_at = excluded.expires_at, refresh = excluded.refresh`,
     ).run(
       values.token,
       values.user_id,
@@ -59,6 +67,7 @@ export function createInstagramAccount({
       values.connected_at,
       values.refreshed_at,
       values.expires_at,
+      values.refresh,
     );
   };
 
@@ -67,6 +76,7 @@ export function createInstagramAccount({
     status: found.status,
     connectedAt: found.connected_at,
     expiresAt: found.expires_at,
+    refresh: found.refresh,
   });
 
   /** Only one refresh at a time, so two never trade the same token in. */
@@ -77,9 +87,10 @@ export function createInstagramAccount({
       const fresh = await api.refresh(found.token);
       // Only if the token is still the one refreshed: it may have been replaced meanwhile.
       db.query(
-        "UPDATE instagram_account SET token = ?, refreshed_at = ?, expires_at = ?, status = 'connected' WHERE id = 1 AND token = ?",
+        "UPDATE instagram_account SET token = ?, refreshed_at = ?, expires_at = ?, refresh = 'refreshed', status = 'connected' WHERE id = 1 AND token = ?",
       ).run(fresh.token, clock.now(), clock.now() + fresh.expiresInSeconds * 1000, found.token);
     } catch (error) {
+      db.query("UPDATE instagram_account SET refresh = 'failed' WHERE id = 1 AND token = ?").run(found.token);
       if (error instanceof InstagramError && error.kind === "token") {
         db.query("UPDATE instagram_account SET status = 'invalid' WHERE id = 1 AND token = ?").run(
           found.token,
@@ -120,16 +131,23 @@ export function createInstagramAccount({
           "Instagram could not be reached to check the token. Try again.",
         );
       }
-      let current = { token, refreshedAt: clock.now(), expiresAt: clock.now() + LONG_LIVED_MS };
+      // Refreshed at once when Meta allows, which tells its real expiry. Otherwise its expiry is
+      // unknown, and the daily refresh tries again once a day has passed.
+      let current: { token: string; expiresAt: number | null; refresh: RefreshState } = {
+        token,
+        expiresAt: null,
+        refresh: "failed",
+      };
       try {
         const fresh = await api.refresh(token);
         current = {
           token: fresh.token,
-          refreshedAt: clock.now(),
           expiresAt: clock.now() + fresh.expiresInSeconds * 1000,
+          refresh: "refreshed",
         };
-      } catch {
-        // Too new to refresh: it was made within the day, so it has its full 60 days.
+      } catch (error) {
+        if (error instanceof InstagramError && error.kind === "too-new") current.refresh = "too-new";
+        else console.error(`The pasted Instagram token could not be refreshed (${kindOf(error)}).`);
       }
       save({
         token: current.token,
@@ -137,8 +155,9 @@ export function createInstagramAccount({
         username: owner.username,
         status: "connected",
         connected_at: clock.now(),
-        refreshed_at: current.refreshedAt,
+        refreshed_at: clock.now(),
         expires_at: current.expiresAt,
+        refresh: current.refresh,
       });
       return toView(row() as Row);
     },

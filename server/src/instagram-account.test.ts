@@ -117,6 +117,8 @@ describe("refreshing the token", () => {
     fake.addAccount(TOKEN);
     await account.connect(TOKEN);
     const before = account.credentials()?.token;
+    // Its expiry is not guessed: it is unknown until a refresh tells it.
+    expect(account.view()).toMatchObject({ expiresAt: null, refresh: "too-new" });
 
     await account.refreshIfDue();
     expect(account.credentials()?.token).toBe(before);
@@ -126,7 +128,21 @@ describe("refreshing the token", () => {
 
     const after = account.credentials()?.token;
     expect(after).not.toBe(before);
-    expect(account.view()?.expiresAt).toBe(clock.now() + 60 * DAY);
+    expect(account.view()).toMatchObject({ expiresAt: clock.now() + 60 * DAY, refresh: "refreshed" });
+  });
+
+  test("a pasted token that cannot be refreshed for another reason is connected with a warning", async () => {
+    fake.addAccount(TOKEN);
+    fake.ageToken(TOKEN, 10 * DAY);
+    fake.fail("refresh", "invalid");
+
+    await account.connect(TOKEN);
+
+    expect(account.view()).toMatchObject({ status: "connected", expiresAt: null, refresh: "failed" });
+    // The daily refresh still runs, and clears the warning once it works.
+    clock.advance(DAY + HOUR);
+    await account.refreshIfDue();
+    expect(account.view()).toMatchObject({ expiresAt: clock.now() + 60 * DAY, refresh: "refreshed" });
   });
 
   test("an older pasted token is refreshed when it is connected, learning its real expiry", async () => {
@@ -147,7 +163,8 @@ describe("refreshing the token", () => {
     for (let hour = 0; hour < 120 * 24; hour++) {
       clock.advance(HOUR);
       await account.refreshIfDue();
-      expect(account.view()?.expiresAt ?? 0).toBeGreaterThan(clock.now());
+      const expiresAt = account.view()?.expiresAt ?? null;
+      if (hour >= 25) expect(expiresAt ?? 0).toBeGreaterThan(clock.now());
     }
     expect(account.view()?.status).toBe("connected");
   });
