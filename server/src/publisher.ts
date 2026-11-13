@@ -687,12 +687,7 @@ export function createPublisher(options: PublisherOptions) {
         capture: content.fingerprint,
       });
       if (content.check.problems.length > 0) {
-        throw new PostFailure(
-          `The caption can't be posted. ${content.check.problems.join(" ")}`,
-          false,
-          false,
-          true,
-        );
+        throw new PostFailure(`The caption can't be posted. ${content.check.problems.join(" ")}`, false);
       }
       // Nothing a privacy rule or an edit changed since this attempt built its content, and still
       // what the post was confirmed with.

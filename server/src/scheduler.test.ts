@@ -935,6 +935,21 @@ describe("a change while a slot posts", () => {
 });
 
 describe("switches", () => {
+  test("a slot that came due while paused does not post when posting resumes before the next tick", async () => {
+    const { scheduler, publisher } = await setup();
+    await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    scheduler.setPaused(true);
+    await runUntil(scheduler, publisher, "2026-11-13T11:59:50Z");
+    // Due at 12:00:00, and resumed at 12:00:10, before any tick found it.
+    clock.advance(20_000);
+    scheduler.setPaused(false);
+    await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");
+
+    expect(publisher.posts()).toEqual([]);
+    expect(scheduler.history()[0]?.state).toBe("paused");
+  });
+
   test("the pause switch stops all posting", async () => {
     const { scheduler, publisher } = await setup();
     const id = await addSelect("portrait");

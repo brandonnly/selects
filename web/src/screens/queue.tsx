@@ -32,7 +32,10 @@ export function QueueScreen() {
     let failed = true;
     try {
       const { data, error } = await api.schedule.get();
-      if (data && fresh.readIsFresh(read)) setView(data);
+      if (data && read !== undefined && fresh.readIsFresh(read)) {
+        fresh.showRead(read);
+        setView(data);
+      }
       failed = error !== null;
     } catch {}
     // A failure of a read that a change has since overtaken says nothing about now.

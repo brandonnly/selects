@@ -3,9 +3,14 @@
  * is started and ended here; a read is shown only if no change began or was on its way while it
  * ran, and a change's answer only if no later change began since.
  */
+/** A read in flight: the change it began after, and its place among reads. */
+export type Read = { write: number; order: number };
+
 export function createFreshness() {
   let started = 0;
   let pending = 0;
+  let reads = 0;
+  let shown = 0;
   return {
     /** Call before sending a change. */
     startWrite(): number {
@@ -18,12 +23,19 @@ export function createFreshness() {
       return write === started;
     },
     /** Call before sending a read. Undefined when a change is on its way: the read is never shown. */
-    startRead(): number | undefined {
-      return pending === 0 ? started : undefined;
+    startRead(): Read | undefined {
+      return pending === 0 ? { write: started, order: ++reads } : undefined;
     },
-    /** True when no change began or is on its way since the read began. */
-    readIsFresh(read: number | undefined): boolean {
-      return read !== undefined && read === started && pending === 0;
+    /**
+     * True when no change began or is on its way since the read began, and no read that began
+     * after it has been shown.
+     */
+    readIsFresh(read: Read | undefined): boolean {
+      return read !== undefined && read.write === started && pending === 0 && read.order >= shown;
+    },
+    /** Call when a fresh read is put on screen: reads that began before it are no longer shown. */
+    showRead(read: Read): void {
+      shown = Math.max(shown, read.order);
     },
   };
 }

@@ -572,7 +572,15 @@ export function createScheduler(options: SchedulerOptions) {
         finish(current, "paused", { note: "Posting was paused." });
         continue;
       }
-      await post(current);
+      let next: RunRow | undefined = current;
+      for (let tries = 0; next !== undefined; tries++) {
+        if ((await post(next)) !== "again") break;
+        if (tries >= VERIFY_TRIES) {
+          finish(next, "empty", { note: NOTHING_POSTABLE, selectId: null });
+          break;
+        }
+        next = ready(row);
+      }
     }
   }
 
@@ -626,9 +634,10 @@ export function createScheduler(options: SchedulerOptions) {
       hashtagSet = shown?.hashtagSet ?? undefined;
     }
     if (!fits) {
+      // Passed over like any select that cannot be posted: the slot is planned again for another.
       unpostable.set(selectId, problems);
-      finish(row, "empty", { note: NOTHING_POSTABLE, selectId: null });
-      return;
+      verified.delete(selectId);
+      return "again" as const;
     }
     // Claimed before the publisher is called: from here a restart finds it and never posts it twice.
     const claimed = db
@@ -835,6 +844,13 @@ export function createScheduler(options: SchedulerOptions) {
     paused,
 
     setPaused(value: boolean): boolean {
+      // A slot that came due while paused stays paused: resuming just after it never posts it.
+      if (!value && paused()) {
+        const due = db
+          .query<RunRow, [number]>("SELECT * FROM slot_runs WHERE state = 'planned' AND due_at <= ?")
+          .all(clock.now());
+        for (const row of due) finish(row, "paused", { note: "Posting was paused." });
+      }
       writeSetting("schedulePaused", value);
       replan();
       return value;
