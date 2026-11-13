@@ -1,0 +1,23 @@
+web/src/lib/freshness.ts
+  s_bf104c96fca8ce::t_9012b2649ffd45 1-31
+  s_bf104c96fca8ce::t_72f3024066f945 32-47
+web/src/lib/freshness.test.ts
+  s_bf104c96fca8ce::t_b668f245ff4eea 1-35
+  s_bf104c96fca8ce::t_9bd1b5e351dd0c 36-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c778000a68b95a47d33c6ae1530a50847ea913d3",
+  "prompts": {},
+  "sessions": {
+    "s_bf104c96fca8ce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d026298d-4322-4643-83f2-8666dd34f3f5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
