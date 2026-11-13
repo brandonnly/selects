@@ -122,6 +122,7 @@ describe("editing a select's capture data", () => {
     app = appFor();
     const body = await capture(id);
     expect(body.edits).toEqual(everyFieldEdited);
+    expect(body.edited).toEqual(edited);
     expect(body.published).toEqual(edited);
     expect(body.file).toEqual(portraitFile);
   });
@@ -302,6 +303,7 @@ describe("a select's location", () => {
 
     const body = await capture(id);
     expect(body.withheld).toBe("privacy-zone");
+    expect(body.edited).toEqual(portraitFile);
     expect(body.published).toEqual({ ...portraitFile, latitude: null, longitude: null });
     expect(await frame(id)).toEqual(await frame(id, withoutCoordinates));
     expect(await frame(id)).not.toEqual(withCoordinates);

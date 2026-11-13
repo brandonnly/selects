@@ -99,6 +99,8 @@ export type CaptureView = {
   /** As read from the file at ingest. */
   file: CaptureData;
   edits: CaptureEdits;
+  /** With the edits applied, as its owner sees it. */
+  edited: CaptureData;
   locationHidden: boolean;
   /** As the frame, caption and manifest give it. */
   published: CaptureData;
@@ -132,6 +134,7 @@ export function createCaptures({ db, library, zones }: { db: Database; library: 
     return {
       file,
       edits,
+      edited,
       locationHidden: rules.locationHidden,
       published: publishCapture(file, edits, rules),
       withheld: locationWithheld(edited, rules),
