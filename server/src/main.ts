@@ -13,6 +13,8 @@ import { MAX_UPLOAD_BYTES } from "./upload";
 const INBOX_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 /** How often due retries run. */
 const RETRY_INTERVAL_MS = 30 * 1000;
+/** How often the schedule is checked: a slot posts within this long of its time. */
+const SCHEDULE_INTERVAL_MS = 30 * 1000;
 /** How often the Instagram token is checked for a refresh. */
 const TOKEN_CHECK_INTERVAL_MS = HOUR;
 
@@ -47,6 +49,8 @@ const app = createApp({
 });
 // Posts a stop left mid-attempt are taken up again, before any request can start a new one.
 app.publisher.recover();
+// Slots a stop left part way are settled before the schedule runs: never posted twice.
+app.scheduler.recover();
 
 const server = Bun.serve({
   port: config.port,
@@ -94,6 +98,10 @@ const runDue = () =>
   app.publisher.runDue().catch((error) => console.error(`Publishing retries failed (${errorKind(error)}).`));
 void runDue();
 const retryTimer = setInterval(runDue, RETRY_INTERVAL_MS);
+const tick = () =>
+  app.scheduler.tick().catch((error) => console.error(`The schedule could not run (${errorKind(error)}).`));
+void tick();
+const scheduleTimer = setInterval(tick, SCHEDULE_INTERVAL_MS);
 const refreshToken = () => app.instagramAccount.refreshIfDue().catch(() => {});
 void refreshToken();
 const tokenTimer = setInterval(refreshToken, TOKEN_CHECK_INTERVAL_MS);
@@ -101,6 +109,7 @@ const tokenTimer = setInterval(refreshToken, TOKEN_CHECK_INTERVAL_MS);
 const shutdown = () => {
   clearInterval(inboxTimer);
   clearInterval(retryTimer);
+  clearInterval(scheduleTimer);
   clearInterval(tokenTimer);
   // Let requests in flight finish, the fakes they may be using still up, before the database closes.
   server

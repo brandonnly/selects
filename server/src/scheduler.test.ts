@@ -6,7 +6,7 @@ import { basename, join } from "node:path";
 import { createBucket } from "./bucket";
 import { createCaptionStore } from "./caption-store";
 import { createCaptures } from "./capture";
-import { createFakeClock, DAY, type FakeClock, HOUR, MINUTE } from "./clock";
+import { createFakeClock, type FakeClock, HOUR, MINUTE } from "./clock";
 import { BucketSettings } from "./config";
 import { openDatabase } from "./db";
 import { createFakeBucket, FAKE_BUCKET_KEYS, type FakeBucket } from "./fake-bucket";
@@ -18,7 +18,7 @@ import { createInstagramAccount } from "./instagram-account";
 import { createLibrary, type Library } from "./library";
 import { migrations } from "./migrations";
 import { createPublisher, type Publisher, RETRY_DELAYS } from "./publisher";
-import { createScheduler, type Scheduler } from "./scheduler";
+import { createScheduler, type ScheduleEvent, type Scheduler } from "./scheduler";
 import { createSettings } from "./settings";
 import type { Slot } from "./slots";
 import { createZones } from "./zones";
@@ -61,6 +61,7 @@ type Setup = {
   /** Stands in for the publisher the scheduler calls, around the real one. */
   wrapPublisher?: (publisher: Publisher) => Publisher;
   random?: () => number;
+  notify?: (event: ScheduleEvent) => void;
 };
 
 /** A publisher and a scheduler against the fakes, as the app builds them. */
@@ -104,6 +105,7 @@ async function setup(options: Setup = {}) {
       publisher: options.wrapPublisher?.(publisher) ?? publisher,
       clock,
       random,
+      notify: options.notify,
     });
   return { scheduler: make(), restart: make, publisher, settings, captures, zones, account };
 }
@@ -665,6 +667,20 @@ describe("daylight saving", () => {
       "2027-11-06 dry-run 2027-11-06T05:30:00.000Z",
       "2027-11-07 dry-run 2027-11-07T05:30:00.000Z",
       "2027-11-08 dry-run 2027-11-08T06:30:00.000Z",
+    ]);
+  });
+});
+
+describe("notifications", () => {
+  test("each slot that came round is told to the notify seam", async () => {
+    const events: ScheduleEvent[] = [];
+    const { scheduler, publisher } = await setup({ notify: (event) => events.push(event) });
+    const id = await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    await runUntil(scheduler, publisher, "2026-11-14T13:00:00Z");
+    expect(events.map((event) => [event.kind, event.run.date, event.run.selectId])).toEqual([
+      ["posted", "2026-11-13", id],
+      ["empty", "2026-11-14", null],
     ]);
   });
 });

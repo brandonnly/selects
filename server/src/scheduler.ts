@@ -138,7 +138,11 @@ export function createScheduler(options: SchedulerOptions) {
       )
       .run(key, JSON.stringify(value));
 
-  const stored = (): StoredSchedule => ({ ...DEFAULT_SCHEDULE, ...readSetting<StoredSchedule>("schedule") });
+  const stored = (): StoredSchedule => ({
+    ...DEFAULT_SCHEDULE,
+    slots: [],
+    ...readSetting<StoredSchedule>("schedule"),
+  });
   const rules = (): PickRules => {
     const saved = readSetting<Partial<PickRules>>("pickRules");
     return {
