@@ -10,6 +10,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import sharp from "sharp";
+import { publishCapture } from "./capture";
 import { type FixtureName, generateFixtures } from "./fixtures";
 import { createFrameRenderer, DEFAULT_FRAME_SETTINGS, type FrameSettings } from "./frame";
 import { inspectPhoto } from "./photo";
@@ -47,7 +48,7 @@ export async function renderReferences(): Promise<Map<Reference, Buffer>> {
       const capture = await inspectPhoto(path);
       if (capture === undefined) throw new Error(`The ${reference.fixture} fixture is not a photo`);
       const jpeg = await renderer.render(
-        { path, capture },
+        { path, capture: publishCapture(capture, {}, { locationHidden: false, zones: [] }) },
         { ...DEFAULT_FRAME_SETTINGS, color: reference.color },
         { width: REFERENCE_WIDTH },
       );

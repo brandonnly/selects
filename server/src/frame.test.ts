@@ -3,9 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
+import { publishCapture } from "./capture";
 import { type FixtureName, generateFixtures } from "./fixtures";
 import { createFrameRenderer, DEFAULT_FRAME_SETTINGS, type FrameSettings } from "./frame";
-import { inspectPhoto } from "./photo";
+import { type CaptureData, inspectPhoto } from "./photo";
 
 let dir: string;
 let paths: Record<FixtureName, string>;
@@ -21,8 +22,11 @@ async function source(name: FixtureName) {
   const path = paths[name];
   const photo = await inspectPhoto(path);
   if (photo === undefined) throw new Error(`${name} is not a photo`);
-  return { path, capture: photo };
+  return { path, capture: publish(photo) };
 }
+
+/** Capture data as published with no edits, zones or hidden location. */
+const publish = (capture: CaptureData) => publishCapture(capture, {}, { locationHidden: false, zones: [] });
 
 const settings = (change: Partial<FrameSettings> = {}): FrameSettings => ({
   ...DEFAULT_FRAME_SETTINGS,
@@ -114,7 +118,7 @@ describe("the rendered frame", () => {
     const photo = await inspectPhoto(path);
     if (photo === undefined) throw new Error("noise is not a photo");
 
-    const jpeg = await renderer().render({ path, capture: photo }, settings({ border: 0 }));
+    const jpeg = await renderer().render({ path, capture: publish(photo) }, settings({ border: 0 }));
 
     expect(jpeg.byteLength).toBeLessThan(8 * 1024 * 1024);
   });
@@ -345,7 +349,7 @@ describe("photos and text at the edges", () => {
     const photo = await inspectPhoto(path);
     if (photo === undefined) throw new Error("the sliver is not a photo");
 
-    const jpeg = await renderer().render({ path, capture: photo }, settings());
+    const jpeg = await renderer().render({ path, capture: publish(photo) }, settings());
 
     expect((await sharp(jpeg).metadata()).height).toBe(1800);
   });
@@ -355,7 +359,7 @@ describe("photos and text at the edges", () => {
     const fields = { ...DEFAULT_FRAME_SETTINGS.fields };
     for (const field of Object.keys(fields) as (keyof typeof fields)[]) fields[field] = field === "camera";
     const render = (camera: string) =>
-      renderer().render({ path, capture: { ...capture, camera } }, settings({ fields }));
+      renderer().render({ path, capture: publish({ ...capture, camera }) }, settings({ fields }));
 
     // IBM Plex Mono has no CJK glyphs.
     expect((await render("FX \u65e5\u672c 1")).equals(await render("FX 1"))).toBe(true);

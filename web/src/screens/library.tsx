@@ -1,7 +1,8 @@
-import type { Rejection, Select } from "@selects/server";
-import { FolderInput, Upload } from "lucide-react";
+import type { PrivacyZone, Rejection, Select } from "@selects/server";
+import { FolderInput, LayoutGrid, Map as MapIcon, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api";
+import { LibraryMap } from "@/components/library-map";
 import { SelectDetails } from "@/components/select-details";
 import { Button } from "@/components/ui/button";
 import { ACCEPTED_FILES, eachLimited, type UploadResponse, uploadFile } from "@/lib/upload";
@@ -31,6 +32,8 @@ export function LibraryScreen() {
     state: "idle",
   });
   const [open, setOpen] = useState<Select | undefined>();
+  const [view, setView] = useState<"grid" | "map">("grid");
+  const [zones, setZones] = useState<PrivacyZone[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploading = useRef<Promise<void>>(Promise.resolve());
   const refreshTurn = useRef(0);
@@ -39,11 +42,16 @@ export function LibraryScreen() {
     // Only the newest answer is shown: an older one arriving late would drop what was added since.
     const turn = ++refreshTurn.current;
     try {
-      const [library, rejected] = await Promise.all([api.selects.get(), api.rejections.get()]);
+      const [library, rejected, privacyZones] = await Promise.all([
+        api.selects.get(),
+        api.rejections.get(),
+        api.zones.get(),
+      ]);
       if (turn !== refreshTurn.current) return;
       if (library.data) setSelects(library.data);
       if (rejected.data) setRejections(rejected.data);
-      setLoadError(library.error !== null || rejected.error !== null);
+      if (privacyZones.data) setZones(privacyZones.data);
+      setLoadError(library.error !== null || rejected.error !== null || privacyZones.error !== null);
     } catch {
       if (turn === refreshTurn.current) setLoadError(true);
     }
@@ -180,18 +188,26 @@ export function LibraryScreen() {
       )}
 
       <section aria-labelledby="selects" className="flex flex-col gap-2">
-        <h2 id="selects" className="text-sm font-medium text-muted-foreground">
-          {selects === undefined
-            ? "Selects"
-            : `${selects.length} ${selects.length === 1 ? "select" : "selects"}`}
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="selects" className="text-sm font-medium text-muted-foreground">
+            {selects === undefined
+              ? "Selects"
+              : `${selects.length} ${selects.length === 1 ? "select" : "selects"}`}
+          </h2>
+          <ViewSwitch value={view} onChange={setView} />
+        </div>
         {loadError && <p className="text-sm text-destructive">Can't reach the server.</p>}
         {selects?.length === 0 && (
           <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
             No selects yet. Upload photos, or drop them in the <code>inbox</code> folder of the data folder.
           </p>
         )}
-        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+        {view === "map" && selects !== undefined && selects.length > 0 && (
+          <LibraryMap selects={selects} zones={zones} onOpen={setOpen} />
+        )}
+        <ul
+          className={cn("grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4", view === "map" && "hidden")}
+        >
           {selects?.map((select) => (
             <li key={select.id}>
               <button
@@ -223,8 +239,43 @@ export function LibraryScreen() {
           setOpen(undefined);
           void refresh();
         }}
+        onChanged={() => void refresh()}
       />
     </Screen>
+  );
+}
+
+/** Grid or map, as a pair of toggle buttons. */
+function ViewSwitch({
+  value,
+  onChange,
+}: {
+  value: "grid" | "map";
+  onChange: (view: "grid" | "map") => void;
+}) {
+  const options = [
+    { view: "grid", label: "Grid", icon: LayoutGrid },
+    { view: "map", label: "Map", icon: MapIcon },
+  ] as const;
+  return (
+    <fieldset className="flex rounded-md border bg-card p-0.5">
+      <legend className="sr-only">Show selects as</legend>
+      {options.map(({ view, label, icon: Icon }) => (
+        <button
+          key={view}
+          type="button"
+          aria-pressed={value === view}
+          onClick={() => onChange(view)}
+          className={cn(
+            "flex h-8 items-center gap-1.5 rounded-sm px-2.5 text-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring",
+            value === view && "bg-secondary text-secondary-foreground",
+          )}
+        >
+          <Icon aria-hidden className="size-4" />
+          {label}
+        </button>
+      ))}
+    </fieldset>
   );
 }
 
