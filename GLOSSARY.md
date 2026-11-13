@@ -11,6 +11,7 @@
 | **Pick** | Choosing the select for a slot: the head of the queue, or one from the pool under the pick rules. |
 | **Pick rule** | A switchable constraint on picks from the pool, such as spacing by capture day. |
 | **Next up** | The pick for the coming slot, made a day ahead so it can be swapped or skipped. |
+| **Grace period** | How late a slot missed while Selects was down may still post. Past it the slot is skipped; missed slots never stack. |
 | **Frame** | The rendered 4:5 image: the photo, a border, and a line of metadata. |
 | **Post** | One publication to Instagram. A post holds one select today and may hold several later. |
 | **Template** | The text a caption or alt text is built from, with tokens where a select's data goes. |
