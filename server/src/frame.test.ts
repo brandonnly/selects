@@ -223,6 +223,31 @@ describe("color", () => {
   });
 });
 
+describe("a 16-bit wide-gamut original", () => {
+  test("keeps its colors after conversion to sRGB", async () => {
+    const eightBit = await source("landscape");
+    const path = join(dir, "sixteen-bit-p3.png");
+    await sharp(eightBit.path).toColourspace("rgb16").withIccProfile("p3").png().toFile(path);
+    expect((await sharp(path).metadata()).depth).toBe("ushort");
+
+    const srgb = await pixels(await renderer().render(eightBit, settings()));
+    const p3 = await pixels(await renderer().render({ path, capture: eightBit.capture }, settings()));
+
+    const box = inkBox(srgb, LIGHT, { top: 0, bottom: 1200 });
+    let diff = 0;
+    let count = 0;
+    for (let y = box.top + 2; y < box.bottom - 2; y++) {
+      for (let x = box.left + 2; x < box.right - 2; x++) {
+        const at = (y * srgb.width + x) * 3;
+        for (let c = 0; c < 3; c++) diff += Math.abs((srgb.data[at + c] ?? 0) - (p3.data[at + c] ?? 0));
+        count += 3;
+      }
+    }
+    // Left unconverted, the difference is about 5.
+    expect(diff / count).toBeLessThan(2);
+  });
+});
+
 describe("frame settings", () => {
   const allOff = Object.fromEntries(
     Object.keys(DEFAULT_FRAME_SETTINGS.fields).map((field) => [field, false]),

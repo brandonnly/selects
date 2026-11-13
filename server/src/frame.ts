@@ -218,8 +218,10 @@ export function createFrameRenderer({ dataDir }: { dataDir: string }) {
     const place = layout(autoOrient, border);
     const photo = await original
       .resize(place.photo.width, place.photo.height, { fit: "fill" })
-      // Converts from the original's own profile, so wide-gamut colors survive.
+      // Converts from the original's own profile, so wide-gamut colors survive. Naming the
+      // sRGB profile is what converts a 16-bit original; the finished frame carries no profile.
       .toColourspace("srgb")
+      .withIccProfile("srgb")
       .flatten({ background: colors.background })
       .png({ compressionLevel: 0 })
       .toBuffer();
