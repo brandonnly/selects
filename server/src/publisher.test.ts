@@ -430,6 +430,41 @@ describe("a failed publish", () => {
     expect(library.pool()).toEqual([id]);
   });
 
+  test("refused with a token replaced while it ran keeps the new token and retries with it", async () => {
+    let replace: (() => Promise<void>) | undefined;
+    const { publisher, account } = setup({
+      wrapApi: (api) => ({
+        ...api,
+        async createContainer(...args) {
+          const run = replace;
+          replace = undefined;
+          await run?.();
+          return api.createContainer(...args);
+        },
+      }),
+    });
+    await connect(account);
+    const id = await addSelect("portrait");
+    // The owner pastes a new token while the attempt runs, and the old one stops working.
+    replace = async () => {
+      instagram.expireToken(TOKEN);
+      instagram.addAccount("IGfake-replacement-token-0002", {
+        userId: "1784140001",
+        username: "selects_test",
+      });
+      await account.connect("IGfake-replacement-token-0002");
+    };
+
+    const first = await postNow(publisher, id);
+
+    expect(first.state).toBe("retrying");
+    expect(account.view()?.status).toBe("connected");
+    expect(library.pool()).toEqual([]);
+    await publisher.runDue();
+    expect(publisher.post(first.id)?.state).toBe("published");
+    expect(instagram.media).toHaveLength(1);
+  });
+
   test("never records the token or a presigned link", async () => {
     const { publisher, account } = setup();
     await connect(account);

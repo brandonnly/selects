@@ -143,7 +143,7 @@ type PostRow = {
   published_at: number | null;
 };
 
-type Column = Exclude<keyof PostRow, "id" | "attempts" | "created_at">;
+type Column = Exclude<keyof PostRow, "id" | "created_at">;
 
 /** A failure that says whether it is worth another attempt. */
 class PostFailure extends Error {
@@ -151,6 +151,8 @@ class PostFailure extends Error {
   constructor(
     message: string,
     readonly retry: boolean,
+    /** Try again at once, and do not count this attempt: it never had a fair chance. */
+    readonly again = false,
   ) {
     super(message);
   }
@@ -371,12 +373,22 @@ export function createPublisher(options: PublisherOptions) {
     };
     const current = () => row(id) ?? claimed;
 
+    // The token this attempt sends: a refusal means that token, not one pasted since.
+    const used: { token?: string } = {};
     try {
-      await publishPost(claimed, update, current);
+      await publishPost(claimed, update, current, used);
     } catch (error) {
-      const failure = asFailure(error);
+      const failure = asFailure(error, used.token);
       const final = !failure.retry || number > RETRY_DELAYS.length;
-      if (final) {
+      if (failure.again) {
+        update({
+          state: "retrying",
+          error: failure.message,
+          next_attempt_at: clock.now(),
+          attempts: number - 1,
+        });
+        console.error(`Post ${id} attempt ${number} is tried again at once: ${failure.message}`);
+      } else if (final) {
         update({ state: "failed", error: failure.message, next_attempt_at: null });
         console.error(
           `Post ${id} failed after ${number} attempt${number === 1 ? "" : "s"}: ${failure.message}`,
@@ -396,6 +408,7 @@ export function createPublisher(options: PublisherOptions) {
     post: PostRow,
     update: (fields: Partial<Record<Column, string | number | null>>) => void,
     current: () => PostRow,
+    used: { token?: string },
   ): Promise<void> {
     const bucketMissing = bucketProblem();
     if (bucketMissing !== undefined || "missing" in options.bucket) {
@@ -407,6 +420,7 @@ export function createPublisher(options: PublisherOptions) {
     if (credentials === undefined)
       throw new PostFailure(accountProblem() ?? "No Instagram account is connected.", false);
     const { token, userId } = credentials;
+    used.token = token;
     const selectIds = selectIdsOf(post.id);
 
     const recordPublished = async (mediaId: string | null, permalink: string | null) => {
@@ -522,12 +536,19 @@ export function createPublisher(options: PublisherOptions) {
     }
   }
 
-  function asFailure(error: unknown): PostFailure {
+  function asFailure(error: unknown, usedToken: string | undefined): PostFailure {
     if (error instanceof PostFailure) return error;
     if (error instanceof InstagramError) {
       if (error.kind === "token") {
-        const credentials = account.credentials();
-        if (credentials !== undefined) account.markInvalid(credentials.token);
+        const current = account.credentials()?.token;
+        if (usedToken !== undefined && current !== undefined && current !== usedToken) {
+          return new PostFailure(
+            "The token was replaced during the attempt; trying again with the new one.",
+            true,
+            true,
+          );
+        }
+        if (usedToken !== undefined) account.markInvalid(usedToken);
         return new PostFailure(
           "Instagram no longer accepts the token. Paste a new token in Settings.",
           false,
