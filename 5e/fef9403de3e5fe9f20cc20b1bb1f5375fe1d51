@@ -1,0 +1,23 @@
+server/src/pick.ts
+  s_3e2ab1cb86d96d::t_40be7bb1e05975 21-23
+server/src/schedule-api.test.ts
+  s_3e2ab1cb86d96d::t_2103f7c985f329 182-185
+server/src/schedule-routes.ts
+  s_3e2ab1cb86d96d::t_6628e522c98b73 4,31,36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5efef9403de3e5fe9f20cc20b1bb1f5375fe1d51",
+  "prompts": {},
+  "sessions": {
+    "s_3e2ab1cb86d96d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bd2b11a-6ff6-449b-947e-52aec407382d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
