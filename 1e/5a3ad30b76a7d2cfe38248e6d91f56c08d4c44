@@ -1,0 +1,21 @@
+web/src/components/schedule-editor.tsx
+  s_3e2ab1cb86d96d::t_e01afb2ff6a2e8 177
+web/src/screens/queue.tsx
+  s_3e2ab1cb86d96d::t_9be01639afbc75 381-382,448,458
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1e5a3ad30b76a7d2cfe38248e6d91f56c08d4c44",
+  "prompts": {},
+  "sessions": {
+    "s_3e2ab1cb86d96d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bd2b11a-6ff6-449b-947e-52aec407382d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
