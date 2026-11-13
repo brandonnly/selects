@@ -1,0 +1,25 @@
+server/src/publisher.ts
+  s_eddee4d6e42c35::t_13333759bdd62b 304,554,557,586,599,650,901,910
+  s_eddee4d6e42c35::t_bf18922398832e 143-148,305-310
+  s_eddee4d6e42c35::t_e28eedd9d9ee6e 311
+server/src/publisher.test.ts
+  s_eddee4d6e42c35::t_654af921acb3d3 76,107,1116-1141,1143-1205
+  s_eddee4d6e42c35::t_bf18922398832e 1142
+  s_eddee4d6e42c35::t_c28aa2cf98931c 1206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ec2e15444925e50411d561f6178164cfcf7c4c7e",
+  "prompts": {},
+  "sessions": {
+    "s_eddee4d6e42c35": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b0d3f500-05ba-429c-87a0-663797fd627a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
