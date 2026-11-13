@@ -239,20 +239,20 @@ export function createScheduler(options: SchedulerOptions) {
       const slot = schedule.slots.find((s) => s.id === found.slotId);
       // A slot never posts for a time before it was added or last changed.
       if (slot === undefined || found.at < slot.since) continue;
+      // Drawn here and stored with the row: a whole minute from 0 to the spread, never drawn again.
       const spread = Math.floor(random() * (slot.spreadMinutes + 1)) * MINUTE;
-      const due = found.at + spread;
-      if (due > now + LOOKAHEAD) continue;
-      insert.run(found.slotId, found.date, found.at, due);
+      insert.run(found.slotId, found.date, found.at, found.at + spread);
     }
   }
 
-  /** Chooses next up for each slot due within a day that has none, or whose pick left the pool. */
-  function chooseNextUp(now: number) {
+  /**
+   * Chooses next up for each slot to come that has none, or whose pick left the pool. Slots are
+   * planned a day ahead, so this is a day ahead too.
+   */
+  function chooseNextUp() {
     const rows = db
-      .query<RunRow, [number]>(
-        "SELECT * FROM slot_runs WHERE state = 'planned' AND due_at <= ? ORDER BY due_at, slot_id",
-      )
-      .all(now + LOOKAHEAD);
+      .query<RunRow, []>("SELECT * FROM slot_runs WHERE state = 'planned' ORDER BY due_at, slot_id")
+      .all();
     for (const row of rows) {
       if (inPool(row.select_id)) continue;
       const found = choose(row, JSON.parse(row.passed) as string[]);
@@ -379,7 +379,7 @@ export function createScheduler(options: SchedulerOptions) {
     const now = clock.now();
     plan(now);
     await fire(now);
-    chooseNextUp(clock.now());
+    chooseNextUp();
     prune(now);
   }
 
@@ -390,7 +390,7 @@ export function createScheduler(options: SchedulerOptions) {
         "UPDATE slot_runs SET select_id = NULL, picked = NULL WHERE state = 'planned' AND picked = ?",
       ).run(from);
     }
-    chooseNextUp(clock.now());
+    chooseNextUp();
   }
 
   const planned = (slotId: string, date: string) => {
@@ -467,7 +467,7 @@ export function createScheduler(options: SchedulerOptions) {
         }
       })();
       plan(now);
-      chooseNextUp(now);
+      chooseNextUp();
       return { ok: true };
     },
 
@@ -502,23 +502,25 @@ export function createScheduler(options: SchedulerOptions) {
       return queued();
     },
 
-    /** Slots still to come within a day, soonest first, with next up. */
+    /** Slots still to come within a day, soonest first, with next up. A skipped one shows until its time. */
     upcoming(): Run[] {
       return db
-        .query<RunRow, []>(
-          "SELECT * FROM slot_runs WHERE state IN ('planned', 'skipped', 'posting') ORDER BY due_at, slot_id",
+        .query<RunRow, [number]>(
+          `SELECT * FROM slot_runs WHERE state IN ('planned', 'posting') OR (state = 'skipped' AND due_at > ?)
+           ORDER BY due_at, slot_id`,
         )
-        .all()
+        .all(clock.now())
         .map(toRun);
     },
 
-    /** Slots that came round, latest first. */
+    /** Slots that came round, latest first: skipped ones once their time has passed. */
     history(limit = 20): Run[] {
       return db
-        .query<RunRow, [number]>(
-          "SELECT * FROM slot_runs WHERE state NOT IN ('planned', 'skipped', 'posting') ORDER BY due_at DESC, slot_id LIMIT ?",
+        .query<RunRow, [number, number]>(
+          `SELECT * FROM slot_runs WHERE state NOT IN ('planned', 'posting', 'skipped') OR (state = 'skipped' AND due_at <= ?)
+           ORDER BY due_at DESC, slot_id LIMIT ?`,
         )
-        .all(limit)
+        .all(clock.now(), limit)
         .map(toRun);
     },
 
@@ -550,17 +552,18 @@ export function createScheduler(options: SchedulerOptions) {
     swap(slotId: string, date: string): Run | "not-found" | "none" {
       const row = planned(slotId, date);
       if (row === undefined) return "not-found";
-      const passed = [
-        ...(JSON.parse(row.passed) as string[]),
-        ...(row.select_id === null ? [] : [row.select_id]),
-      ];
-      // Once every other select has been passed over, round again from the start.
-      const found =
-        choose(row, passed) ?? (row.select_id === null ? undefined : choose(row, [row.select_id]));
+      const current = row.select_id === null ? [] : [row.select_id];
+      let passed = [...(JSON.parse(row.passed) as string[]), ...current];
+      let found = choose(row, passed);
+      if (found === undefined) {
+        // Every other select has been passed over: round again from the start.
+        passed = [];
+        found = choose(row, current);
+      }
       if (found === undefined) return "none";
       db.query(
         "UPDATE slot_runs SET select_id = ?, picked = 'swap', passed = ? WHERE slot_id = ? AND date = ?",
-      ).run(found.selectId, JSON.stringify(choose(row, passed) === undefined ? [] : passed), slotId, date);
+      ).run(found.selectId, JSON.stringify(passed), slotId, date);
       return toRun(runRow(slotId, date) as RunRow);
     },
 
@@ -579,7 +582,7 @@ export function createScheduler(options: SchedulerOptions) {
       const row = runRow(slotId, date);
       if (row?.state !== "skipped" || row.due_at <= clock.now()) return "not-found";
       db.query("UPDATE slot_runs SET state = 'planned' WHERE slot_id = ? AND date = ?").run(slotId, date);
-      chooseNextUp(clock.now());
+      chooseNextUp();
       return toRun(runRow(slotId, date) as RunRow);
     },
   };

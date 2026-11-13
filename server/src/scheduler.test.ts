@@ -321,6 +321,8 @@ describe("next up", () => {
     await runUntil(scheduler, publisher, "2026-11-13T13:00:00Z");
     expect(publisher.posts()).toEqual([]);
     expect(scheduler.queue()).toEqual([id]);
+    expect(scheduler.history()[0]).toMatchObject({ date: "2026-11-13", state: "skipped" });
+    expect(scheduler.upcoming().map((run) => run.date)).toEqual(["2026-11-14"]);
     // The next day's slot posts it.
     await runUntil(scheduler, publisher, "2026-11-14T12:30:00Z");
     expect(postedSelects(publisher)).toEqual([id]);
