@@ -1,0 +1,25 @@
+docs/adr/0006-publishing-safety.md
+  s_c4e8006bf0d88c::t_b3a2f3cc0c0f6f 53,56
+server/src/instagram.ts
+  s_c4e8006bf0d88c::t_8e401a75217052 70
+server/src/publisher.test.ts
+  s_c4e8006bf0d88c::t_672081280cd810 569-607
+server/src/publisher.ts
+  s_c4e8006bf0d88c::t_19bd2ae87099b9 332-333,335-355,357-366,400,620
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a5f225611c04cb296062f3840b8110ebc95a9ac0",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
