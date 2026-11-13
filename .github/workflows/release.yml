@@ -9,8 +9,9 @@ on:
 permissions:
   contents: read
 
+# One release at a time, so two tags never race to move `latest`.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -67,10 +68,9 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}
-          # `latest` only for a release, never for a pre-release such as v1.0.0-rc.1.
+          # Only the version here: `latest` moves in the last job, once the pushed image is tested.
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
           labels: |
             org.opencontainers.image.title=Selects
             org.opencontainers.image.licenses=MIT
@@ -87,3 +87,61 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           provenance: mode=max
           sbom: true
+
+  # The image that was pushed, pulled and run on each platform: the build above is not the one
+  # the first job tested.
+  verify:
+    name: Test the published image on ${{ matrix.platform }}
+    needs: publish
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pull and smoke-test the published image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          image="$IMAGE:${TAG#v}"
+          docker pull "$image"
+          .github/scripts/smoke-test-image.sh "$image"
+
+  # `latest` only for a release, never for a pre-release such as v1.0.0-rc.1, and only once the
+  # published image has passed on both platforms.
+  latest:
+    name: Move latest to this version
+    needs: verify
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE:${TAG#v}"

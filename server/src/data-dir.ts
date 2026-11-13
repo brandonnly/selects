@@ -10,8 +10,11 @@ export function prepareDataDir(dataDir: string): string | undefined {
     mkdirSync(dataDir, { recursive: true });
     accessSync(dataDir, constants.R_OK | constants.W_OK | constants.X_OK);
     return undefined;
-  } catch {
+  } catch (error) {
     const user = `user ${process.getuid?.()} (group ${process.getgid?.()})`;
-    return `DATA_DIR cannot be created or written by ${user}. Make the folder writable by that user, or run Selects as the folder's owner.`;
+    // The error's code says which it is (EACCES, EROFS, ENOTDIR…); its message would carry the path.
+    const code =
+      typeof error === "object" && error !== null && "code" in error ? ` (${String(error.code)})` : "";
+    return `DATA_DIR cannot be created or written by ${user}${code}. Make the folder writable by that user, or run Selects as the folder's owner.`;
   }
 }

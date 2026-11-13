@@ -8,14 +8,17 @@
 set -euo pipefail
 
 image=${1:?usage: smoke-test-image.sh <image>}
-open=selects-smoke-open
-locked=selects-smoke-locked
+# Names of this run's own, so two runs on one machine never meet and cleanup removes only these.
+run=selects-smoke-$$-$RANDOM
+open=$run-open
+locked=$run-locked
+other=$run-other-user
 work=$(mktemp -d)
 
 cleanup() {
-  docker rm --force "$open" "$locked" >/dev/null 2>&1 || true
+  docker rm --force "$open" "$locked" "$other" >/dev/null 2>&1 || true
   docker volume rm --force "$open" "$locked" >/dev/null 2>&1 || true
-  rm -rf "$work"
+  rm -rf "$work" 2>/dev/null || sudo rm -rf "$work" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -47,6 +50,7 @@ wait_healthy() {
       check "$name passes its health check"
       return 0
     fi
+    if [ "$status" = unhealthy ]; then break; fi
     if [ "$(docker inspect --format '{{.State.Running}}' "$name")" != true ]; then break; fi
     sleep 2
   done
@@ -78,7 +82,7 @@ docker logs "$open" 2>&1 | grep -q 'Fake mode' || fail "the server did not start
 docker exec "$open" test -f /data/selects.db || fail "the database is not in the /data volume" "$open"
 check "the server runs as a non-root user in fake mode, with its database in /data"
 
-health=$(curl --silent --fail "$base/api/health")
+health=$(curl --silent --fail "$base/api/health") || fail "/api/health did not answer" "$open"
 echo "$health" | jq --exit-status '.database.status == "ok"' >/dev/null || fail "health: $health" "$open"
 check "/api/health reports the database"
 
@@ -110,12 +114,23 @@ start "$locked" 3001 --env SELECTS_PASSWORD=smoke-test-password
 wait_healthy "$locked"
 base=http://127.0.0.1:3001
 
-health=$(curl --silent --fail "$base/api/health")
+health=$(curl --silent --fail "$base/api/health") || fail "/api/health did not answer" "$locked"
 [ "$(echo "$health" | jq --compact-output .)" = '{"status":"ok"}' ] || fail "health without a session: $health" "$locked"
 content_type "$base/api/selects" 401 >/dev/null
 content_type "$base/" 401 >/dev/null
 [[ $(content_type "$base/site.webmanifest" 200) == application/manifest+json* ]] || fail "wrong manifest type"
 content_type "$base/icon-512.png" 200 >/dev/null
 check "with a password, only the health check, the manifest and the icons answer without a session"
+
+# As the Unraid template runs it: another user and group, with no entry in the image's passwd
+# file, on a folder of the host's that it owns.
+mkdir "$work/data"
+sudo chown 99:100 "$work/data"
+docker run --detach --name "$other" --user 99:100 --volume "$work/data:/data" \
+  --publish 127.0.0.1:3002:3000 --health-interval 2s "$image" >/dev/null
+wait_healthy "$other"
+[ "$(docker exec "$other" id -u)" = 99 ] || fail "the server does not run as the user given" "$other"
+docker exec "$other" test -f /data/selects.db || fail "the database is not in the mounted folder" "$other"
+check "it runs as another user on a folder of the host's"
 
 echo "The image passed its smoke test."

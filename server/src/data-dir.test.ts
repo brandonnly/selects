@@ -21,14 +21,16 @@ describe("prepareDataDir", () => {
     expect(existsSync(dataDir)).toBe(true);
   });
 
-  test("names DATA_DIR and the user when the directory cannot be written", () => {
-    // Root can write anywhere, so there is nothing to refuse.
-    if (process.getuid?.() === 0) return;
-    chmodSync(parent, 0o555);
+  // Root can write anywhere, so there is nothing to refuse.
+  test.skipIf(process.getuid?.() === 0)(
+    "names DATA_DIR and the user when the directory cannot be written",
+    () => {
+      chmodSync(parent, 0o555);
 
-    const problem = prepareDataDir(join(parent, "data"));
+      const problem = prepareDataDir(join(parent, "data"));
 
-    expect(problem).toContain("DATA_DIR");
-    expect(problem).toContain(`user ${process.getuid?.()}`);
-  });
+      expect(problem).toContain("DATA_DIR");
+      expect(problem).toContain(`user ${process.getuid?.()}`);
+    },
+  );
 });

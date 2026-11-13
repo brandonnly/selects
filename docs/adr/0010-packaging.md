@@ -39,13 +39,15 @@ behind the optional password, and how the arm64 image is built and checked.
 - **A `v*` tag releases.** The tag must match `package.json`'s version. The smoke test runs
   natively on GitHub's amd64 and arm64 runners (free for public repositories), then one job
   builds both platforms with buildx and pushes them to the repository's GitHub Container
-  Registry as the version and `latest` (`latest` skipped for a pre-release), with provenance
-  and an SBOM, using only `GITHUB_TOKEN` with `packages: write`.
+  Registry as the version, with provenance and an SBOM, using only `GITHUB_TOKEN`. The pushed
+  image is then pulled and smoke-tested on both platforms, and only after that does `latest`
+  move to it (never for a pre-release). Releases run one at a time.
 
 ## Consequences
 
-- The published arm64 image is built on amd64 from the same Dockerfile as the one tested on the
-  arm64 runner, not the same bytes. They differ only in where `bun install` ran.
+- The published arm64 image is built on amd64, not on the arm64 runner; it is the pushed image
+  itself that is tested on arm64 before `latest` moves. A version tag whose image fails that
+  test stays published under its version.
 - Elysia's peer dependencies put TypeScript in the image's `node_modules`, unused at run time.
 - A host folder mounted at `/data` must be writable by the container's user; a named volume
   needs nothing.

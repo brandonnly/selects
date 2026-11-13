@@ -53,7 +53,9 @@ chosen typeface on every frame until it is removed.
 ## Running Selects
 
 Selects is published as one container image for amd64 and arm64:
-`ghcr.io/brandonnly/selects`, tagged with each version and `latest`. It keeps everything in one
+`ghcr.io/brandonnly/selects`, tagged with each version and `latest`. The image appears with the
+first release; before that, build it from a checkout with `docker build --tag selects .` and
+use `selects` in place of the image name below. It keeps everything in one
 volume at `/data` and listens on port 3000.
 
 ### Keep it off the internet
@@ -78,7 +80,9 @@ docker run --detach --name selects --restart unless-stopped \
 ```
 
 Then open port 3000 of the server from a device on the same network. Or with Compose, keeping
-the variables in an env file made from [.env.example](.env.example):
+`SELECTS_PASSWORD`, `INSTAGRAM_API` and the `BUCKET_*` variables in an env file. Take those
+lines from [.env.example](.env.example) and leave `DATA_DIR`, `PORT` and `WEB_PORT` out: the
+image sets the first two, and a `DATA_DIR` from the example would move the data off the volume.
 
 ```yaml
 services:
@@ -275,8 +279,8 @@ bun run build
 A tag `v<version>` publishes the image. Set `version` in the root `package.json` to the same
 version first: the release refuses a tag that does not match it, since `/api/health` reports
 that version. The release smoke-tests the image natively on amd64 and arm64, then pushes both
-to `ghcr.io/brandonnly/selects` as `<version>` and `latest` (a pre-release such as
-`v1.0.0-rc.1` is not tagged `latest`). The first push creates the package private: make it
+to `ghcr.io/brandonnly/selects` as `<version>`, tests the pushed image on both platforms, and then
+moves `latest` to it (a pre-release such as `v1.0.0-rc.1` is not tagged `latest`). The first push creates the package private: make it
 public once in the package's settings on GitHub.
 
 ## License
