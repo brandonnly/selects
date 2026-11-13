@@ -1,0 +1,23 @@
+server/src/config.ts
+  s_cb42a77709c134::t_c9d334de2e8a9e 6-41,51-52,70-78,99-107,112-137
+server/src/config.test.ts
+  s_cb42a77709c134::t_d4dcb5ed77a74f 64-155
+.env.example
+  s_cb42a77709c134::t_656f6ee4ca2ca3 15-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "18b2c01f13fa719a8c6db7fa6c3e61f11485ebb9",
+  "prompts": {},
+  "sessions": {
+    "s_cb42a77709c134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "804e2b5d-51e6-47f2-b3fe-f2310126e4eb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
