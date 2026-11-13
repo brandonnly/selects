@@ -1,0 +1,19 @@
+web/src/components/publishing-settings.tsx
+  s_9b83d13739745a::t_45b51e8a602fb6 258-259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a4131a33a8ebfcdf90bd00a3ab552d8f2a1db4a",
+  "prompts": {},
+  "sessions": {
+    "s_9b83d13739745a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4cdfe570-6dba-494f-89b1-2f0cea7e0536",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
