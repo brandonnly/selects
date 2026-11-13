@@ -83,9 +83,7 @@ export function zonedInstant(date: string, time: string, timeZone: string): numb
   // The offsets either side of the date: a zone changes at most once in two days.
   const before = offsetAt(wall - DAY, timeZone);
   const after = offsetAt(wall + DAY, timeZone);
-  const candidates = [wall - before, wall - after].filter(
-    (instant) => wallClock(instant, timeZone) === wall,
-  );
+  const candidates = [wall - before, wall - after].filter((instant) => wallClock(instant, timeZone) === wall);
   // Two that match: the time happens twice, and the first is taken. None: it never happens.
   if (candidates.length > 0) return Math.min(...candidates);
   return wall - before;
@@ -98,7 +96,12 @@ function weekday(date: string): Weekday {
 }
 
 /** Every time a slot comes round with `from <= at < to`, in time order. */
-export function occurrences(slots: readonly Slot[], timeZone: string, from: number, to: number): Occurrence[] {
+export function occurrences(
+  slots: readonly Slot[],
+  timeZone: string,
+  from: number,
+  to: number,
+): Occurrence[] {
   if (slots.length === 0 || to <= from) return [];
   const found: Occurrence[] = [];
   // A day either side, since a slot's local date may differ from UTC's.
