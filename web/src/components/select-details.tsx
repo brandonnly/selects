@@ -37,8 +37,13 @@ export function SelectDetails({
     if (select === undefined) return;
     const { id } = select;
     setDeleting(true);
-    const { error: failed } = await api.selects({ id }).delete();
-    setDeleting(false);
+    // A request that throws counts as failed, so the dialog never stays on "Deleting".
+    const failed = await api
+      .selects({ id })
+      .delete()
+      .then(({ error }) => error)
+      .catch(() => ({ status: 0 }))
+      .finally(() => setDeleting(false));
     if (shown.current !== id) return;
     // A 404 means it was deleted elsewhere in the meantime, which is the same outcome.
     if (!failed || failed.status === 404) onDeleted();
