@@ -239,9 +239,14 @@ export const migrations: readonly Migration[] = [
     refresh TEXT NOT NULL DEFAULT 'refreshed' CHECK (refresh IN ('refreshed', 'too-new', 'failed'))
   );
   `,
-  // 8: gallery output. One row per post written to the gallery, holding its public objects and
-  // the capture data as it was published. Self-contained, so it can take any position.
+  // 8: gallery output. One row per post written to the gallery, holding its public objects; and
+  // with each post, its caption and alt text as they read with its location withheld.
+  // Self-contained, so it can take any position.
   `
+  -- Built with the caption when the post is sent: the caption and alt text with the coordinates
+  -- left out, with the same templates and hashtag set. Empty for text written by hand.
+  ALTER TABLE posts ADD COLUMN withheld_caption TEXT;
+  ALTER TABLE posts ADD COLUMN withheld_alt_text TEXT;
   CREATE TABLE gallery_posts (
     post_id TEXT PRIMARY KEY REFERENCES posts (id),
     -- The mode of the post, and so the bucket its objects are in.
@@ -249,8 +254,6 @@ export const migrations: readonly Migration[] = [
     -- 'writing': its clean image is not yet stored. 'written': listed in the manifest.
     -- 'removing': taken out of the manifest, then its objects are deleted. 'removed': done.
     state TEXT NOT NULL CHECK (state IN ('writing', 'written', 'removing', 'removed')),
-    -- The capture data as \`published(id)\` gave it when the post was published, as JSON.
-    capture TEXT NOT NULL,
     image_key TEXT,
     image_url TEXT,
     image_width INTEGER,

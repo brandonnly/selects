@@ -169,7 +169,11 @@ type PostRow = {
   state: PostState;
   caption: string;
   alt_text: string;
+  /** The caption and alt text as they read with the location withheld. Null before version 8. */
+  withheld_caption: string | null;
+  withheld_alt_text: string | null;
   hashtag_set: string | null;
+  /** The published capture data the post was built from, as JSON: one per select. */
   capture: string;
   attempts: number;
   next_attempt_at: number | null;
@@ -211,6 +215,9 @@ type Content = {
   fingerprint: string;
   caption: string;
   altText: string;
+  /** The caption and alt text as they read with the location withheld; empty when written by hand. */
+  withheldCaption: string;
+  withheldAltText: string;
   hashtagSet: string | null;
   check: LimitCheck;
 };
@@ -305,19 +312,33 @@ export function createPublisher(options: PublisherOptions) {
     const [first] = sources;
     const [firstId] = selectIds;
     if (first === undefined || firstId === undefined) return undefined;
-    const caption = buildCaption({
-      capture: first.capture,
+    const override = captionStore.override(firstId);
+    // One pick of the hashtag set for both, so the withheld text has the same one.
+    let pick: number | undefined;
+    const input = {
       templates: captionStore.templates(),
       coordinateFormat: settings.frame().coordinateFormat,
-      override: captionStore.override(firstId),
+      override,
       hashtagSet: hashtagSet ?? undefined,
-      random,
+      random: () => {
+        pick ??= random();
+        return pick;
+      },
+    };
+    const caption = buildCaption({ capture: first.capture, ...input });
+    // Text written by hand cannot be scrubbed of coordinates safely: it is withheld whole.
+    const withheld = buildCaption({
+      capture: { ...first.capture, latitude: null, longitude: null },
+      ...input,
+      override: undefined,
     });
     return {
       sources,
       fingerprint: JSON.stringify(sources.map((source) => source.capture)),
       caption: caption.caption,
       altText: caption.altText,
+      withheldCaption: (override?.caption ?? null) === null ? withheld.caption : "",
+      withheldAltText: (override?.altText ?? null) === null ? withheld.altText : "",
       hashtagSet: caption.hashtagSet,
       check: checkCaption(caption),
     };
@@ -395,8 +416,9 @@ export function createPublisher(options: PublisherOptions) {
 
   function insertPost(id: string, selectIds: string[], content: Content, extra: Partial<PostRow>) {
     db.query(
-      `INSERT INTO posts (id, state, mode, account_id, confirmed, caption, alt_text, hashtag_set, capture, report, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO posts (id, state, mode, account_id, confirmed, caption, alt_text, withheld_caption,
+         withheld_alt_text, hashtag_set, capture, report, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       extra.state ?? "publishing",
@@ -405,6 +427,8 @@ export function createPublisher(options: PublisherOptions) {
       Object.values(confirmedFingerprint(selectIds, content)).join(":"),
       content.caption,
       content.altText,
+      content.withheldCaption,
+      content.withheldAltText,
       content.hashtagSet,
       content.fingerprint,
       extra.report ?? null,
@@ -635,7 +659,14 @@ export function createPublisher(options: PublisherOptions) {
           false,
         );
       }
-      update({ caption: content.caption, alt_text: content.altText, capture: content.fingerprint });
+      // What it sends, and what the gallery lists once its location is withheld: stored together.
+      update({
+        caption: content.caption,
+        alt_text: content.altText,
+        withheld_caption: content.withheldCaption,
+        withheld_alt_text: content.withheldAltText,
+        capture: content.fingerprint,
+      });
       if (content.check.problems.length > 0) {
         throw new PostFailure(`The caption can't be posted. ${content.check.problems.join(" ")}`, false);
       }

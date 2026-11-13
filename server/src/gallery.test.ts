@@ -121,7 +121,7 @@ function setup(
     onPublished: gallery.published,
   });
   if (options.gallery !== false && gallery.availability().available) gallery.setEnabled(true);
-  return { publisher, gallery, captures, zones, settings, account };
+  return { publisher, gallery, captures, zones, settings, account, captionStore };
 }
 
 async function connect(account: ReturnType<typeof setup>["account"]) {
@@ -726,19 +726,28 @@ describe("manifest writes", () => {
   });
 });
 
+/** Posts a select that Instagram then never confirms: it is left unconfirmed, its frame deleted. */
+async function postUnconfirmed(parts: ReturnType<typeof setup>, selectId: string) {
+  instagram.fail("publish", "lost");
+  let post = await postNow(parts, selectId);
+  instagram.fail("status", "transient", "transient", "transient");
+  while (post.state === "retrying") {
+    clock.advance((post.nextAttemptAt ?? 0) - clock.now());
+    await parts.publisher.runDue();
+    post = parts.publisher.post(post.id) ?? post;
+  }
+  expect(post.state).toBe("unconfirmed");
+  return post;
+}
+
+/** Every way a caption or the manifest could print the large fixture's coordinates. */
+const LARGE_PRINTED = ["20.5", "120.75", "20°30'", "120°45'", "-20.5000", "20,5"];
+
 describe("a post Instagram had not confirmed", () => {
   test("marked as posted by the owner is listed, with no framed image since its frame was deleted", async () => {
     const parts = setup();
     await connect(parts.account);
-    instagram.fail("publish", "lost");
-    let post = await postNow(parts, await addSelect("portrait"));
-    instagram.fail("status", "transient", "transient", "transient");
-    while (post.state === "retrying") {
-      clock.advance((post.nextAttemptAt ?? 0) - clock.now());
-      await parts.publisher.runDue();
-      post = parts.publisher.post(post.id) ?? post;
-    }
-    expect(post.state).toBe("unconfirmed");
+    const post = await postUnconfirmed(parts, await addSelect("portrait"));
 
     await parts.publisher.resolve(post.id, { posted: true, permalink: "https://www.instagram.com/p/abc/" });
     await parts.gallery.settled();
@@ -747,5 +756,86 @@ describe("a post Instagram had not confirmed", () => {
     expect(entry).toMatchObject({ id: post.id, permalink: "https://www.instagram.com/p/abc/" });
     expect(entry?.images.framed).toBeNull();
     expect(fakeBucket.objects.has(keyOf(entry?.images.clean.url ?? ""))).toBe(true);
+  });
+});
+
+describe("what an entry says", () => {
+  test("for a post marked as posted after its location was hidden, lists no coordinates anywhere", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const id = await addFile(large);
+    const post = await postUnconfirmed(parts, id);
+
+    // Days later the owner hides its location, then says it was posted.
+    clock.advance(3 * 24 * 60 * 60 * 1000);
+    parts.captures.save(id, { edits: {}, locationHidden: true });
+    await parts.publisher.resolve(post.id, { posted: true });
+    await parts.gallery.settled();
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry?.id).toBe(post.id);
+    expect(entry?.location).toBeNull();
+    expect(entry?.images.framed).toBeNull();
+    expect(entry?.caption).toBe("Fixture Optics FX-3 · Fixture 85mm F1.8\n\n#film");
+    const text = new TextDecoder().decode(fakeBucket.objects.get("posts.json")?.bytes);
+    for (const printed of LARGE_PRINTED) expect(text).not.toContain(printed);
+  });
+
+  test("for a post marked as posted after its capture data was edited, lists what was posted", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const id = await addFile(large);
+    const post = await postUnconfirmed(parts, id);
+
+    parts.captures.save(id, {
+      edits: { camera: "Edited Camera", coordinates: { latitude: 10.25, longitude: 30.75 } },
+      locationHidden: false,
+    });
+    await parts.publisher.resolve(post.id, { posted: true });
+    await parts.gallery.settled();
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry?.capture.camera).toBe("Fixture Optics FX-3");
+    // What was posted is no longer what the select says: its place is not listed.
+    expect(entry?.location).toBeNull();
+    const text = new TextDecoder().decode(fakeBucket.objects.get("posts.json")?.bytes);
+    for (const printed of ["Edited Camera", "10.25", "30.75", "10°15'", ...LARGE_PRINTED])
+      expect(text).not.toContain(printed);
+  });
+
+  test("lists a hand-written caption as empty once its post's location is withheld", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const id = await addFile(large);
+    // Coordinates written by hand, in forms no template prints.
+    parts.captionStore.setOverride(id, {
+      caption: "Twenty and a half south (lat -20.50, lon -120.750), S 20 30 W 120 45",
+      altText: null,
+    });
+    await postNow(parts, id);
+    expect(manifest()?.posts[0]?.caption).toContain("-20.50");
+
+    parts.captures.save(id, { edits: {}, locationHidden: true });
+    await parts.gallery.runDue();
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry?.caption).toBe("");
+    // Alt text from the template is listed as it reads with the location withheld.
+    expect(entry?.altText).toBe("Photograph with Fixture Optics FX-3");
+  });
+
+  test("lists hand-written alt text as empty once its post's location is withheld", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const id = await addFile(large);
+    parts.captionStore.setOverride(id, { caption: null, altText: "Taken at 20.5 S, 120.75 W" });
+    await postNow(parts, id);
+
+    parts.zones.add(zoneAroundLarge);
+    await parts.gallery.runDue();
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry?.altText).toBe("");
+    expect(entry?.caption).toBe("Fixture Optics FX-3 · Fixture 85mm F1.8\n\n#film");
   });
 });

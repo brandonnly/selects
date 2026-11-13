@@ -5,7 +5,7 @@ import { type Bucket, BucketError, type ObjectHeaders } from "./bucket";
 import type { Captures, PublishedCapture } from "./capture";
 import { type Clock, MINUTE } from "./clock";
 import type { InstagramMode } from "./config";
-import { FRAME_HEIGHT, FRAME_WIDTH, fieldValues } from "./frame";
+import { FRAME_HEIGHT, FRAME_WIDTH } from "./frame";
 import { errorKind, type Library } from "./library";
 import type { Settings } from "./settings";
 import { insideZone, type Zones } from "./zones";
@@ -115,7 +115,6 @@ type Row = {
   post_id: string;
   mode: InstagramMode;
   state: "writing" | "written" | "removing" | "removed";
-  capture: string;
   image_key: string | null;
   image_url: string | null;
   image_width: number | null;
@@ -128,9 +127,13 @@ type Row = {
   added_at: number;
 };
 
+/** A row with what its post was sent with: the snapshot an entry is listed from. */
 type Listed = Row & {
   caption: string;
   alt_text: string;
+  withheld_caption: string | null;
+  withheld_alt_text: string | null;
+  capture: string;
   permalink: string | null;
   published_at: number | null;
   created_at: number;
@@ -144,8 +147,9 @@ type Listed = Row & {
  * never read back. An entry is listed only once its clean image is stored, and an image is
  * deleted only once a manifest without it is stored, so the manifest never points at a missing
  * image. Failed writes are retried by `runDue`, apart from the post, which they never touch.
- * Capture data comes only from `captures.published`, and a location withheld since a post is
- * taken out of its entry, caption included, on the next run.
+ * An entry lists what its post was sent with, stored with the post when it was built: its
+ * capture data, caption and alt text. A location withheld since is taken out on the next run,
+ * with the caption and alt text built with it withheld, and the framed image that prints it.
  */
 export function createGallery(options: GalleryOptions) {
   const { db, library, captures, zones, settings, mode, clock } = options;
@@ -208,7 +212,7 @@ export function createGallery(options: GalleryOptions) {
     return tail;
   }
 
-  /** Takes a post into the gallery: its frame and its capture data as published. */
+  /** Takes a post into the gallery, with its frame. */
   function adopt(postId: string): boolean {
     if (bucket === undefined || !enabled()) return false;
     return db
@@ -221,21 +225,11 @@ export function createGallery(options: GalleryOptions) {
         // Only a post published in this mode, into this mode's bucket; and only once.
         if (post === null || post.state !== "published" || post.mode !== mode) return false;
         if (rowOf(postId) !== null) return false;
-        const selectId = selectOf(postId);
-        const capture = selectId === undefined ? undefined : captures.published(selectId);
-        if (capture === undefined) return false;
         const frameKey = post.object_key;
         db.query(
-          `INSERT INTO gallery_posts (post_id, mode, state, capture, frame_key, frame_url, added_at)
-           VALUES (?, ?, 'writing', ?, ?, ?, ?)`,
-        ).run(
-          postId,
-          mode,
-          JSON.stringify(capture),
-          frameKey,
-          frameKey === null ? null : bucket.urlFor(frameKey),
-          clock.now(),
-        );
+          `INSERT INTO gallery_posts (post_id, mode, state, frame_key, frame_url, added_at)
+           VALUES (?, ?, 'writing', ?, ?, ?)`,
+        ).run(postId, mode, frameKey, frameKey === null ? null : bucket.urlFor(frameKey), clock.now());
         // The frame is the gallery's now: the publisher no longer deletes it.
         db.query("UPDATE posts SET object_key = NULL WHERE id = ?").run(postId);
         return true;
@@ -301,7 +295,8 @@ export function createGallery(options: GalleryOptions) {
   function build(): { body: string; hash: string } {
     const rows = db
       .query<Listed, [InstagramMode]>(
-        `SELECT g.*, p.caption, p.alt_text, p.permalink, p.published_at, p.created_at
+        `SELECT g.*, p.caption, p.alt_text, p.withheld_caption, p.withheld_alt_text, p.capture,
+                p.permalink, p.published_at, p.created_at
            FROM gallery_posts g JOIN posts p ON p.id = g.post_id
           WHERE g.mode = ? AND g.state = 'written'
           ORDER BY COALESCE(p.published_at, p.created_at) DESC, g.post_id`,
@@ -315,38 +310,42 @@ export function createGallery(options: GalleryOptions) {
     return { body, hash: createHash("sha256").update(body).digest("hex") };
   }
 
+  /** The capture data a post was sent with, stored with the post: its first select's. */
+  function snapshotOf(capture: string): PublishedCapture | undefined {
+    return (JSON.parse(capture) as PublishedCapture[])[0];
+  }
+
   /**
-   * Whether a post was published with coordinates that may no longer be shown: the select is
-   * gone, its location is withheld now, or the place it was published with is in a privacy zone
-   * added since. Its entry then lists no location and no framed image, which prints them.
+   * Whether a post was sent with coordinates that may not be shown now. They are shown only
+   * while the select is still there, `published(id)` still gives it the same coordinates, and
+   * no privacy zone holds them. Its entry then lists no location, no framed image (which prints
+   * them), and the caption and alt text built with them withheld.
    */
-  function withheld(row: Row, currentZones = zones.list()): boolean {
-    const published = JSON.parse(row.capture) as PublishedCapture;
-    const { latitude, longitude } = published;
+  function withheld(snapshot: PublishedCapture | undefined, postId: string, currentZones = zones.list()) {
+    if (snapshot === undefined) return false;
+    const { latitude, longitude } = snapshot;
     if (latitude === null || longitude === null) return false;
-    const selectId = selectOf(row.post_id);
+    const selectId = selectOf(postId);
     const now = selectId === undefined ? undefined : captures.published(selectId);
     return (
       now === undefined ||
-      now.latitude === null ||
-      now.longitude === null ||
+      now.latitude !== latitude ||
+      now.longitude !== longitude ||
       currentZones.some((zone) => insideZone({ latitude, longitude }, zone))
     );
   }
 
   function entry(row: Listed, currentZones: ReturnType<Zones["list"]>): ManifestEntry {
-    // As `published(id)` gave it when the post was published.
-    const published = JSON.parse(row.capture) as PublishedCapture;
-    const { latitude, longitude } = published;
-    const shown = latitude !== null && longitude !== null && !withheld(row, currentZones);
-    const hidden = latitude !== null && longitude !== null && !shown;
-    const text = (value: string) => (shown ? value : withoutCoordinates(value, published));
+    const sent = snapshotOf(row.capture);
+    const hidden = withheld(sent, row.post_id, currentZones);
+    const latitude = sent?.latitude ?? null;
+    const longitude = sent?.longitude ?? null;
     return {
       id: row.post_id,
       postedAt: new Date(row.published_at ?? row.created_at).toISOString(),
       permalink: row.permalink,
-      caption: text(row.caption),
-      altText: text(row.alt_text),
+      caption: hidden ? (row.withheld_caption ?? "") : row.caption,
+      altText: hidden ? (row.withheld_alt_text ?? "") : row.alt_text,
       images: {
         clean: { url: row.image_url ?? "", width: row.image_width ?? 0, height: row.image_height ?? 0 },
         framed:
@@ -355,16 +354,16 @@ export function createGallery(options: GalleryOptions) {
             : { url: row.frame_url, width: FRAME_WIDTH, height: FRAME_HEIGHT },
       },
       capture: {
-        camera: published.camera,
-        lens: published.lens,
-        focalLength: published.focalLength,
-        exposureTime: published.exposureTime,
-        fNumber: published.fNumber,
-        iso: published.iso,
-        takenAt: published.capturedAt,
+        camera: sent?.camera ?? null,
+        lens: sent?.lens ?? null,
+        focalLength: sent?.focalLength ?? null,
+        exposureTime: sent?.exposureTime ?? null,
+        fNumber: sent?.fNumber ?? null,
+        iso: sent?.iso ?? null,
+        takenAt: sent?.capturedAt ?? null,
       },
       location:
-        shown && latitude !== null && longitude !== null
+        !hidden && latitude !== null && longitude !== null
           ? { latitude: round(latitude), longitude: round(longitude) }
           : null,
     };
@@ -386,11 +385,12 @@ export function createGallery(options: GalleryOptions) {
     // And framed images that print coordinates withheld since: out of it, so they can go too.
     const currentZones = zones.list();
     const framesWithheld = db
-      .query<Row, [InstagramMode]>(
-        "SELECT * FROM gallery_posts WHERE mode = ? AND state = 'written' AND frame_key IS NOT NULL",
+      .query<Row & { capture: string }, [InstagramMode]>(
+        `SELECT g.*, p.capture FROM gallery_posts g JOIN posts p ON p.id = g.post_id
+          WHERE g.mode = ? AND g.state = 'written' AND g.frame_key IS NOT NULL`,
       )
       .all(mode)
-      .filter((row) => withheld(row, currentZones))
+      .filter((row) => withheld(snapshotOf(row.capture), row.post_id, currentZones))
       .map((row) => ({ postId: row.post_id, key: row.frame_key }));
     const { body, hash } = build();
     if (hash !== manifest.hash) {
@@ -568,32 +568,6 @@ export async function cleanImage(path: string): Promise<{ jpeg: Uint8Array; widt
     .jpeg({ quality: CLEAN_QUALITY })
     .toBuffer();
   return { jpeg: new Uint8Array(jpeg), width, height };
-}
-
-/**
- * Text with a select's coordinates taken out, as captions and alt text print them in either
- * format. A line left with no letter or digit goes with them; blank lines never stack.
- */
-export function withoutCoordinates(text: string, capture: PublishedCapture): string {
-  const printed = [
-    fieldValues(capture, "dms").coordinates,
-    fieldValues(capture, "decimal").coordinates,
-  ].filter((value): value is string => value !== null);
-  if (printed.length === 0) return text;
-  const lines = text.split("\n").flatMap((line) => {
-    if (!printed.some((value) => line.includes(value))) return [line];
-    const left = printed
-      .reduce((rest, value) => rest.split(value).join(""), line)
-      .replace(/\s{2,}/g, " ")
-      .trim();
-    if (!/[\p{L}\p{N}]/u.test(left)) return [];
-    // A separator left at either end, such as " · ", goes too.
-    return [left.replace(/^[^\p{L}\p{N}#@([]+|[^\p{L}\p{N})\]]+$/gu, "").trim()];
-  });
-  return lines
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 }
 
 function round(value: number): number {
