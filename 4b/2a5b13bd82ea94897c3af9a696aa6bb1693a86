@@ -1,0 +1,31 @@
+server/src/gallery-api.test.ts
+  s_c4d8ce55847ec4::t_2de4b4b85735d6 166-178
+server/src/gallery-routes.ts
+  s_3b71cf7688ed63::t_aebc73612194c1 23-24
+server/src/gallery.ts
+  s_3b71cf7688ed63::t_90159ede79f59f 99-100,579
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b2a5b13bd82ea94897c3af9a696aa6bb1693a86",
+  "prompts": {},
+  "sessions": {
+    "s_3b71cf7688ed63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fb386130-a285-4b26-872c-dbf55c816c99",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    },
+    "s_c4d8ce55847ec4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "588c5f3e-52d2-455b-a859-a5b5e1da0a01",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
