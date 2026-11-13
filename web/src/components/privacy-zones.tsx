@@ -22,12 +22,14 @@ const decimal = (text: string) => {
 function readForm(form: Form): { zone: Point & { radiusMetres: number } } | { error: string } {
   const latitude = decimal(form.latitude);
   const longitude = decimal(form.longitude);
-  const radiusMetres = decimal(form.radius);
+  // Digits only, with a decimal point at most: "1,000" must not be read as one metre.
+  const radiusMetres = /^\d+(\.\d+)?$/.test(form.radius.trim()) ? Number(form.radius.trim()) : undefined;
   if (latitude === undefined || longitude === undefined)
     return { error: "Enter a latitude and a longitude." };
   if (Math.abs(latitude) > 90) return { error: "Latitude goes from -90 to 90." };
   if (Math.abs(longitude) > 180) return { error: "Longitude goes from -180 to 180." };
-  if (radiusMetres === undefined || radiusMetres <= 0) return { error: "Enter a radius above 0 metres." };
+  if (radiusMetres === undefined || radiusMetres <= 0)
+    return { error: "Enter a radius above 0 metres, in digits only." };
   return { zone: { latitude, longitude, radiusMetres } };
 }
 
@@ -163,7 +165,7 @@ export function PrivacyZones() {
         </div>
         <p className="text-xs text-muted-foreground">
           Tap the map to drop a point, then drag the white handle to size the zone. Or type the coordinates in
-          decimal degrees.
+          decimal degrees. The map's tiles come from OpenStreetMap, which sees the area on screen.
         </p>
         {showErrors && "error" in read && <p className="text-sm text-destructive">{read.error}</p>}
         <div>
@@ -195,7 +197,12 @@ export function PrivacyZones() {
                   <span className="tabular-nums">{formatPoint(zone)}</span>
                   <span className="text-muted-foreground"> · {formatRadius(zone.radiusMetres)}</span>
                 </span>
-                <Button variant="destructive" size="sm" onClick={() => remove(zone.id)}>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  aria-label={`Delete the zone at ${formatPoint(zone)}`}
+                  onClick={() => remove(zone.id)}
+                >
                   Delete
                 </Button>
               </li>
@@ -304,8 +311,9 @@ function ZoneMap({
         );
       });
       draftLayer.current = { circle, centre: centreMarker, handle };
-      // A zone typed in somewhere off screen is brought into view.
-      if (!map.getBounds().contains(centre)) map.setView(centre, Math.max(map.getZoom(), 10));
+      // A zone typed in somewhere off screen is brought into view at the zoom already chosen,
+      // so typing a place never asks the tile server for a close view of it.
+      if (!map.getBounds().contains(centre)) map.panTo(centre);
       return;
     }
     if (dragging.current) return;

@@ -49,6 +49,8 @@ describe("insideZone", () => {
   const zone = { latitude: 0, longitude: -30, radiusMetres: ONE_DEGREE };
 
   test("counts a point on the edge as inside", () => {
+    const edge = distanceMetres({ latitude: 0, longitude: -30 }, { latitude: 0, longitude: -29 });
+    expect(insideZone({ latitude: 0, longitude: -29 }, { ...zone, radiusMetres: edge })).toBe(true);
     expect(insideZone({ latitude: 0, longitude: -29 }, { ...zone, radiusMetres: ONE_DEGREE + 1 })).toBe(true);
     expect(insideZone({ latitude: 0, longitude: -29 }, { ...zone, radiusMetres: ONE_DEGREE - 1 })).toBe(
       false,

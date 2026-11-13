@@ -50,6 +50,7 @@ const ok = <T>(value: T | null) => ({ ok: true, value }) as const;
 
 function parseText(text: string): Parsed<string> {
   const trimmed = text.trim();
+  if (trimmed.length > 200) return fail("At most 200 characters.");
   return ok(trimmed === "" ? null : trimmed);
 }
 

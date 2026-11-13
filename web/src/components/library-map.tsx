@@ -48,7 +48,10 @@ export function LibraryMap({
     // The first time there is something to show, the map frames it; after that it stays put.
     if (!fitted.current && located.length > 0) {
       fitted.current = true;
-      map.fitBounds(L.latLngBounds(located.map((s) => [s.latitude, s.longitude])), {
+      const bounds = L.latLngBounds(located.map((s) => [s.latitude, s.longitude]));
+      // Zones are framed too, by their centres, so one away from every select is not off screen.
+      for (const zone of zones) bounds.extend([zone.latitude, zone.longitude]);
+      map.fitBounds(bounds, {
         padding: [40, 40],
         maxZoom: 12,
       });

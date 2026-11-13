@@ -193,7 +193,11 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
                 value={draft[input.field]}
                 aria-invalid={error !== undefined}
                 aria-describedby={edited || error ? `${id}-note` : undefined}
-                onChange={(event) => set({ [input.field]: event.currentTarget.value })}
+                onChange={(event) => {
+                  // A date still being filled in reads as blank: it is not a cleared one.
+                  if (event.currentTarget.validity.badInput) return;
+                  set({ [input.field]: event.currentTarget.value });
+                }}
                 className={cn(
                   "h-10 w-full min-w-0 rounded-md border bg-card px-3 text-base text-card-foreground md:text-sm",
                   error !== undefined && "border-destructive",
@@ -248,7 +252,16 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
           />
           Hide this select's location
         </label>
-        {view.edited.latitude !== null && <ZoneFromSelect selectId={selectId} onAdded={load} />}
+        {view.edited.latitude !== null && (
+          <ZoneFromSelect
+            selectId={selectId}
+            onAdded={async () => {
+              await load();
+              // The frame and the Library's map change with the new zone.
+              saved.current();
+            }}
+          />
+        )}
       </section>
 
       <p role="status" className="min-h-5 text-sm text-muted-foreground">
@@ -266,8 +279,9 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
 function ZoneFromSelect({ selectId, onAdded }: { selectId: string; onAdded: () => Promise<unknown> }) {
   const [radius, setRadius] = useState("500");
   const [state, setState] = useState<"idle" | "adding" | "added" | "failed">("idle");
-  const radiusMetres = Number(radius.trim().replace(",", "."));
-  const valid = radius.trim() !== "" && Number.isFinite(radiusMetres) && radiusMetres > 0;
+  // Digits only, with a decimal point at most: "1,000" must not be read as one metre.
+  const radiusMetres = /^\d+(\.\d+)?$/.test(radius.trim()) ? Number(radius.trim()) : Number.NaN;
+  const valid = Number.isFinite(radiusMetres) && radiusMetres > 0;
 
   const add = async () => {
     setState("adding");
@@ -299,7 +313,7 @@ function ZoneFromSelect({ selectId, onAdded }: { selectId: string; onAdded: () =
       </div>
       <p className="text-xs text-muted-foreground">
         {state === "added"
-          ? "Zone added around this select's saved location. Manage zones in Settings."
+          ? "Zone added around where this select was taken. Manage zones in Settings."
           : state === "failed"
             ? "Couldn't add the zone. Try again."
             : "Hides this place for every select taken near it, not just this one."}

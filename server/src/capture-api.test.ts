@@ -245,8 +245,20 @@ describe("privacy zones", () => {
     expect(await json(response)).toMatchObject({ latitude: 10.5, longitude: -40.25, radiusMetres: 500 });
   });
 
-  test("from a select's location use its edited coordinates", async () => {
+  test("from a select's location use where the file says it was taken, whatever the edit", async () => {
     const id = await addSelect("portrait");
+    await putCapture(id, {
+      edits: { coordinates: { latitude: -12.5, longitude: -25.75 } },
+      locationHidden: false,
+    });
+
+    const zone = await json(await addZone({ selectId: id, radiusMetres: 500 }));
+
+    expect(zone).toMatchObject({ latitude: 10.5, longitude: -40.25 });
+  });
+
+  test("from a select whose file has no location use its edited coordinates", async () => {
+    const id = await addSelect("square");
     await putCapture(id, {
       edits: { coordinates: { latitude: -12.5, longitude: -25.75 } },
       locationHidden: false,
