@@ -214,3 +214,91 @@ describe("color", () => {
     expect(diff / count).toBeLessThan(2);
   });
 });
+
+describe("frame settings", () => {
+  const allOff = Object.fromEntries(
+    Object.keys(DEFAULT_FRAME_SETTINGS.fields).map((field) => [field, false]),
+  ) as FrameSettings["fields"];
+
+  const render = async (name: FixtureName, change: Partial<FrameSettings>) =>
+    pixels(await renderer().render(await source(name), settings(change)));
+
+  const pixel = (image: Pixels, x: number, y: number) => {
+    const at = (y * image.width + x) * 3;
+    return [image.data[at], image.data[at + 1], image.data[at + 2]];
+  };
+
+  /** The photo's box, from the same frame with no text on it. */
+  const photoBox = async (name: FixtureName, change: Partial<FrameSettings> = {}) =>
+    inkBox(await render(name, { ...change, color: "light", fields: allOff }), LIGHT);
+
+  /** Mean absolute difference between two images over the rows from `top` to `bottom`. */
+  function difference(a: Pixels, b: Pixels, top = 0, bottom = a.height) {
+    let sum = 0;
+    for (let i = top * a.width * 3; i < bottom * a.width * 3; i++) {
+      sum += Math.abs((a.data[i] ?? 0) - (b.data[i] ?? 0));
+    }
+    return sum / ((bottom - top) * a.width * 3);
+  }
+
+  test("the border width sets the space around the photo", async () => {
+    const none = inkBox(await render("square", { border: 0, fields: allOff }), LIGHT);
+    const wide = inkBox(await render("square", { border: 160, fields: allOff }), LIGHT);
+
+    expect([none.left, none.right]).toEqual([0, 1439]);
+    expect([wide.left, wide.right]).toEqual([160, 1439 - 160]);
+  });
+
+  test("a light frame is white with dark text, a dark frame near black with light text", async () => {
+    const light = await render("landscape", { color: "light" });
+    const dark = await render("landscape", { color: "dark" });
+    const luminance = ([r = 0, g = 0, b = 0]: (number | undefined)[]) => (r + g + b) / 3;
+
+    expect(luminance(pixel(light, 5, 5))).toBeGreaterThan(245);
+    expect(luminance(pixel(dark, 5, 5))).toBeLessThan(30);
+
+    // The text is the ink below the photo; its darkest or lightest pixel shows its color.
+    const photo = await photoBox("landscape");
+    const band = { top: photo.bottom + 2, bottom: photo.bottom + 100 };
+    const extreme = (image: Pixels, pick: (a: number, b: number) => number, start: number) => {
+      let value = start;
+      for (let y = band.top; y < band.bottom; y++)
+        for (let x = 0; x < image.width; x++) value = pick(value, luminance(pixel(image, x, y)));
+      return value;
+    };
+    expect(extreme(light, Math.min, 255)).toBeLessThan(100);
+    expect(extreme(dark, Math.max, 0)).toBeGreaterThan(160);
+  });
+
+  test("the typeface changes the text and nothing else", async () => {
+    const plex = await render("portrait", { typeface: "ibm-plex-mono" });
+    const garamond = await render("portrait", { typeface: "eb-garamond" });
+    const photo = await photoBox("portrait");
+
+    expect(difference(plex, garamond, 0, photo.bottom + 1)).toBe(0);
+    expect(difference(plex, garamond, photo.bottom + 1, 1800)).toBeGreaterThan(1);
+  });
+
+  test("with every field off, no text is printed", async () => {
+    const image = await render("portrait", { fields: allOff });
+    const photo = await photoBox("portrait");
+
+    expect(photo.bottom).toBeLessThan(1800 - 64 - 40);
+    expect(inkBox(image, LIGHT, { top: photo.bottom + 2, bottom: 1800 }).right).toBe(-1);
+  });
+
+  test("a field switched off is left off the frame", async () => {
+    // Lines short enough to print at full size, so one field less makes the line shorter.
+    const both = await render("landscape", { fields: { ...allOff, aperture: true, iso: true } });
+    const isoOnly = await render("landscape", { fields: { ...allOff, iso: true } });
+    const photo = await photoBox("landscape");
+    const width = (image: Pixels) => {
+      const text = inkBox(image, LIGHT, { top: photo.bottom + 2, bottom: 1800 });
+      return text.right - text.left;
+    };
+
+    // "f/8 · " is six characters, about 90 pixels.
+    expect(width(isoOnly)).toBeLessThan(width(both) - 60);
+    expect(width(isoOnly)).toBeGreaterThan(60);
+  });
+});
