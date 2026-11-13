@@ -602,7 +602,13 @@ export function createPublisher(options: PublisherOptions) {
       if (status === "FINISHED" && post.publish_requested_at !== null) {
         const now = build(selectIds, post.hashtag_set);
         // Unchanged: publishing the same container again is safe, as Instagram publishes it once.
-        if (now !== undefined && now.fingerprint === post.capture) return publishContainer(post.container_id);
+        if (
+          now !== undefined &&
+          now.fingerprint === post.capture &&
+          (post.confirmed === null || stillConfirmed(post.confirmed, selectIds, now))
+        ) {
+          return publishContainer(post.container_id);
+        }
         if (clock.now() - post.publish_requested_at < PUBLISH_SETTLE_MS) {
           throw new PostFailure("Waiting to learn whether the interrupted publish went through.", true);
         }
@@ -627,7 +633,16 @@ export function createPublisher(options: PublisherOptions) {
       if (content.check.problems.length > 0) {
         throw new PostFailure(`The caption can't be posted. ${content.check.problems.join(" ")}`, false);
       }
-      const unchanged = () => build(selectIds, post.hashtag_set)?.fingerprint === content.fingerprint;
+      // Nothing a privacy rule or an edit changed since this attempt built its content, and still
+      // what the post was confirmed with.
+      const unchanged = () => {
+        const now = build(selectIds, post.hashtag_set);
+        return (
+          now !== undefined &&
+          now.fingerprint === content.fingerprint &&
+          (post.confirmed === null || stillConfirmed(post.confirmed, selectIds, now))
+        );
+      };
 
       const jpeg = await render(content);
       // Taken again before the upload: a privacy zone may have been added while it rendered.

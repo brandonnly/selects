@@ -58,6 +58,7 @@ export function createInstagramAccount({
   mode?: InstagramMode;
 }) {
   const table = mode === "live" ? "instagram_account" : "instagram_account_fake";
+  let turns = 0;
   const row = () => db.query<Row, []>(`SELECT * FROM ${table} WHERE id = 1`).get();
 
   const save = (values: Row) => {
@@ -119,6 +120,8 @@ export function createInstagramAccount({
      * at once when Meta allows, which also gives its real expiry.
      */
     async connect(token: string): Promise<AccountView> {
+      // Only the newest connect or disconnect decides what is kept: a slower, older one is dropped.
+      const turn = ++turns;
       let owner: { userId: string; username: string };
       try {
         owner = await api.me(token);
@@ -155,6 +158,9 @@ export function createInstagramAccount({
         if (error instanceof InstagramError && error.kind === "too-new") current.refresh = "too-new";
         else console.error(`The pasted Instagram token could not be refreshed (${kindOf(error)}).`);
       }
+      if (turn !== turns) {
+        throw new InstagramError("transient", "The account was changed again while this token was checked.");
+      }
       save({
         token: current.token,
         user_id: owner.userId,
@@ -169,6 +175,7 @@ export function createInstagramAccount({
     },
 
     disconnect(): void {
+      turns++;
       db.query(`DELETE FROM ${table} WHERE id = 1`).run();
     },
 

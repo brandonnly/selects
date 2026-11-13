@@ -175,7 +175,15 @@ function Confirm({
   onSend: () => void;
   onCancel: () => void;
 }) {
-  const blocked = !preview.dryRun && preview.problems.length > 0;
+  // Nothing goes out before its frame has been shown.
+  const [frame, setFrame] = useState<"loading" | "shown" | "failed">("loading");
+  const [frameTry, setFrameTry] = useState(0);
+  const shownFor = useRef(preview.frame);
+  if (shownFor.current !== preview.frame) {
+    shownFor.current = preview.frame;
+    if (frame !== "loading") setFrame("loading");
+  }
+  const blocked = (!preview.dryRun && preview.problems.length > 0) || frame !== "shown";
   const fake = preview.instagram === "fake";
   // Keyboard focus moves from the button that opened the confirmation to the confirmation.
   const heading = useRef<HTMLParagraphElement>(null);
@@ -197,10 +205,29 @@ function Confirm({
         </p>
       )}
       <img
-        src={`/api/selects/${encodeURIComponent(selectId)}/frame?width=${FRAME_WIDTH}`}
+        // The frame's fingerprint in the address loads it again whenever what would go out changes.
+        key={`${preview.frame}-${frameTry}`}
+        src={`/api/selects/${encodeURIComponent(selectId)}/frame?width=${FRAME_WIDTH}&v=${preview.frame}-${frameTry}`}
         alt="The frame that will be posted"
+        onLoad={() => setFrame("shown")}
+        onError={() => setFrame("failed")}
         className="mx-auto aspect-[4/5] w-full max-w-60 rounded-sm border bg-muted object-contain"
       />
+      {frame === "failed" && (
+        <p className="text-sm text-destructive">
+          The frame couldn't be shown.{" "}
+          <button
+            type="button"
+            className="underline underline-offset-2"
+            onClick={() => {
+              setFrame("loading");
+              setFrameTry((n) => n + 1);
+            }}
+          >
+            Try again
+          </button>
+        </p>
+      )}
       <dl className="flex flex-col gap-3 text-sm">
         <div className="flex flex-col gap-1">
           <dt className="font-medium text-muted-foreground">
