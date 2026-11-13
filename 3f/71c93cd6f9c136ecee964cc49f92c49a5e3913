@@ -1,0 +1,37 @@
+server/src/schedule-api.test.ts
+  s_3e2ab1cb86d96d::t_1dedabcf181807 147-153
+server/src/schedule-routes.ts
+  s_3e2ab1cb86d96d::t_a7d94c3d2766ba 5,14
+server/src/scheduler.test.ts
+  s_3e2ab1cb86d96d::t_5c3da4421038e9 211-303
+server/src/scheduler.ts
+  s_3e2ab1cb86d96d::t_7b5a029076e335 7,215-217,238,502-506,514,521-522,526-527,529,532-535,537-557,707-709,716-717
+server/src/slots.test.ts
+  s_8e8a2df05c8514::t_5420071baeb6b8 2,92-99
+server/src/slots.ts
+  s_3e2ab1cb86d96d::t_7d99f6aad0e565 98-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3f71c93cd6f9c136ecee964cc49f92c49a5e3913",
+  "prompts": {},
+  "sessions": {
+    "s_3e2ab1cb86d96d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bd2b11a-6ff6-449b-947e-52aec407382d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    },
+    "s_8e8a2df05c8514": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1912c2e4-8385-486f-bbb8-1599dda7b8f3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
