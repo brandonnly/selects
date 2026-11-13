@@ -74,7 +74,7 @@ export function publishRoutes({ publisher, account, settings, bucket, instagram 
         async ({ params, body, status }) => {
           const result = await publisher.publish({
             selectIds: [params.id],
-            hashtagSet: body.hashtagSet,
+            hashtagSet: body.hashtagSet ?? undefined,
             expect: { caption: body.caption, altText: body.altText },
           });
           switch (result.status) {
@@ -105,7 +105,8 @@ export function publishRoutes({ publisher, account, settings, bucket, instagram 
               caption: t.String({ maxLength: MAX_TEXT }),
               altText: t.String({ maxLength: MAX_TEXT }),
               /** The hashtag set the owner was shown. */
-              hashtagSet: t.Optional(t.String({ maxLength: 60 })),
+              // Null, as the preview gives it when no set is used, is the same as leaving it out.
+              hashtagSet: t.Optional(t.Union([t.String({ maxLength: 60 }), t.Null()])),
             },
             { additionalProperties: false },
           ),
