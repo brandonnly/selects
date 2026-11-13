@@ -2,6 +2,7 @@ import type { Select } from "@selects/server";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api";
+import { SelectCaption } from "@/components/select-caption";
 import { Button } from "@/components/ui/button";
 import { captureFields } from "@/lib/capture";
 
@@ -94,6 +95,7 @@ export function SelectDetails({
             ) : (
               <p className="text-sm text-muted-foreground">The file has no capture data.</p>
             )}
+            <SelectCaption key={select.id} selectId={select.id} />
             <p className="text-xs text-muted-foreground">
               {select.width} × {select.height} · {select.format.toUpperCase()} · {formatBytes(select.bytes)}
             </p>
