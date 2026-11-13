@@ -382,11 +382,12 @@ export function createScheduler(options: SchedulerOptions) {
     const now = clock.now();
     plan(now);
     await fire(now);
-    chooseNextUp();
+    // Picks from the queue follow it: a slot that took nothing leaves the head for the next one.
+    rechoose(["queue"]);
     prune(now);
   }
 
-  /** Re-chooses next up where it was chosen automatically, after the queue or the rules change. */
+  /** Re-chooses next up where it was chosen automatically from these: the queue, or the pool. */
   function rechoose(which: ("queue" | "pool")[]) {
     for (const from of which) {
       db.query(

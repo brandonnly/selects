@@ -229,6 +229,26 @@ describe("the queue", () => {
     expect(scheduler.queue()).toEqual([]);
   });
 
+  test("keeps its order when a slot before did not post", async () => {
+    const { scheduler, publisher, account } = await setup({ connect: false });
+    const first = await addSelect("portrait");
+    const second = await addSelect("landscape");
+    scheduler.setQueue([first, second]);
+    scheduler.setSchedule({
+      slots: [everyDay("12:00", "noon"), everyDay("13:00", "one")],
+      timeZone: "UTC",
+      graceMinutes: 120,
+    });
+    expect(scheduler.upcoming().map((run) => run.selectId)).toEqual([first, second]);
+    // No account at noon: the slot takes nothing, so the queue's head is next.
+    await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");
+    expect(scheduler.upcoming()[0]).toMatchObject({ slotId: "one", selectId: first });
+    instagram.addAccount(TOKEN, { userId: "1784140001", username: "selects_test" });
+    await account.connect(TOKEN);
+    await runUntil(scheduler, publisher, "2026-11-13T13:30:00Z");
+    expect(postedSelects(publisher)).toEqual([first]);
+  });
+
   test("a queued select ignores the pick rules", async () => {
     const { scheduler, publisher, captures } = await setup();
     const portrait = await addSelect("portrait");

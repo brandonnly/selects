@@ -28,8 +28,9 @@ back, and how a restart is kept from posting a slot twice. As with publishing
   slot is chosen again.
 - **Next up is chosen when a slot is recorded, a day ahead**, and stored as the select only.
   The frame and caption are built when it posts. When the slot comes, a next up no longer in
-  the pool is chosen again. Next up chosen from the queue or the pool is chosen again when the
-  queue changes, and next up from the pool when the pick rules change; a swap stands. Swap
+  the pool is chosen again. Next up from the queue always follows the queue's order, so a
+  slot that took nothing leaves the head for the next one. Next up from the pool is chosen
+  again when the queue gains a select or the pick rules change. A swap stands. Swap
   passes over each select in turn and comes round again once all have been passed. Skip leaves
   the slot empty and can be taken back until its time.
 - **Missed slots never stack.** At each check, of the slots that came due, only the latest
