@@ -57,4 +57,12 @@ export const migrations: readonly Migration[] = [
     value TEXT NOT NULL
   );
   `,
+  // 3: a caption or alt text written for one select, in place of the template. Null takes it.
+  `
+  CREATE TABLE select_captions (
+    select_id TEXT PRIMARY KEY REFERENCES selects (id) ON DELETE CASCADE,
+    caption TEXT,
+    alt_text TEXT
+  );
+  `,
 ];

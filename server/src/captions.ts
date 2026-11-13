@@ -184,11 +184,22 @@ function setProblems(sets: HashtagSet[]): string[] {
   return problems;
 }
 
-/** The tokens a template can use. Hashtags go in the caption only. */
-export const CAPTION_TOKENS: ReadonlySet<string> = new Set<Token>([...FRAME_FIELDS, "hashtags"]);
-const ALT_TEXT_TOKENS: ReadonlySet<string> = new Set<Token>(FRAME_FIELDS);
-
 type Token = FrameField | "hashtags";
+
+/** The tokens a template can use, in the order the Captions screen offers them. Hashtags go in the caption only. */
+export const TOKENS: readonly Token[] = [
+  "coordinates",
+  "date",
+  "camera",
+  "lens",
+  "focalLength",
+  "shutter",
+  "aperture",
+  "iso",
+  "hashtags",
+];
+const CAPTION_TOKENS: ReadonlySet<string> = new Set<Token>(TOKENS);
+const ALT_TEXT_TOKENS: ReadonlySet<string> = new Set<Token>(FRAME_FIELDS);
 type Values = Record<Token, string | null>;
 
 /** A run of text, or a field: a token, or brackets holding one, which is null when it is missing. */

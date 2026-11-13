@@ -3,6 +3,8 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { Elysia, t } from "elysia";
 import rootPackage from "../../package.json";
+import { captionRoutes } from "./caption-routes";
+import { createCaptionStore } from "./caption-store";
 import type { Config } from "./config";
 import { databaseStatus } from "./db";
 import {
@@ -20,6 +22,7 @@ import { TYPEFACE_IDS, TYPEFACES, type TypefaceId } from "./typefaces";
 import { serveUi } from "./ui";
 import { MAX_UPLOAD_BYTES, receiveUpload } from "./upload";
 
+export type { CaptionOverride, CaptionTemplates, HashtagSet, LimitCheck } from "./captions";
 export type { FrameField, FrameSettings } from "./frame";
 export type { Rejection, ScanResult, Select, UploadResult } from "./library";
 export type { FontOverride } from "./typefaces";
@@ -162,6 +165,13 @@ function createRoutes({
       maxBorder: MAX_BORDER,
     }))
     .put("/api/frame", ({ body }) => settings.setFrame(body), { body: frameSettingsSchema })
+    .use(
+      captionRoutes({
+        store: createCaptionStore(db),
+        coordinateFormat: () => settings.frame().coordinateFormat,
+        capture: (id) => lib.get(id),
+      }),
+    )
     .delete("/api/selects/:id", ({ params, status }) =>
       lib.remove(params.id) ? status(204) : status(404, notFound),
     )
