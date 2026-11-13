@@ -18,7 +18,7 @@ import { createInstagramApi, type InstagramApi } from "./instagram";
 import { createInstagramAccount } from "./instagram-account";
 import { createLibrary, type Library } from "./library";
 import { migrations } from "./migrations";
-import { createPublisher, type Publisher, type PublisherOptions } from "./publisher";
+import { createPublisher, type Publisher, type PublisherOptions, RETRY_DELAYS } from "./publisher";
 import { createSettings } from "./settings";
 import { createZones } from "./zones";
 
@@ -327,6 +327,29 @@ describe("a failed publish", () => {
     expect(elapsed).toBeLessThanOrEqual(18 * MINUTE);
     expect(library.pool()).toEqual([id]);
     expect(instagram.media).toHaveLength(0);
+  });
+
+  test("is attempted once when due, and keeps its waits however often the timer fires", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("container", "transient", "transient", "transient", "transient");
+
+    let post = await postNow(publisher, id);
+    const waits: number[] = [];
+    while (post.state === "retrying") {
+      const wait = (post.nextAttemptAt ?? 0) - clock.now();
+      waits.push(wait);
+      clock.advance(wait);
+      // The timer fires several times while the due attempt is still running.
+      await Promise.all([publisher.runDue(), publisher.runDue(), publisher.runDue()]);
+      const next = publisher.post(post.id) ?? post;
+      expect(next.attempts).toBe(post.attempts + 1);
+      post = next;
+    }
+
+    expect(waits).toEqual(RETRY_DELAYS.slice());
+    expect(post.attempts).toBe(4);
   });
 
   test("that succeeds on a retry is published once, with the same hashtag set", async () => {

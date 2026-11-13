@@ -347,7 +347,13 @@ export function createPublisher(options: PublisherOptions) {
     const claimed = db
       .transaction(() => {
         const found = row(id);
-        if (found === null || (found.state !== "publishing" && found.state !== "retrying")) return undefined;
+        // A new post's first attempt, or a retry whose wait is over: never a retry early.
+        const fresh = found?.state === "publishing" && found.attempts === 0;
+        const due =
+          found?.state === "retrying" &&
+          found.next_attempt_at !== null &&
+          found.next_attempt_at <= clock.now();
+        if (found === null || !(fresh || due)) return undefined;
         db.query(
           "UPDATE posts SET state = 'publishing', attempts = attempts + 1, next_attempt_at = NULL WHERE id = ?",
         ).run(id);
@@ -533,6 +539,23 @@ export function createPublisher(options: PublisherOptions) {
     return new PostFailure(`Something went wrong (${errorKind(error)}).`, true);
   }
 
+  let running: Promise<void> | undefined;
+
+  async function runDueNow(): Promise<void> {
+    const due = db
+      .query<{ id: string }, [number]>(
+        "SELECT id FROM posts WHERE state = 'retrying' AND next_attempt_at <= ? ORDER BY next_attempt_at, rowid",
+      )
+      .all(clock.now());
+    for (const { id } of due) await serially(() => attempt(id));
+    const left = db
+      .query<{ id: string }, []>(
+        "SELECT id FROM posts WHERE object_key IS NOT NULL AND state IN ('published', 'failed')",
+      )
+      .all();
+    for (const { id } of left) await serially(() => dropObject(id));
+  }
+
   const readiness = (): string[] =>
     [bucketProblem(), accountProblem()].filter((problem): problem is string => problem !== undefined);
 
@@ -601,20 +624,16 @@ export function createPublisher(options: PublisherOptions) {
       );
     },
 
-    /** Runs the retries that are due, and deletes frames left in the bucket. Called on a timer. */
-    async runDue(): Promise<void> {
-      const due = db
-        .query<{ id: string }, [number]>(
-          "SELECT id FROM posts WHERE state = 'retrying' AND next_attempt_at <= ? ORDER BY next_attempt_at, rowid",
-        )
-        .all(clock.now());
-      for (const { id } of due) await serially(() => attempt(id));
-      const left = db
-        .query<{ id: string }, []>(
-          "SELECT id FROM posts WHERE object_key IS NOT NULL AND state IN ('published', 'failed')",
-        )
-        .all();
-      for (const { id } of left) await serially(() => dropObject(id));
+    /**
+     * Runs the retries that are due, and deletes frames left in the bucket. Called on a timer; a
+     * call while an earlier run is still working joins that run.
+     */
+    runDue(): Promise<void> {
+      if (running !== undefined) return running;
+      running = runDueNow().finally(() => {
+        running = undefined;
+      });
+      return running;
     },
 
     /** Every post that was or is being published, newest first. Not dry runs. */
