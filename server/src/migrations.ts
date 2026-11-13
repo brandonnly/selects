@@ -254,13 +254,13 @@ export const migrations: readonly Migration[] = [
     -- 'writing': its clean image is not yet stored. 'written': listed in the manifest.
     -- 'removing': taken out of the manifest, then its objects are deleted. 'removed': done.
     state TEXT NOT NULL CHECK (state IN ('writing', 'written', 'removing', 'removed')),
+    -- Keys only: each URL is built from the public base URL when the manifest is written.
     image_key TEXT,
-    image_url TEXT,
     image_width INTEGER,
     image_height INTEGER,
-    -- The framed image Instagram was given, kept for the gallery. Null when it was not kept.
+    -- The framed image Instagram was given, kept for the gallery. Null when it was not kept, or
+    -- once it was deleted for printing coordinates withheld since.
     frame_key TEXT,
-    frame_url TEXT,
     attempts INTEGER NOT NULL DEFAULT 0,
     next_attempt_at INTEGER,
     error TEXT,

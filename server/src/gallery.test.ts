@@ -676,6 +676,27 @@ describe("a stop part way", () => {
   });
 });
 
+describe("the public base URL", () => {
+  test("changed moves every entry's URLs on the next run after the restart", async () => {
+    const before = setup();
+    await connect(before.account);
+    await postNow(before, await addFile(large));
+    const listed = manifest()?.posts[0];
+
+    // Restarted with another public base URL for the same bucket.
+    const after = setup({ publicBaseUrl: "https://cdn.invalid/moved" });
+    await after.gallery.runDue();
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry?.images.clean.url).toBe(
+      `https://cdn.invalid/moved/${keyOf(listed?.images.clean.url ?? "")}`,
+    );
+    expect(entry?.images.framed?.url).toBe(
+      `https://cdn.invalid/moved/${keyOf(listed?.images.framed?.url ?? "")}`,
+    );
+  });
+});
+
 describe("modes", () => {
   test("a post made in fake mode never has gallery files written to or deleted from another mode's bucket", async () => {
     const fake = setup();

@@ -116,11 +116,9 @@ type Row = {
   mode: InstagramMode;
   state: "writing" | "written" | "removing" | "removed";
   image_key: string | null;
-  image_url: string | null;
   image_width: number | null;
   image_height: number | null;
   frame_key: string | null;
-  frame_url: string | null;
   attempts: number;
   next_attempt_at: number | null;
   error: string | null;
@@ -229,9 +227,9 @@ export function createGallery(options: GalleryOptions) {
         if (rowOf(postId) !== null) return false;
         const frameKey = post.object_key;
         db.query(
-          `INSERT INTO gallery_posts (post_id, mode, state, frame_key, frame_url, added_at)
-           VALUES (?, ?, 'writing', ?, ?, ?)`,
-        ).run(postId, mode, frameKey, frameKey === null ? null : bucket.urlFor(frameKey), clock.now());
+          `INSERT INTO gallery_posts (post_id, mode, state, frame_key, added_at)
+           VALUES (?, ?, 'writing', ?, ?)`,
+        ).run(postId, mode, frameKey, clock.now());
         // The frame is the gallery's now: the publisher no longer deletes it.
         db.query("UPDATE posts SET object_key = NULL WHERE id = ?").run(postId);
         return true;
@@ -277,9 +275,9 @@ export function createGallery(options: GalleryOptions) {
         await discard(bucket, [key]);
       });
       db.query(
-        `UPDATE gallery_posts SET state = 'written', image_url = ?, image_width = ?, image_height = ?,
+        `UPDATE gallery_posts SET state = 'written', image_width = ?, image_height = ?,
            error = NULL, next_attempt_at = NULL WHERE post_id = ? AND state = 'writing'`,
-      ).run(bucket.urlFor(key), image.width, image.height, row.post_id);
+      ).run(image.width, image.height, row.post_id);
     } catch (error) {
       const message = describe(error);
       const delay = RETRY_DELAYS[Math.min(row.attempts, RETRY_DELAYS.length - 1)] ?? MINUTE;
@@ -293,8 +291,11 @@ export function createGallery(options: GalleryOptions) {
     }
   }
 
-  /** The manifest as it should be now, from the database, and its hash. */
-  function build(): { body: string; hash: string } {
+  /**
+   * The manifest as it should be now, from the database, and its hash. Each URL is built on the
+   * bucket's public base URL as it is now, so a changed one moves every entry.
+   */
+  function build(bucket: Bucket): { body: string; hash: string } {
     const rows = db
       .query<Listed, [InstagramMode]>(
         `SELECT g.*, p.caption, p.alt_text, p.withheld_caption, p.withheld_alt_text, p.capture,
@@ -307,7 +308,7 @@ export function createGallery(options: GalleryOptions) {
     const currentZones = zones.list();
     const body = JSON.stringify({
       version: MANIFEST_VERSION,
-      posts: rows.map((row) => entry(row, currentZones)),
+      posts: rows.map((row) => entry(bucket, row, currentZones)),
     } satisfies Manifest);
     return { body, hash: createHash("sha256").update(body).digest("hex") };
   }
@@ -337,7 +338,7 @@ export function createGallery(options: GalleryOptions) {
     );
   }
 
-  function entry(row: Listed, currentZones: ReturnType<Zones["list"]>): ManifestEntry {
+  function entry(bucket: Bucket, row: Listed, currentZones: ReturnType<Zones["list"]>): ManifestEntry {
     const sent = snapshotOf(row.capture);
     const hidden = withheld(sent, row.post_id, currentZones);
     const latitude = sent?.latitude ?? null;
@@ -349,11 +350,15 @@ export function createGallery(options: GalleryOptions) {
       caption: hidden ? (row.withheld_caption ?? "") : row.caption,
       altText: hidden ? (row.withheld_alt_text ?? "") : row.alt_text,
       images: {
-        clean: { url: row.image_url ?? "", width: row.image_width ?? 0, height: row.image_height ?? 0 },
+        clean: {
+          url: bucket.urlFor(row.image_key ?? ""),
+          width: row.image_width ?? 0,
+          height: row.image_height ?? 0,
+        },
         framed:
-          row.frame_url === null || hidden
+          row.frame_key === null || hidden
             ? null
-            : { url: row.frame_url, width: FRAME_WIDTH, height: FRAME_HEIGHT },
+            : { url: bucket.urlFor(row.frame_key), width: FRAME_WIDTH, height: FRAME_HEIGHT },
       },
       capture: {
         camera: sent?.camera ?? null,
@@ -377,6 +382,11 @@ export function createGallery(options: GalleryOptions) {
       .get(mode);
     // A gallery never used writes nothing to the bucket.
     if ((any?.n ?? 0) === 0) return;
+    // Its URLs are built on the public base URL: a presigned link is never listed.
+    if (bucket.urlKind !== "public") {
+      manifest.error = "Gallery output needs a public base URL: set BUCKET_PUBLIC_URL.";
+      return;
+    }
     // Taken before the manifest is built: these are out of it, so their images can go once it is stored.
     const removing = db
       .query<{ post_id: string }, [InstagramMode]>(
@@ -394,7 +404,7 @@ export function createGallery(options: GalleryOptions) {
       .all(mode)
       .filter((row) => withheld(snapshotOf(row.capture), row.post_id, currentZones))
       .map((row) => ({ postId: row.post_id, key: row.frame_key }));
-    const { body, hash } = build();
+    const { body, hash } = build(bucket);
     if (hash !== manifest.hash) {
       // A privacy change or a removal never waits behind the backoff of an earlier manifest.
       if (hash !== manifest.failedHash) Object.assign(manifest, { failures: 0, nextAt: 0 });
@@ -431,9 +441,7 @@ export function createGallery(options: GalleryOptions) {
     const dropped = db
       .transaction(() => {
         const changed = db
-          .query(
-            "UPDATE gallery_posts SET frame_key = NULL, frame_url = NULL WHERE post_id = ? AND frame_key = ?",
-          )
+          .query("UPDATE gallery_posts SET frame_key = NULL WHERE post_id = ? AND frame_key = ?")
           .run(postId, key).changes;
         if (changed === 0) return false;
         db.query("INSERT OR IGNORE INTO bucket_cleanup (key, added_at, mode) VALUES (?, ?, ?)").run(
@@ -454,8 +462,8 @@ export function createGallery(options: GalleryOptions) {
         const row = rowOf(postId);
         if (row?.state !== "removing") return [];
         db.query(
-          `UPDATE gallery_posts SET state = 'removed', image_key = NULL, image_url = NULL,
-             frame_key = NULL, frame_url = NULL, next_attempt_at = NULL WHERE post_id = ?`,
+          `UPDATE gallery_posts SET state = 'removed', image_key = NULL, frame_key = NULL,
+             next_attempt_at = NULL WHERE post_id = ?`,
         ).run(postId);
         return [row.image_key, row.frame_key].filter((key): key is string => key !== null);
       })
@@ -526,7 +534,8 @@ export function createGallery(options: GalleryOptions) {
     },
 
     view(): GalleryView {
-      const listed = bucket !== undefined && manifest.hash !== undefined && build().hash === manifest.hash;
+      const listed =
+        bucket !== undefined && manifest.hash !== undefined && build(bucket).hash === manifest.hash;
       const posts = db
         .query<Row, []>("SELECT * FROM gallery_posts ORDER BY added_at DESC, post_id")
         .all()
