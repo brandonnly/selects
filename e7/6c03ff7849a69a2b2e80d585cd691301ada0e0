@@ -1,0 +1,19 @@
+GLOSSARY.md
+  s_966d394503842b::t_2cd85f8a6ed5fe 23-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e76c03ff7849a69a2b2e80d585cd691301ada0e0",
+  "prompts": {},
+  "sessions": {
+    "s_966d394503842b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "251f9d0d-2080-4854-a237-295adb8fa666",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
