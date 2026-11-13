@@ -1,6 +1,9 @@
 {
   "name": "Selects",
   "short_name": "Selects",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
   "icons": [
     {
       "src": "/icon-192.png",
