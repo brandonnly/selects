@@ -70,6 +70,10 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
   /** The edits last sent, and what the server last confirmed holding, as JSON. */
   const sentEdits = useRef<Payload["edits"] | undefined>(undefined);
   const confirmed = useRef<string | undefined>(undefined);
+  /** Counts saves, so an answer is acted on only when it is the latest one's. */
+  const turns = useRef(0);
+  /** Saves sent or waiting their turn whose answer has not come back. */
+  const unanswered = useRef(0);
   const saved = useRef(onSaved);
   saved.current = onSaved;
 
@@ -122,25 +126,30 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
   const send = useCallback(
     (next: Payload) => {
       const json = JSON.stringify(next);
-      const before = lastSent.current;
+      const turn = ++turns.current;
       const editsBefore = sentEdits.current;
       lastSent.current = json;
       sentEdits.current = next.edits;
+      unanswered.current++;
       setSave("saving");
-      // A save that failed is not what the server holds: it is sent again on the next change
-      // and when the dialog closes.
+      // After a failed save nothing is known to be held, so whatever comes next is sent, as is
+      // the same payload when the dialog closes.
       const failed = () => {
-        if (lastSent.current !== json) return;
-        lastSent.current = before;
+        if (turns.current !== turn) return;
+        lastSent.current = undefined;
         sentEdits.current = editsBefore;
         setSave("failed");
       };
-      const sent = saving.current.then(() => api.selects({ id: selectId }).capture.put(next));
+      const sent = saving.current
+        .then(() => api.selects({ id: selectId }).capture.put(next))
+        .finally(() => {
+          unanswered.current--;
+        });
       saving.current = sent.catch(() => {});
       return sent
         .then(({ data, error }) => {
           if (data) confirmed.current = json;
-          if (lastSent.current !== json) return;
+          if (turns.current !== turn) return;
           if (data) {
             setView(data);
             setSave("saved");
@@ -181,7 +190,8 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
       const last = pending.current;
       if (last === undefined || confirmed.current === undefined) return;
       const json = JSON.stringify(last);
-      if (json === confirmed.current) return;
+      // A save still on its way may leave the server holding something else.
+      if (json === confirmed.current && unanswered.current === 0) return;
       fetch(`/api/selects/${encodeURIComponent(selectId)}/capture`, {
         method: "PUT",
         headers: { "content-type": "application/json" },

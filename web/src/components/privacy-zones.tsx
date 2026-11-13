@@ -28,7 +28,7 @@ function readForm(form: Form): { zone: Point & { radiusMetres: number } } | { er
     return { error: "Enter a latitude and a longitude." };
   if (Math.abs(latitude) > 90) return { error: "Latitude goes from -90 to 90." };
   if (Math.abs(longitude) > 180) return { error: "Longitude goes from -180 to 180." };
-  if (radiusMetres === undefined || radiusMetres <= 0)
+  if (radiusMetres === undefined || !Number.isFinite(radiusMetres) || radiusMetres <= 0)
     return { error: "Enter a radius above 0 metres, in digits only." };
   return { zone: { latitude, longitude, radiusMetres } };
 }

@@ -34,6 +34,6 @@ towards withholding.
 
 - To publish an edited location for a photo taken inside a zone, the zone has to go or shrink.
 - The Library and its map show the owner every location, withheld or not; they are behind the
-  password and are never a source for anything published.
+  password when one is set and are never a source for anything published.
 - The publisher must take capture data when it renders and again before it uploads, since a
   zone can be added between the two.
