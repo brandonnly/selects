@@ -139,7 +139,14 @@ export function FrameScreen() {
         headers: { "content-type": "application/json" },
         body: json,
         keepalive: true,
-      }).catch(() => {});
+      })
+        .then((response) => {
+          // Only reached when the page lived on, as it does in the back-forward cache.
+          if (!response.ok) return;
+          lastSaved.current = json;
+          confirmed.current = json;
+        })
+        .catch(() => {});
     };
     window.addEventListener("pagehide", flush);
     return () => window.removeEventListener("pagehide", flush);
@@ -378,8 +385,8 @@ function FontOverrideNote({ override }: { override: FontOverride | null }) {
   if (!override.usable) {
     return (
       <span className="text-xs text-destructive">
-        {override.fileName} in the data folder can't be used: it can't be read or lacks a character frames
-        print. The typeface chosen here is used.
+        {override.fileName} in the data folder can't be used: the file is unreadable or is missing a character
+        the frame prints. The typeface chosen here is used instead.
       </span>
     );
   }
