@@ -1,0 +1,83 @@
+bun.lock
+  s_c4e8006bf0d88c::t_acf3fd2304cf73 31,42,312-315,554-555
+docs/adr/0004-location-privacy-rules.md
+  s_c4e8006bf0d88c::t_b6651ecf0958d5 1-39
+docs/adr/0005-caption-templates.md
+  s_c4e8006bf0d88c::t_8ec6b0810576f6 1
+server/src/app.ts
+  s_c4e8006bf0d88c::t_13e4407edb9d8e 8-9,26,29,33,110-111,119,138-139,141,153,169,181,190,194-195
+server/src/caption-routes.ts
+  s_c4e8006bf0d88c::t_30b8934da684e4 12,54,59
+server/src/captions-api.test.ts
+  s_c4e8006bf0d88c::t_3ea0968e04f487 270-317
+server/src/captions.test.ts
+  s_c4e8006bf0d88c::t_496c616ff0590d 9,11,21,23,33,68,119,131
+server/src/captions.ts
+  s_c4e8006bf0d88c::t_5c4fc6bf790cb4 1,18-19,159,170
+server/src/capture-api.test.ts
+  s_c4e8006bf0d88c::t_a5790bc3938f77 1-434
+server/src/capture-routes.ts
+  s_c4e8006bf0d88c::t_8b5ad68cb4923c 1-82
+server/src/capture.ts
+  s_c4e8006bf0d88c::t_8af5ae18cae219 1-253
+server/src/frame-references.ts
+  s_c4e8006bf0d88c::t_65eea362a8ca64 13,51
+server/src/frame-text.test.ts
+  s_c4e8006bf0d88c::t_4cebd69f7ede98 2,5-6,16,18,28
+server/src/frame.test.ts
+  s_c4e8006bf0d88c::t_4154abbd7ac299 6,9,25,28-30,121,352,362
+server/src/frame.ts
+  s_c4e8006bf0d88c::t_e6a54aa6eec4e9 2,48,61,139-143
+server/src/library.ts
+  s_c4e8006bf0d88c::t_7210a118a95614 451-455
+server/src/migrations.ts
+  s_c4e8006bf0d88c::t_af6bb75975dae3 60-83
+server/src/zones.test.ts
+  s_c4e8006bf0d88c::t_2a8c20c3d5879f 1-78
+server/src/zones.ts
+  s_c4e8006bf0d88c::t_e51a826e619eab 1-75
+web/package.json
+  s_c4e8006bf0d88c::t_950e75871d0c54 14,25
+web/src/components/capture-editor.tsx
+  s_c4e8006bf0d88c::t_2f83314d818f30 1-373
+web/src/components/library-map.tsx
+  s_c4e8006bf0d88c::t_e22424d412acdb 1-75
+web/src/components/map.tsx
+  s_c4e8006bf0d88c::t_fe24e39a84d809 1-67
+web/src/components/privacy-zones.tsx
+  s_c4e8006bf0d88c::t_e54120ea55d0f8 1-332
+web/src/components/select-caption.tsx
+  s_c4e8006bf0d88c::t_9c8cb260d998a0 25-32,43-44,54-56,66
+web/src/components/select-details.tsx
+  s_c4e8006bf0d88c::t_872d1f9cb9e308 3,7-8,10-16,21,26-27,33-34,66-69,76,88-96,98-131,140-205
+web/src/index.css
+  s_c4e8006bf0d88c::t_8f8ff3c949980d 45-99
+web/src/lib/capture-edits.test.ts
+  s_c4e8006bf0d88c::t_0bebb51be5a1d5 2-14,28-61,64-94,97-116,118-119,122-123,125-126
+web/src/lib/capture-edits.ts
+  s_c4e8006bf0d88c::t_520e31996fefad 1,16-38,40-41,43-147
+web/src/lib/map.test.ts
+  s_c4e8006bf0d88c::t_8519bb2292bcbe 1-48
+web/src/lib/map.ts
+  s_c4e8006bf0d88c::t_5a504d0e603309 1-27
+web/src/screens/library.tsx
+  s_c4e8006bf0d88c::t_f8529ade757fff 1-2,5,35-36,45-49,53-54,191-198,205-210,242,248-281
+web/src/screens/settings.tsx
+  s_c4e8006bf0d88c::t_93733f7a44673f 3,43-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8442c19697bef3497e2a87177442245779dc17ed",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
