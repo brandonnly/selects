@@ -1,0 +1,21 @@
+server/src/gallery.test.ts
+  s_72f39d106bdcce::t_0ba73d674f9892 438-451
+server/src/gallery.ts
+  s_72f39d106bdcce::t_07ae673b3e32e1 38-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b3e461a1db23b0f957220f931810a38788d5a2ab",
+  "prompts": {},
+  "sessions": {
+    "s_72f39d106bdcce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "96cce2c7-2c1c-4db6-ac89-108f23da68f7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
