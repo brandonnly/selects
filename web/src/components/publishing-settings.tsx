@@ -255,6 +255,8 @@ function BucketStatus({ bucket }: { bucket: Publishing["bucket"] }) {
         <p>
           Fake mode: frames go to the fake bucket inside Selects, and the bucket in <code>BUCKET_*</code> is
           not used. It is used once <code>INSTAGRAM_API=live</code> is set.
+          {bucket.url === "public" &&
+            " The fake bucket has a public base URL, as BUCKET_PUBLIC_URL is set, so gallery output can be tried."}
         </p>
       </div>
     );

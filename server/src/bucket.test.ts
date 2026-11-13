@@ -28,6 +28,45 @@ describe("the bucket", () => {
     expect(fake.objects.get(first)?.contentType).toBe("image/jpeg");
   });
 
+  test("stores an object with the type and caching it is given, served so from the public URL", async () => {
+    const bucket = createBucket(settings(fake.publicBaseUrl));
+    const body = new TextEncoder().encode('{"version":1}');
+
+    await bucket.putObject("posts.json", body, {
+      type: "application/json; charset=utf-8",
+      cacheControl: "no-cache",
+    });
+
+    const stored = fake.objects.get("posts.json");
+    expect(stored?.bytes).toEqual(body);
+    expect(stored?.contentType).toBe("application/json; charset=utf-8");
+    const response = await fetch(bucket.urlFor("posts.json"));
+    expect(response.headers.get("cache-control")).toBe("no-cache");
+    expect(await response.text()).toBe('{"version":1}');
+  });
+
+  test("stores an object while the bucket's clock runs a few minutes ahead of Selects'", async () => {
+    const bucket = createBucket(settings(fake.publicBaseUrl));
+    fake.clockAhead(4 * 60 * 1000);
+
+    await bucket.putObject("gallery/x.jpg", JPEG, { type: "image/jpeg", cacheControl: "no-cache" });
+
+    expect(fake.objects.get("gallery/x.jpg")?.bytes).toEqual(JPEG);
+  });
+
+  test("gives up on an object upload that never answers, and says nothing of the link it used", async () => {
+    const bucket = createBucket(settings(), { timeoutMs: 200 });
+    fake.hang(true);
+
+    const result = await bucket
+      .putObject("gallery/x.jpg", JPEG, { type: "image/jpeg", cacheControl: "no-cache" })
+      .catch((error: unknown) => error);
+
+    expect(String(result)).toContain("did not answer in time");
+    expect(String(result)).not.toContain("X-Amz");
+    fake.hang(false);
+  });
+
   test("gives up on a bucket that takes a request and never answers", async () => {
     const bucket = createBucket(settings(), { timeoutMs: 200 });
     fake.hang(true);

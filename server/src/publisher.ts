@@ -130,6 +130,16 @@ export type PublisherOptions = {
   containerPolling?: { intervalMs: number; limitMs: number };
   /** Picks a hashtag set. Default: Math.random. */
   random?: () => number;
+  /**
+   * Told of each post once it is recorded as published, before its frame is deleted: gallery
+   * output takes the frame from here. It must not throw, and nothing it does touches the post.
+   */
+  onPublished?: (postId: string) => void;
+  /**
+   * Whether gallery output is on: asked as a post is recorded as published, and recorded in that
+   * same update. Such a post's frame is left for the gallery to take, even across a stop.
+   */
+  galleryWanted?: () => boolean;
 };
 
 /** The wait before each retry: three retries over fifteen minutes. */
@@ -164,7 +174,11 @@ type PostRow = {
   state: PostState;
   caption: string;
   alt_text: string;
+  /** The caption and alt text as they read with the location withheld. Null before version 8. */
+  withheld_caption: string | null;
+  withheld_alt_text: string | null;
   hashtag_set: string | null;
+  /** The published capture data the post was built from, as JSON: one per select. */
   capture: string;
   attempts: number;
   next_attempt_at: number | null;
@@ -180,6 +194,8 @@ type PostRow = {
   account_id: string | null;
   /** A fingerprint of what the post was confirmed with, location aside. Null before version 7. */
   confirmed: string | null;
+  /** 1 when it was recorded as published with gallery output on: its frame is the gallery's. */
+  to_gallery: number;
   created_at: number;
   published_at: number | null;
 };
@@ -206,6 +222,9 @@ type Content = {
   fingerprint: string;
   caption: string;
   altText: string;
+  /** The caption and alt text as they read with the location withheld; empty when written by hand. */
+  withheldCaption: string;
+  withheldAltText: string;
   hashtagSet: string | null;
   check: LimitCheck;
 };
@@ -270,6 +289,8 @@ export function createPublisher(options: PublisherOptions) {
     return run;
   };
 
+  const toGallery = () => (options.galleryWanted?.() ? 1 : 0);
+
   const bucketProblem = (): string | undefined => {
     if (!("missing" in options.bucket)) return undefined;
     const names = options.bucket.missing;
@@ -300,19 +321,33 @@ export function createPublisher(options: PublisherOptions) {
     const [first] = sources;
     const [firstId] = selectIds;
     if (first === undefined || firstId === undefined) return undefined;
-    const caption = buildCaption({
-      capture: first.capture,
+    const override = captionStore.override(firstId);
+    // One pick of the hashtag set for both, so the withheld text has the same one.
+    let pick: number | undefined;
+    const input = {
       templates: captionStore.templates(),
       coordinateFormat: settings.frame().coordinateFormat,
-      override: captionStore.override(firstId),
+      override,
       hashtagSet: hashtagSet ?? undefined,
-      random,
+      random: () => {
+        pick ??= random();
+        return pick;
+      },
+    };
+    const caption = buildCaption({ capture: first.capture, ...input });
+    // Text written by hand cannot be scrubbed of coordinates safely: it is withheld whole.
+    const withheld = buildCaption({
+      capture: { ...first.capture, latitude: null, longitude: null },
+      ...input,
+      override: undefined,
     });
     return {
       sources,
       fingerprint: JSON.stringify(sources.map((source) => source.capture)),
       caption: caption.caption,
       altText: caption.altText,
+      withheldCaption: (override?.caption ?? null) === null ? withheld.caption : "",
+      withheldAltText: (override?.altText ?? null) === null ? withheld.altText : "",
       hashtagSet: caption.hashtagSet,
       check: checkCaption(caption),
     };
@@ -390,8 +425,9 @@ export function createPublisher(options: PublisherOptions) {
 
   function insertPost(id: string, selectIds: string[], content: Content, extra: Partial<PostRow>) {
     db.query(
-      `INSERT INTO posts (id, state, mode, account_id, confirmed, caption, alt_text, hashtag_set, capture, report, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO posts (id, state, mode, account_id, confirmed, caption, alt_text, withheld_caption,
+         withheld_alt_text, hashtag_set, capture, report, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       extra.state ?? "publishing",
@@ -400,6 +436,8 @@ export function createPublisher(options: PublisherOptions) {
       Object.values(confirmedFingerprint(selectIds, content)).join(":"),
       content.caption,
       content.altText,
+      content.withheldCaption,
+      content.withheldAltText,
       content.hashtagSet,
       content.fingerprint,
       extra.report ?? null,
@@ -578,8 +616,10 @@ export function createPublisher(options: PublisherOptions) {
         published_at: clock.now(),
         error: permalink === null ? "Published; its link could not be found." : null,
         next_attempt_at: null,
+        to_gallery: toGallery(),
       });
       console.log(`Post ${post.id} published.`);
+      options.onPublished?.(post.id);
       await dropObject(post.id);
     };
 
@@ -629,7 +669,14 @@ export function createPublisher(options: PublisherOptions) {
           false,
         );
       }
-      update({ caption: content.caption, alt_text: content.altText, capture: content.fingerprint });
+      // What it sends, and what the gallery lists once its location is withheld: stored together.
+      update({
+        caption: content.caption,
+        alt_text: content.altText,
+        withheld_caption: content.withheldCaption,
+        withheld_alt_text: content.withheldAltText,
+        capture: content.fingerprint,
+      });
       if (content.check.problems.length > 0) {
         throw new PostFailure(`The caption can't be posted. ${content.check.problems.join(" ")}`, false);
       }
@@ -721,7 +768,10 @@ export function createPublisher(options: PublisherOptions) {
     if (mode !== null && mode !== options.mode) return;
     const key = db
       .transaction(() => {
-        const found = row(id)?.object_key;
+        const post = row(id);
+        // A post published with gallery output on keeps its frame: the gallery takes it.
+        if (post?.state === "published" && post.to_gallery === 1) return undefined;
+        const found = post?.object_key;
         if (found === null || found === undefined) return undefined;
         db.query("INSERT OR IGNORE INTO bucket_cleanup (key, added_at, mode) VALUES (?, ?, ?)").run(
           found,
@@ -807,15 +857,17 @@ export function createPublisher(options: PublisherOptions) {
       const media = await findPublished(credentials.token, credentials.userId, found);
       db.query(
         `UPDATE posts SET state = 'published', media_id = ?, permalink = ?, published_at = ?, error = ?,
-           next_attempt_at = NULL WHERE id = ? AND state = 'unconfirmed'`,
+           next_attempt_at = NULL, to_gallery = ? WHERE id = ? AND state = 'unconfirmed'`,
       ).run(
         media?.id ?? null,
         media?.permalink ?? null,
         clock.now(),
         media?.permalink ? null : "Published; its link could not be found.",
+        toGallery(),
         id,
       );
       console.log(`Post ${id} was published, Instagram says.`);
+      options.onPublished?.(id);
       return dropObject(id);
     }
     const settled = clock.now() - (found.publish_requested_at ?? 0) >= PUBLISH_SETTLE_MS;
@@ -844,7 +896,8 @@ export function createPublisher(options: PublisherOptions) {
     for (const { id } of unconfirmed) await serially(() => checkUnconfirmed(id));
     const left = db
       .query<{ id: string }, []>(
-        "SELECT id FROM posts WHERE object_key IS NOT NULL AND state IN ('published', 'failed')",
+        `SELECT id FROM posts WHERE object_key IS NOT NULL AND state IN ('published', 'failed')
+           AND NOT (state = 'published' AND to_gallery = 1)`,
       )
       .all();
     for (const { id } of left) await serially(() => dropObject(id));
@@ -982,8 +1035,9 @@ export function createPublisher(options: PublisherOptions) {
         if (resolution.posted) {
           db.query(
             `UPDATE posts SET state = 'published', permalink = ?, published_at = ?, next_attempt_at = NULL,
-               error = 'Marked as posted by hand.' WHERE id = ? AND state = 'unconfirmed'`,
-          ).run(resolution.permalink ?? null, clock.now(), id);
+               error = 'Marked as posted by hand.', to_gallery = ? WHERE id = ? AND state = 'unconfirmed'`,
+          ).run(resolution.permalink ?? null, clock.now(), toGallery(), id);
+          options.onPublished?.(id);
         } else {
           db.query(
             `UPDATE posts SET state = 'failed', next_attempt_at = NULL,
