@@ -1,6 +1,6 @@
 import type { Post } from "@selects/server";
 import { ExternalLink } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api";
 import { Button } from "@/components/ui/button";
 import { problemsIn } from "@/lib/autosave";
@@ -19,13 +19,17 @@ export function PostedScreen() {
   const [loaded, setLoaded] = useState<Loaded | undefined>();
   const [loadError, setLoadError] = useState(false);
 
+  // Only the newest load asked for is shown, so a slow poll never undoes what came after it.
+  const turn = useRef(0);
   const load = useCallback(async () => {
+    const mine = ++turn.current;
     try {
       const { data, error } = await api.posts.get();
+      if (mine !== turn.current) return;
       if (data) setLoaded(data);
       setLoadError(error !== null);
     } catch {
-      setLoadError(true);
+      if (mine === turn.current) setLoadError(true);
     }
   }, []);
 

@@ -89,6 +89,7 @@ export function errorKindOf(
   if ((code !== undefined && RATE_LIMIT_CODES.has(code)) || status === 429) return "rate-limit";
   if (
     status >= 500 ||
+    status === 408 ||
     isTransient ||
     (code !== undefined && TRANSIENT_CODES.has(code)) ||
     (subcode !== undefined && TRANSIENT_SUBCODES.has(subcode))

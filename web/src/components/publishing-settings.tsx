@@ -90,6 +90,7 @@ function InstagramAccount({
       }
       // The token is gone from the page as soon as it is accepted.
       setToken("");
+      setRemoveFailed(false);
       setReplacing(false);
       await onChange();
     } catch {
@@ -235,8 +236,8 @@ function TokenExpiry({ account }: { account: AccountView }) {
           {expires === null ? "" : ` on ${expires}`}, unless a refresh works first.
         </span>
         <span className="text-muted-foreground">
-          Selects tries again every day. Check that it is a long-lived token from the Instagram API with
-          Instagram Login, or paste a new one.
+          Selects keeps trying. Check that it is a long-lived token from the Instagram API with Instagram
+          Login, or paste a new one.
         </span>
       </span>
     );

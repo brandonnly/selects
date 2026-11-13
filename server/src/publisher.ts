@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Bucket, BucketError } from "./bucket";
 import type { CaptionStore } from "./caption-store";
@@ -318,6 +318,14 @@ export function createPublisher(options: PublisherOptions) {
     };
   }
 
+  /** The override font and the size and time of its file, so another file of the same name counts as a change. */
+  function fontVersion() {
+    const font = renderer.fontOverride?.() ?? null;
+    if (font === null) return null;
+    const stats = statSync(join(options.dataDir, "fonts", font.fileName), { throwIfNoEntry: false });
+    return { ...font, bytes: stats?.size ?? null, changed: stats?.mtimeMs ?? null };
+  }
+
   /**
    * A fingerprint of everything a post is built from except where it was taken: the templates,
    * the select's own caption, the hashtag set, the frame settings and font, and the capture
@@ -330,7 +338,7 @@ export function createPublisher(options: PublisherOptions) {
       own: selectIds.map((selectId) => captionStore.override(selectId)),
       hashtagSet: content.hashtagSet,
       frame: settings.frame(),
-      font: renderer.fontOverride?.() ?? null,
+      font: fontVersion(),
       captures: content.sources.map(({ capture }) => ({ ...capture, latitude: null, longitude: null })),
     };
     return createHash("sha256").update(JSON.stringify(inputs)).digest("hex").slice(0, 32);
@@ -340,7 +348,7 @@ export function createPublisher(options: PublisherOptions) {
   function frameFingerprint(content: Content): string {
     const inputs = {
       settings: settings.frame(),
-      font: renderer.fontOverride?.() ?? null,
+      font: fontVersion(),
       sources: content.sources,
     };
     return createHash("sha256").update(JSON.stringify(inputs)).digest("hex").slice(0, 16);

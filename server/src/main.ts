@@ -102,12 +102,14 @@ const shutdown = () => {
   clearInterval(inboxTimer);
   clearInterval(retryTimer);
   clearInterval(tokenTimer);
-  void fakes?.stop();
-  // Let requests in flight finish before the database closes.
-  server.stop().finally(() => {
-    db.close();
-    process.exit(0);
-  });
+  // Let requests in flight finish, the fakes they may be using still up, before the database closes.
+  server
+    .stop()
+    .finally(() => fakes?.stop())
+    .finally(() => {
+      db.close();
+      process.exit(0);
+    });
 };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
