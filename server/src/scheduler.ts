@@ -48,6 +48,8 @@ export type RunState =
 
 /** A slot on one day, as the API shows it. Never a location. */
 export type Run = {
+  /** `<slotId>_<date>`: names the slot on its day in a URL. Never parsed by the UI as a date. */
+  id: string;
   slotId: string;
   date: string;
   /** The slot's time that day, and when it posts: later by its random spread. */
@@ -102,6 +104,7 @@ const LOOKAHEAD = DAY;
 const KEEP_RUNS = 30 * DAY;
 
 const toRun = (row: RunRow): Run => ({
+  id: `${row.slot_id}_${row.date}`,
   slotId: row.slot_id,
   date: row.date,
   slotAt: row.slot_at,
@@ -433,8 +436,12 @@ export function createScheduler(options: SchedulerOptions) {
     },
 
     schedule(): Schedule {
-      const { slots, ...rest } = stored();
-      return { ...rest, slots: slots.map(({ since: _, ...slot }) => slot) };
+      const { slots, timeZone, graceMinutes } = stored();
+      return {
+        slots: slots.map(({ id, days, time, spreadMinutes }) => ({ id, days, time, spreadMinutes })),
+        timeZone,
+        graceMinutes,
+      };
     },
 
     /** Saves the schedule. A slot added or changed posts only from its next time on. */
@@ -572,7 +579,7 @@ export function createScheduler(options: SchedulerOptions) {
       const row = planned(slotId, date);
       if (row === undefined) return "not-found";
       db.query(
-        "UPDATE slot_runs SET state = 'skipped', select_id = NULL, picked = NULL WHERE slot_id = ? AND date = ?",
+        "UPDATE slot_runs SET state = 'skipped', select_id = NULL, picked = NULL, passed = '[]' WHERE slot_id = ? AND date = ?",
       ).run(slotId, date);
       return toRun(runRow(slotId, date) as RunRow);
     },
@@ -589,6 +596,13 @@ export function createScheduler(options: SchedulerOptions) {
 }
 
 export type Scheduler = ReturnType<typeof createScheduler>;
+
+/** The slot and date in a run's `id`. */
+export function runKey(id: string): { slotId: string; date: string } | undefined {
+  const at = id.lastIndexOf("_");
+  if (at <= 0) return undefined;
+  return { slotId: id.slice(0, at), date: id.slice(at + 1) };
+}
 
 function scheduleProblems(schedule: Schedule): string[] {
   const problems: string[] = [];

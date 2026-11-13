@@ -332,6 +332,9 @@ describe("next up", () => {
     const { scheduler, publisher } = await setup();
     const id = await addSelect("portrait");
     scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    await addSelect("landscape");
+    // Swapped away from the first, then skipped: taking the skip back chooses afresh.
+    scheduler.swap("daily", "2026-11-13");
     scheduler.skip("daily", "2026-11-13");
     expect(scheduler.unskip("daily", "2026-11-13")).toMatchObject({ state: "planned", selectId: id });
     await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");

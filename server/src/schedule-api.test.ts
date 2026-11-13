@@ -167,21 +167,22 @@ describe("the schedule", () => {
     const b = await addSelect("landscape");
     const saved = await send("PUT", "/api/schedule", { slots: [NOON], timeZone: "UTC", graceMinutes: 120 });
     const chosen = saved.body.upcoming[0].selectId;
-    const swapped = await send("POST", "/api/schedule/runs/noon/2026-11-13/swap");
+    const swapped = await send("POST", "/api/schedule/runs/noon_2026-11-13/swap");
     expect(swapped.status).toBe(200);
     expect(swapped.body.upcoming[0].selectId).toBe(chosen === a ? b : a);
-    const skipped = await send("POST", "/api/schedule/runs/noon/2026-11-13/skip");
+    const skipped = await send("POST", "/api/schedule/runs/noon_2026-11-13/skip");
     expect(skipped.body.upcoming[0]).toMatchObject({ state: "skipped", selectId: null });
-    const back = await send("POST", "/api/schedule/runs/noon/2026-11-13/unskip");
+    const back = await send("POST", "/api/schedule/runs/noon_2026-11-13/unskip");
     expect(back.body.upcoming[0]).toMatchObject({ state: "planned" });
     expect([a, b]).toContain(back.body.upcoming[0].selectId);
-    expect((await send("POST", "/api/schedule/runs/noon/2030-01-01/swap")).status).toBe(404);
+    expect((await send("POST", "/api/schedule/runs/noon_2030-01-01/swap")).status).toBe(404);
+    expect((await send("POST", "/api/schedule/runs/nonsense/skip")).status).toBe(404);
   });
 
   test("swapping with nothing else to choose says so", async () => {
     await addSelect("portrait");
     await send("PUT", "/api/schedule", { slots: [NOON], timeZone: "UTC", graceMinutes: 120 });
-    const { status, body } = await send("POST", "/api/schedule/runs/noon/2026-11-13/swap");
+    const { status, body } = await send("POST", "/api/schedule/runs/noon_2026-11-13/swap");
     expect(status).toBe(409);
     expect(body.problems).toEqual(["Nothing else to choose: the queue and the pool hold no other select."]);
   });

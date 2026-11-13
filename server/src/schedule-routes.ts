@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 import type { Captures } from "./capture";
 import type { Library } from "./library";
 import type { PickRules } from "./pick";
-import { SCHEDULE_LIMITS, type Scheduler } from "./scheduler";
+import { runKey, SCHEDULE_LIMITS, type Scheduler } from "./scheduler";
 import type { Settings } from "./settings";
 import type { Weekday } from "./slots";
 
@@ -105,18 +105,23 @@ export function scheduleRoutes({ scheduler, library, captures, settings }: Sched
       { body: t.Object({ paused: t.Boolean() }, { additionalProperties: false }) },
     )
     .put("/api/pick-rules", ({ body }) => scheduler.setRules(body as PickRules), { body: pickRulesSchema })
-    .post("/api/schedule/runs/:slotId/:date/swap", ({ params, status }) => {
-      const result = scheduler.swap(params.slotId, params.date);
+    .post("/api/schedule/runs/:id/swap", ({ params, status }) => {
+      const key = runKey(params.id);
+      const result = key === undefined ? "not-found" : scheduler.swap(key.slotId, key.date);
       if (result === "not-found") return status(404, notFound);
       if (result === "none") return status(409, { problems: [NOTHING_ELSE] });
       return view();
     })
-    .post("/api/schedule/runs/:slotId/:date/skip", ({ params, status }) =>
-      scheduler.skip(params.slotId, params.date) === "not-found" ? status(404, notFound) : view(),
-    )
-    .post("/api/schedule/runs/:slotId/:date/unskip", ({ params, status }) =>
-      scheduler.unskip(params.slotId, params.date) === "not-found" ? status(404, notFound) : view(),
-    )
+    .post("/api/schedule/runs/:id/skip", ({ params, status }) => {
+      const key = runKey(params.id);
+      const result = key === undefined ? "not-found" : scheduler.skip(key.slotId, key.date);
+      return result === "not-found" ? status(404, notFound) : view();
+    })
+    .post("/api/schedule/runs/:id/unskip", ({ params, status }) => {
+      const key = runKey(params.id);
+      const result = key === undefined ? "not-found" : scheduler.unskip(key.slotId, key.date);
+      return result === "not-found" ? status(404, notFound) : view();
+    })
     .get("/api/queue", queueView)
     .put(
       "/api/queue",
