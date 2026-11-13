@@ -396,7 +396,12 @@ export function createGallery(options: GalleryOptions) {
     if (hash !== manifest.hash) {
       if (manifest.nextAt > clock.now()) return;
       try {
-        await bucket.putObject(MANIFEST_KEY, new TextEncoder().encode(body), MANIFEST_HEADERS);
+        await bucket.putObject(MANIFEST_KEY, new TextEncoder().encode(body), MANIFEST_HEADERS, async () => {
+          // A write given up on that landed anyway, maybe over a newer one. The manifest is
+          // shared, so it is never deleted: it is written again at once.
+          Object.assign(manifest, { hash: undefined, nextAt: 0 });
+          void runDue();
+        });
         Object.assign(manifest, { hash, error: null, failures: 0, nextAt: 0 });
       } catch (error) {
         const delay = RETRY_DELAYS[Math.min(manifest.failures, RETRY_DELAYS.length - 1)] ?? MINUTE;

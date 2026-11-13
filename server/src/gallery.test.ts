@@ -87,6 +87,8 @@ function setup(
     gallery?: boolean;
     mode?: InstagramMode;
     wrapBucket?: (bucket: Bucket) => Bucket;
+    /** How long one bucket request may take. */
+    timeoutMs?: number;
   } = {},
 ) {
   const mode = options.mode ?? "fake";
@@ -101,6 +103,7 @@ function setup(
     options.publicBaseUrl === null ? undefined : (options.publicBaseUrl ?? fakeBucket.publicBaseUrl);
   const plain = createBucket(
     new BucketSettings(fakeBucket.endpoint, fakeBucket.name, "auto", publicBaseUrl, FAKE_BUCKET_KEYS),
+    { timeoutMs: options.timeoutMs },
   );
   const bucket = options.wrapBucket?.(plain) ?? plain;
   const gallery = createGallery({ db, library, captures, zones, settings, bucket, mode, clock });
@@ -717,6 +720,31 @@ describe("manifest writes", () => {
 
     expect(manifest()?.posts.map((p) => p.id)).toEqual([post.id]);
     expect(objectKeys().filter((key) => key.startsWith("gallery/"))).toHaveLength(1);
+  });
+
+  test("that time out and land late never delete the manifest, and a stale one is replaced", async () => {
+    const parts = setup({ timeoutMs: 150 });
+    await connect(parts.account);
+    const id = await addFile(large);
+    await postNow(parts, id);
+
+    // A write of the manifest without the location is given up on, and is still on its way.
+    parts.captures.save(id, { edits: {}, locationHidden: true });
+    fakeBucket.slow(500);
+    await parts.gallery.runDue();
+    expect(parts.gallery.view().manifestError).toContain("did not answer in time");
+    fakeBucket.slow(0);
+    // Meanwhile the location is shown again, and that manifest is stored at once.
+    parts.captures.save(id, { edits: {}, locationHidden: false });
+    await parts.gallery.runDue();
+    expect(manifest()?.posts[0]?.location).not.toBeNull();
+
+    // The stale one lands over it, then is replaced.
+    await Bun.sleep(600);
+    await parts.gallery.settled();
+
+    expect(fakeBucket.objects.has("posts.json")).toBe(true);
+    expect(manifest()?.posts[0]?.location).toEqual({ latitude: -20.5, longitude: -120.75 });
   });
 
   test("write nothing to a bucket whose gallery was never used", async () => {
