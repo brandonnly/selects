@@ -1,4 +1,4 @@
-import type { GalleryPost } from "@selects/server";
+import type { GalleryPost, GalleryView } from "@selects/server";
 
 /** A post's gallery state in words, and whether "Remove from gallery" applies to it now. */
 export function describeGallery(
@@ -20,4 +20,16 @@ export function describeGallery(
     case "removed":
       return { label: "Removed from the gallery", detail: null, removable: false };
   }
+}
+
+/**
+ * The gallery switch as Settings shows it. A saved "on" shows as on even while gallery output is
+ * unavailable, and can be turned off then: it never comes back on by surprise when a public
+ * base URL returns. It cannot be turned on while unavailable.
+ */
+export function gallerySwitch(view: Pick<GalleryView, "enabled" | "availability">): {
+  checked: boolean;
+  disabled: boolean;
+} {
+  return { checked: view.enabled, disabled: !view.enabled && !view.availability.available };
 }

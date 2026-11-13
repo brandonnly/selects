@@ -2,6 +2,7 @@ import type { GalleryView } from "@selects/server";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api";
 import { problemsIn } from "@/lib/autosave";
+import { gallerySwitch } from "@/lib/gallery";
 
 /** The gallery output switch, with why it is unavailable when it is. */
 export function GallerySettings() {
@@ -38,19 +39,22 @@ export function GallerySettings() {
     }
   };
 
+  const toggle = gallery === undefined ? undefined : gallerySwitch(gallery);
+
   return (
     <section aria-labelledby="gallery" className="flex flex-col gap-3">
       <h2 id="gallery" className="text-sm font-medium text-muted-foreground">
         Gallery
       </h2>
       {loadError && <p className="text-sm text-destructive">Can't reach the server.</p>}
-      {gallery !== undefined && (
+      {gallery !== undefined && toggle !== undefined && (
         <div className="flex flex-col gap-2 rounded-lg border bg-card p-4 text-sm text-card-foreground">
           <label className="flex items-center gap-2 font-medium">
             <input
               type="checkbox"
-              checked={gallery.enabled && gallery.availability.available}
-              disabled={state === "saving" || !gallery.availability.available}
+              checked={toggle.checked}
+              disabled={state === "saving" || toggle.disabled}
+              aria-describedby={gallery.availability.available ? undefined : "gallery-unavailable"}
               onChange={(event) => change(event.currentTarget.checked)}
               className="size-4 accent-primary"
             />
@@ -72,7 +76,11 @@ export function GallerySettings() {
               </p>
             </>
           ) : (
-            <p data-testid="gallery-unavailable">Unavailable: {gallery.availability.reason}</p>
+            <p id="gallery-unavailable" data-testid="gallery-unavailable">
+              Unavailable: {gallery.availability.reason}
+              {gallery.enabled &&
+                " It stays on as saved, and writes nothing until then. Turn it off to keep it off."}
+            </p>
           )}
           {gallery.manifestError !== null && (
             <p className="text-destructive">

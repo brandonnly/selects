@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { describeGallery } from "./gallery";
+import { describeGallery, gallerySwitch } from "./gallery";
 
 describe("a post's gallery state in words", () => {
   test("says when it is listed, and offers removal", () => {
@@ -33,5 +33,32 @@ describe("a post's gallery state in words", () => {
     const described = describeGallery({ state: "listed", error: null, mode: "live" }, "fake");
     expect(described.removable).toBe(false);
     expect(described.detail).toContain("live mode");
+  });
+});
+
+describe("the gallery switch", () => {
+  test("is on and can be turned on or off while gallery output is available", () => {
+    expect(gallerySwitch({ enabled: true, availability: { available: true, manifestUrl: "x" } })).toEqual({
+      checked: true,
+      disabled: false,
+    });
+    expect(gallerySwitch({ enabled: false, availability: { available: true, manifestUrl: "x" } })).toEqual({
+      checked: false,
+      disabled: false,
+    });
+  });
+
+  test("shows a saved on while unavailable, and lets it be turned off", () => {
+    expect(gallerySwitch({ enabled: true, availability: { available: false, reason: "No URL." } })).toEqual({
+      checked: true,
+      disabled: false,
+    });
+  });
+
+  test("cannot be turned on while unavailable", () => {
+    expect(gallerySwitch({ enabled: false, availability: { available: false, reason: "No URL." } })).toEqual({
+      checked: false,
+      disabled: true,
+    });
   });
 });
