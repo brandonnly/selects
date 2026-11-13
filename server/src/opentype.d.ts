@@ -11,12 +11,22 @@ declare module "opentype.js" {
     commands: PathCommand[];
   }
 
+  export interface Glyph {
+    index: number;
+    /** In font units. */
+    advanceWidth?: number;
+    getPath(x: number, y: number, fontSize: number): Path;
+  }
+
   export interface Font {
     unitsPerEm: number;
     ascender: number;
     descender: number;
-    getPath(text: string, x: number, y: number, fontSize: number): Path;
-    getAdvanceWidth(text: string, fontSize: number): number;
+    glyphs: { get(index: number): Glyph | undefined };
+    /** 0 when the font has no glyph for the character. */
+    charToGlyphIndex(character: string): number;
+    /** The kerning between two glyphs, in font units. */
+    getKerningValue(left: Glyph, right: Glyph): number;
   }
 
   /** Parses a TrueType, OpenType or WOFF file. Throws when the file is not one. */

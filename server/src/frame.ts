@@ -1,7 +1,7 @@
-import type { Font, PathCommand } from "opentype.js";
+import type { PathCommand } from "opentype.js";
 import sharp, { type OverlayOptions } from "sharp";
 import type { CaptureData } from "./photo";
-import { loadTypeface, type TypefaceId } from "./typefaces";
+import { createFontSource, type Typeface, type TypefaceId } from "./typefaces";
 
 /** The fields that can print on a frame, in the order they print. */
 export const FRAME_FIELDS = [
@@ -146,16 +146,16 @@ function layout(photo: { width: number; height: number }, border: number) {
 }
 
 /** The line of metadata as filled outlines, so it renders the same on any machine. */
-function textSvg(text: string, font: Font, color: string, border: number): string {
+function textSvg(text: string, font: Typeface, color: string, border: number): string {
   const room = FRAME_WIDTH - 2 * Math.max(border, TEXT_MARGIN);
-  const natural = font.getAdvanceWidth(text, TEXT_SIZE);
+  const natural = font.width(text, TEXT_SIZE);
   const size = natural > room ? (TEXT_SIZE * room) / natural : TEXT_SIZE;
-  const width = font.getAdvanceWidth(text, size);
+  const width = font.width(text, size);
   const scale = size / font.unitsPerEm;
   // The baseline that centres the font's ascender-to-descender height in the band.
   const baseline = TEXT_BAND / 2 + ((font.ascender + font.descender) / 2) * scale;
-  const path = font.getPath(text, (FRAME_WIDTH - width) / 2, baseline, size);
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${FRAME_WIDTH}" height="${TEXT_BAND}"><path d="${pathData(path.commands)}" fill="${color}"/></svg>`;
+  const outline = font.outline(text, (FRAME_WIDTH - width) / 2, baseline, size);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${FRAME_WIDTH}" height="${TEXT_BAND}"><path d="${pathData(outline)}" fill="${color}"/></svg>`;
 }
 
 /**
@@ -179,8 +179,12 @@ function pathData(commands: PathCommand[]): string {
  * metadata, as an sRGB JPEG with no embedded metadata. The scheduler, the publisher and the
  * Frame screen's preview all render through this.
  */
-export function createFrameRenderer(_options: { dataDir: string }) {
+export function createFrameRenderer({ dataDir }: { dataDir: string }) {
+  const fonts = createFontSource(dataDir);
   return {
+    /** The font file in the data folder that overrides the typeface setting, if there is one. */
+    fontOverride: () => fonts.override(),
+
     async render(source: FrameSource, settings: FrameSettings, options: RenderOptions = {}): Promise<Buffer> {
       const colors = COLORS[settings.color];
       const border = Math.max(0, Math.min(MAX_BORDER, Math.round(settings.border)));
@@ -199,7 +203,7 @@ export function createFrameRenderer(_options: { dataDir: string }) {
       const layers: OverlayOptions[] = [{ input: photo, left: place.photo.left, top: place.photo.top }];
       const text = frameText(source.capture, settings);
       if (text !== "") {
-        const svg = textSvg(text, loadTypeface(settings.typeface), colors.text, border);
+        const svg = textSvg(text, fonts.font(settings.typeface), colors.text, border);
         layers.push({ input: Buffer.from(svg), left: 0, top: place.textTop });
       }
 
