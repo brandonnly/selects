@@ -53,12 +53,18 @@ export function FrameScreen() {
   const saving = useRef<Promise<unknown>>(Promise.resolve());
   /** The settings the server has confirmed holding, as JSON. */
   const confirmed = useRef<string | undefined>(undefined);
+  /** Saves sent or waiting their turn whose answer has not come back. */
+  const unanswered = useRef(0);
   const send = useCallback((next: FrameSettings) => {
+    unanswered.current++;
     const sent = saving.current
       .then(() => api.frame.put(next))
       .then((result) => {
         if (!result.error) confirmed.current = JSON.stringify(next);
         return result;
+      })
+      .finally(() => {
+        unanswered.current--;
       });
     saving.current = sent.catch(() => {});
     return sent;
@@ -125,8 +131,9 @@ export function FrameScreen() {
       const pending = latest.current;
       if (pending === undefined || confirmed.current === undefined) return;
       const json = JSON.stringify(pending);
-      // Compared with what the server confirmed, so a save still waiting its turn is sent too.
-      if (json === confirmed.current) return;
+      // Sent unless the server is known to hold exactly this: a save still on its way or waiting
+      // its turn may leave it holding something else.
+      if (json === confirmed.current && unanswered.current === 0) return;
       lastSaved.current = json;
       fetch("/api/frame", {
         method: "PUT",
