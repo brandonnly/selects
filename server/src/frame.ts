@@ -1,5 +1,7 @@
+import type { Font, PathCommand } from "opentype.js";
+import sharp, { type OverlayOptions } from "sharp";
 import type { CaptureData } from "./photo";
-import type { TypefaceId } from "./typefaces";
+import { loadTypeface, type TypefaceId } from "./typefaces";
 
 /** The fields that can print on a frame, in the order they print. */
 export const FRAME_FIELDS = [
@@ -90,3 +92,131 @@ function dms(value: number, positive: string, negative: string): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${degrees}°${pad(minutes)}'${pad(seconds)}"${value < 0 ? negative : positive}`;
 }
+
+/** The frame's size: the largest and tallest image Instagram keeps, 4:5. */
+export const FRAME_WIDTH = 1440;
+export const FRAME_HEIGHT = 1800;
+
+/** The thickest border the settings allow, in pixels of the frame. */
+export const MAX_BORDER = 240;
+
+/** The band under the photo that holds the line of metadata. */
+const TEXT_BAND = 80;
+const TEXT_SIZE = 26;
+/** The least room either side of the line, when the border is thinner than this. */
+const TEXT_MARGIN = 32;
+/**
+ * Where a photo shorter than its space sits: this share of the spare height goes above it, the
+ * rest below, so a landscape photo rests slightly above centre.
+ */
+const SPARE_ABOVE = 0.4;
+const JPEG_QUALITY = 92;
+
+const COLORS = {
+  light: { background: "#ffffff", text: "#444444" },
+  dark: { background: "#121212", text: "#c8c8c8" },
+} as const;
+
+/** The select to frame: its original and the capture data to print. */
+export type FrameSource = { path: string; capture: CaptureData };
+
+export type RenderOptions = {
+  /** Scales the finished frame down to this width, for a preview. Default: full size. */
+  width?: number;
+};
+
+type Box = { left: number; top: number; width: number; height: number };
+
+/** Where the photo and the line of metadata go on the frame. */
+function layout(photo: { width: number; height: number }, border: number) {
+  const space = {
+    width: FRAME_WIDTH - 2 * border,
+    height: FRAME_HEIGHT - 2 * border - TEXT_BAND,
+  };
+  const scale = Math.min(space.width / photo.width, space.height / photo.height);
+  const width = Math.round(photo.width * scale);
+  const height = Math.round(photo.height * scale);
+  const box: Box = {
+    left: Math.round((FRAME_WIDTH - width) / 2),
+    top: border + Math.round((space.height - height) * SPARE_ABOVE),
+    width,
+    height,
+  };
+  return { photo: box, textTop: box.top + box.height };
+}
+
+/** The line of metadata as filled outlines, so it renders the same on any machine. */
+function textSvg(text: string, font: Font, color: string, border: number): string {
+  const room = FRAME_WIDTH - 2 * Math.max(border, TEXT_MARGIN);
+  const natural = font.getAdvanceWidth(text, TEXT_SIZE);
+  const size = natural > room ? (TEXT_SIZE * room) / natural : TEXT_SIZE;
+  const width = font.getAdvanceWidth(text, size);
+  const scale = size / font.unitsPerEm;
+  // The baseline that centres the font's ascender-to-descender height in the band.
+  const baseline = TEXT_BAND / 2 + ((font.ascender + font.descender) / 2) * scale;
+  const path = font.getPath(text, (FRAME_WIDTH - width) / 2, baseline, size);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${FRAME_WIDTH}" height="${TEXT_BAND}"><path d="${pathData(path.commands)}" fill="${color}"/></svg>`;
+}
+
+/**
+ * SVG path data for outlines. Written here because opentype.js's own `toPathData` prints NaN
+ * for some coordinates, which ends the path there and drops the rest of the line.
+ */
+function pathData(commands: PathCommand[]): string {
+  const n = (value: number) => String(Math.round(value * 100) / 100);
+  return commands
+    .map((c) => {
+      if (c.type === "M" || c.type === "L") return `${c.type}${n(c.x)} ${n(c.y)}`;
+      if (c.type === "Q") return `Q${n(c.x1)} ${n(c.y1)} ${n(c.x)} ${n(c.y)}`;
+      if (c.type === "C") return `C${n(c.x1)} ${n(c.y1)} ${n(c.x2)} ${n(c.y2)} ${n(c.x)} ${n(c.y)}`;
+      return "Z";
+    })
+    .join("");
+}
+
+/**
+ * Renders frames: a select's photo on a 1440 × 1800 canvas with a border and its line of
+ * metadata, as an sRGB JPEG with no embedded metadata. The scheduler, the publisher and the
+ * Frame screen's preview all render through this.
+ */
+export function createFrameRenderer(_options: { dataDir: string }) {
+  return {
+    async render(source: FrameSource, settings: FrameSettings, options: RenderOptions = {}): Promise<Buffer> {
+      const colors = COLORS[settings.color];
+      const border = Math.max(0, Math.min(MAX_BORDER, Math.round(settings.border)));
+
+      const original = sharp(source.path).rotate();
+      const { autoOrient } = await original.metadata();
+      const place = layout(autoOrient, border);
+      const photo = await original
+        .resize(place.photo.width, place.photo.height, { fit: "fill" })
+        // Converts from the original's own profile, so wide-gamut colors survive.
+        .toColourspace("srgb")
+        .flatten({ background: colors.background })
+        .png({ compressionLevel: 0 })
+        .toBuffer();
+
+      const layers: OverlayOptions[] = [{ input: photo, left: place.photo.left, top: place.photo.top }];
+      const text = frameText(source.capture, settings);
+      if (text !== "") {
+        const svg = textSvg(text, loadTypeface(settings.typeface), colors.text, border);
+        layers.push({ input: Buffer.from(svg), left: 0, top: place.textTop });
+      }
+
+      const frame = sharp({
+        create: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 3, background: colors.background },
+      }).composite(layers);
+
+      if (options.width === undefined || options.width >= FRAME_WIDTH) {
+        return frame.jpeg({ quality: JPEG_QUALITY }).toBuffer();
+      }
+      const full = await frame.raw().toBuffer({ resolveWithObject: true });
+      return sharp(full.data, { raw: full.info })
+        .resize(Math.max(1, Math.round(options.width)))
+        .jpeg({ quality: JPEG_QUALITY })
+        .toBuffer();
+    },
+  };
+}
+
+export type FrameRenderer = ReturnType<typeof createFrameRenderer>;
