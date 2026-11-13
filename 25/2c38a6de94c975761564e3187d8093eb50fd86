@@ -1,0 +1,27 @@
+Dockerfile
+  s_9f8c542a508e22::t_e364aa342614b9 25-26
+  s_9f8c542a508e22::t_7bc25a60d82b13 1-24,27-75
+.github/scripts/smoke-test-image.sh
+  s_9f8c542a508e22::t_04ccab575ef953 22,24-25
+  s_9f8c542a508e22::t_421554ea2de61f 1-21,23,26-121
+.github/workflows/ci.yml
+  s_9f8c542a508e22::t_ae1958298d12d1 32-43
+.dockerignore
+  s_9f8c542a508e22::t_b68c038345e6e4 1-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "252c38a6de94c975761564e3187d8093eb50fd86",
+  "prompts": {},
+  "sessions": {
+    "s_9f8c542a508e22": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7f2a488-3a64-43e0-bdcf-e81f50f4578f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
