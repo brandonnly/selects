@@ -65,12 +65,12 @@ export function publishRoutes({ publisher, account, settings, bucket, instagram 
         account.disconnect();
         return status(204);
       })
-      .get("/api/selects/:id/post", ({ params, status }) => {
+      .get("/api/selects/:id/publish", ({ params, status }) => {
         const preview = publisher.preview([params.id]);
         return preview === undefined ? status(404, notFound) : preview;
       })
       .post(
-        "/api/selects/:id/post",
+        "/api/selects/:id/publish",
         async ({ params, body, status }) => {
           const result = await publisher.publish({
             selectIds: [params.id],

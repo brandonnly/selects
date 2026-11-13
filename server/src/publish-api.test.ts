@@ -97,8 +97,8 @@ async function connect() {
 
 /** Asks for the post as shown, confirms it, and waits for its first attempt. */
 async function postNow(selectId: string) {
-  const preview = await request(`/api/selects/${selectId}/post`);
-  const posted = await send("POST", `/api/selects/${selectId}/post`, {
+  const preview = await request(`/api/selects/${selectId}/publish`);
+  const posted = await send("POST", `/api/selects/${selectId}/publish`, {
     caption: preview.body.caption,
     altText: preview.body.altText,
     hashtagSet: preview.body.hashtagSet ?? undefined,
@@ -219,7 +219,7 @@ describe("post now", () => {
     await connect();
     const id = await addSelect("portrait");
 
-    const { status, body } = await request(`/api/selects/${id}/post`);
+    const { status, body } = await request(`/api/selects/${id}/publish`);
 
     expect(status).toBe(200);
     expect(body).toMatchObject({ problems: [], dryRun: false, account: "selects_test", url: "presigned" });
@@ -253,7 +253,7 @@ describe("post now", () => {
     await connect();
     const id = await addSelect("portrait");
 
-    const { status, body } = await send("POST", `/api/selects/${id}/post`, {
+    const { status, body } = await send("POST", `/api/selects/${id}/publish`, {
       caption: "Not the caption",
       altText: "Not the alt text",
     });

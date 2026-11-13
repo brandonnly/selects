@@ -2,6 +2,7 @@ import type { Select } from "@selects/server";
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/api";
+import { PostNow } from "@/components/post-now";
 import { SelectCaption } from "@/components/select-caption";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -94,6 +95,11 @@ export function SelectDetails({
                 <p className="px-4 py-3 text-sm text-muted-foreground">
                   Marked as already posted: never picked for a post.
                 </p>
+              )}
+              {!select.alreadyPosted && (
+                <DetailsSection title="Post">
+                  <PostNow key={select.id} select={select} onPosted={onChanged} />
+                </DetailsSection>
               )}
               <DetailsSection title="Capture data">
                 <CaptureEditor key={select.id} selectId={select.id} onSaved={changed} />
