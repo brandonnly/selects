@@ -1,0 +1,21 @@
+web/src/components/queue-list.tsx
+  s_3e2ab1cb86d96d::t_1602e1485f7fe6 7-16,91-99,109-115,191-192
+web/src/screens/queue.tsx
+  s_3e2ab1cb86d96d::t_f3ea807dbca250 23,27,31-33,36-37,40,43-45,47-49,51,53-56,71,83-85,101-110,113-139,145,226-230,236-237,274,277,279,281-284,286-291,293,314-315,340,380,391,393,401,407,409-413,434,446,456
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f300847d39e1edda92d55e56c5bb270c61377cc",
+  "prompts": {},
+  "sessions": {
+    "s_3e2ab1cb86d96d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bd2b11a-6ff6-449b-947e-52aec407382d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
