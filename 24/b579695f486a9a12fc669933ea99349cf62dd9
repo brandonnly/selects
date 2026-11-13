@@ -1,0 +1,23 @@
+server/src/backup.test.ts
+  s_eddee4d6e42c35::t_17691096f20d4c 76-77
+  s_eddee4d6e42c35::t_5fd9d82fc3ed0d 171-174
+  s_eddee4d6e42c35::t_7a80d2727f25b1 1-75,78-170,175-186
+server/src/backup.ts
+  s_eddee4d6e42c35::t_17691096f20d4c 1-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "24b579695f486a9a12fc669933ea99349cf62dd9",
+  "prompts": {},
+  "sessions": {
+    "s_eddee4d6e42c35": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b0d3f500-05ba-429c-87a0-663797fd627a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
