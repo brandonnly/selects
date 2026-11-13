@@ -1,0 +1,21 @@
+server/src/instagram.ts
+  s_c4e8006bf0d88c::t_9f7ebba9fe18d0 50-59,96
+server/src/publisher.ts
+  s_c4e8006bf0d88c::t_65e5fc17562ef8 839-840
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dff61df154883b7c8c25f25ae85aca23fa58764c",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
