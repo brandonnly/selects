@@ -9,7 +9,7 @@ post. Upload your finals once. On the schedule you set, it picks one, renders it
 its shutter speed, aperture, ISO and coordinates read from the file, and publishes it to your
 Instagram account.
 
-It's early: photos can be added to the Library, but nothing is posted yet. The plan is in
+It's early: photos can be added to the Library and framed, but nothing is posted yet. The plan is in
 [docs/PRODUCT.md](docs/PRODUCT.md).
 
 - One container, one volume, SQLite. No other services to run.
@@ -39,6 +39,17 @@ that one was deleted. A likely re-export (the same picture, taken at the same mo
 until you add it anyway or discard it. Dismissing a file refused from the inbox clears the notice
 and leaves the file in `inbox/rejected`.
 
+## The frame
+
+Each post is a 1440 × 1800 JPEG: the photo on a light or dark border with one line of capture
+data under it, in sRGB with no embedded metadata. The Frame screen sets the border width, the
+frame color, the typeface, which fields print and how coordinates read, and previews each change
+on any select with the same renderer that makes the post. Changes save as you make them.
+
+Six typefaces are bundled, each with its license in `server/fonts`. To use another font, put
+one `.ttf`, `.otf` or `.woff` file in the `fonts` folder of the data directory: it replaces the
+chosen typeface on every frame until it is removed.
+
 ## Development
 
 You need [Bun](https://bun.sh); the version is pinned in `package.json` under `packageManager`.
@@ -52,8 +63,12 @@ bun run dev
 Open the address Vite prints. The development database lives in the git-ignored `data/`.
 
 `bun run fixtures [dir]` writes the generated test photos (portrait, square and landscape, with
-and without GPS, a re-export, and files Selects refuses) to a folder, `.tmp/fixtures` by
-default. Use them to try the app; never commit a real photograph.
+and without GPS, a re-export, a Display P3 photo, and files Selects refuses) to a folder,
+`.tmp/fixtures` by default. Use them to try the app; never commit a real photograph.
+
+The frame tests compare renders against the reference images in `server/references`. After an
+intended change to how a frame looks, `bun run references` writes them again; look at each one
+before committing it.
 
 Every environment variable is listed in [.env.example](.env.example). Copy it to `.env` to
 change a port. The password applies to the built app: under `bun run dev` it guards the API but
