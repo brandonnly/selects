@@ -1,0 +1,23 @@
+web/src/components/gallery-settings.tsx
+  s_72f39d106bdcce::t_6bf817d9274721 5,42-43,50,55-57,79-83
+web/src/lib/gallery.test.ts
+  s_72f39d106bdcce::t_9be4e2d27e82b3 2,38-64
+web/src/lib/gallery.ts
+  s_72f39d106bdcce::t_eb0adc35cbc9c0 1,24-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d27c552dcf3c877e7c277bb54bb6eb093d62336a",
+  "prompts": {},
+  "sessions": {
+    "s_72f39d106bdcce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "96cce2c7-2c1c-4db6-ac89-108f23da68f7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
