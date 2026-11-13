@@ -45,6 +45,10 @@ export function FrameScreen() {
   const [previewId, setPreviewId] = useState<string | undefined>();
   const [loadError, setLoadError] = useState(false);
   const [save, setSave] = useState<SaveState>("idle");
+  /** The settings the server holds, as JSON: what was loaded or last sent. */
+  const lastSaved = useRef<string | undefined>(undefined);
+  const latest = useRef<FrameSettings | undefined>(undefined);
+  latest.current = settings;
 
   useEffect(() => {
     let live = true;
@@ -53,6 +57,7 @@ export function FrameScreen() {
         if (!live) return;
         if (frame.data) {
           const { settings: saved, ...rest } = frame.data;
+          lastSaved.current = JSON.stringify(saved);
           setSettings(saved);
           setOptions(rest);
         }
@@ -72,15 +77,10 @@ export function FrameScreen() {
 
   const settled = useSettled(settings, SETTLE_MS);
 
-  // Saves settled settings that differ from what was last saved or loaded.
-  const lastSaved = useRef<string | undefined>(undefined);
+  // Saves settled settings that differ from what the server holds.
   useEffect(() => {
-    if (settled === undefined) return;
+    if (settled === undefined || lastSaved.current === undefined) return;
     const json = JSON.stringify(settled);
-    if (lastSaved.current === undefined) {
-      lastSaved.current = json;
-      return;
-    }
     if (json === lastSaved.current) return;
     lastSaved.current = json;
     setSave("saving");
@@ -93,6 +93,17 @@ export function FrameScreen() {
         if (lastSaved.current === json) setSave("failed");
       });
   }, [settled]);
+
+  // Leaving the screen before a change has settled still saves it.
+  useEffect(
+    () => () => {
+      const pending = latest.current;
+      if (pending === undefined || lastSaved.current === undefined) return;
+      if (JSON.stringify(pending) === lastSaved.current) return;
+      api.frame.put(pending).catch(() => {});
+    },
+    [],
+  );
 
   const change = (update: Partial<FrameSettings>) =>
     setSettings((current) => (current === undefined ? current : { ...current, ...update }));
