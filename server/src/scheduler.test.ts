@@ -192,6 +192,20 @@ describe("slots", () => {
     expect(publisher.posts()).toHaveLength(3);
   });
 
+  test("a slot added or moved just after its time waits for its next one", async () => {
+    const { scheduler, publisher } = await setup();
+    await addSelect("portrait");
+    // Added at 09:00 for 08:30: within the grace period, but it did not exist then.
+    scheduler.setSchedule({ slots: [everyDay("08:30")], timeZone: "UTC", graceMinutes: 120 });
+    await runUntil(scheduler, publisher, "2026-11-13T10:00:00Z");
+    // Moved at 10:00 to 09:45.
+    scheduler.setSchedule({ slots: [everyDay("09:45")], timeZone: "UTC", graceMinutes: 120 });
+    await runUntil(scheduler, publisher, "2026-11-13T11:00:00Z");
+    expect(publisher.posts()).toEqual([]);
+    await runUntil(scheduler, publisher, "2026-11-14T10:00:00Z");
+    expect(publisher.posts()).toHaveLength(1);
+  });
+
   test("a timezone that is not one is refused", async () => {
     const { scheduler } = await setup();
     const result = scheduler.setSchedule({ slots: [], timeZone: "Mars/Olympus_Mons", graceMinutes: 120 });
@@ -347,5 +361,145 @@ describe("next up", () => {
       graceMinutes: 120,
     });
     expect(scheduler.upcoming().map((run) => run.selectId)).toEqual([a, b]);
+  });
+});
+
+describe("downtime", () => {
+  test("a slot missed while the app was down posts late within the grace period", async () => {
+    const { scheduler, publisher, restart } = await setup();
+    const id = await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    // Down from 09:00 to 13:30: the first tick after the start is 90 minutes after the slot.
+    clock.advance(at("2026-11-13T13:30:00Z") - clock.now());
+    const restarted = restart();
+    restarted.recover();
+    await restarted.tick();
+    await publisher.settled();
+    expect(postedSelects(publisher)).toEqual([id]);
+  });
+
+  test("past the grace period it is skipped, and shown as missed", async () => {
+    const { scheduler, publisher } = await setup();
+    const id = await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    clock.advance(at("2026-11-13T14:01:00Z") - clock.now());
+    await scheduler.tick();
+    await publisher.settled();
+    expect(publisher.posts()).toEqual([]);
+    expect(scheduler.history()[0]).toMatchObject({ date: "2026-11-13", state: "missed" });
+    // And the select is still there for the next slot.
+    expect(library.get(id)?.inPool).toBe(true);
+  });
+
+  test("the grace period can be set", async () => {
+    const { scheduler, publisher } = await setup();
+    await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 30 });
+    clock.advance(at("2026-11-13T12:45:00Z") - clock.now());
+    await scheduler.tick();
+    await publisher.settled();
+    expect(publisher.posts()).toEqual([]);
+    expect(scheduler.history()[0]?.state).toBe("missed");
+  });
+
+  test("missed slots never stack: after downtime, at most one late post", async () => {
+    const { scheduler, publisher } = await setup();
+    for (const name of ["portrait", "landscape", "square", "rotated"] as const) await addSelect(name);
+    scheduler.setSchedule({
+      slots: [everyDay("12:00", "noon"), everyDay("12:30", "half"), everyDay("13:00", "one")],
+      timeZone: "UTC",
+      graceMinutes: 120,
+    });
+    clock.advance(at("2026-11-13T13:10:00Z") - clock.now());
+    await scheduler.tick();
+    await publisher.settled();
+    expect(publisher.posts()).toHaveLength(1);
+    expect(scheduler.history().map((run) => `${run.slotId} ${run.state}`)).toEqual([
+      "one posted",
+      "half missed",
+      "noon missed",
+    ]);
+  });
+
+  test("a slot's random spread is drawn once, and a restart neither moves it nor fires it twice", async () => {
+    let draw = 0.5;
+    const { scheduler, publisher, restart } = await setup({ random: () => draw });
+    await addSelect("portrait");
+    await addSelect("landscape");
+    scheduler.setSchedule({ slots: [everyDay("12:00", "daily", 60)], timeZone: "UTC", graceMinutes: 120 });
+    // Half of 61 possible minutes: 30 minutes after noon.
+    expect(scheduler.upcoming()[0]?.dueAt).toBe(at("2026-11-13T12:30:00Z"));
+    draw = 0;
+    const restarted = restart(() => draw);
+    await restarted.tick();
+    expect(restarted.upcoming()[0]?.dueAt).toBe(at("2026-11-13T12:30:00Z"));
+    await runUntil(restarted, publisher, "2026-11-13T12:29:00Z", MINUTE);
+    expect(publisher.posts()).toEqual([]);
+    await runUntil(restarted, publisher, "2026-11-13T12:31:00Z", MINUTE);
+    expect(publisher.posts()).toHaveLength(1);
+    // Restarted again after it posted: the slot does not post a second time.
+    const again = restart(() => 0);
+    again.recover();
+    await runUntil(again, publisher, "2026-11-13T23:00:00Z");
+    expect(publisher.posts()).toHaveLength(1);
+  });
+
+  test("a stop after a slot was claimed and before the post was made posts it once on restart", async () => {
+    // The first publisher call never answers, as if Selects stopped while it ran.
+    let hang = true;
+    const { publisher, restart } = await setup({
+      wrapPublisher: (real) => ({
+        ...real,
+        publish: (request) => (hang ? new Promise(() => {}) : real.publish(request)),
+      }),
+    });
+    const id = await addSelect("portrait");
+    const first = restart();
+    first.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    clock.advance(at("2026-11-13T12:00:00Z") - clock.now());
+    void first.tick();
+    await Bun.sleep(0);
+    expect(first.upcoming()[0]?.state).toBe("posting");
+    expect(publisher.posts()).toEqual([]);
+
+    hang = false;
+    const second = restart();
+    second.recover();
+    clock.advance(5 * MINUTE);
+    await second.tick();
+    await publisher.settled();
+    expect(postedSelects(publisher)).toEqual([id]);
+    expect(second.history()[0]).toMatchObject({ state: "posted" });
+  });
+
+  test("a stop after the post was made and before it was recorded never posts twice", async () => {
+    // The post is made, then the answer is lost, as if Selects stopped right after.
+    let lose = true;
+    const { publisher, restart } = await setup({
+      wrapPublisher: (real) => ({
+        ...real,
+        publish: async (request) => {
+          const result = await real.publish(request);
+          if (lose) return new Promise(() => {});
+          return result;
+        },
+      }),
+    });
+    const id = await addSelect("portrait");
+    await addSelect("landscape");
+    const first = restart();
+    first.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    clock.advance(at("2026-11-13T12:00:00Z") - clock.now());
+    void first.tick();
+    await publisher.settled();
+    expect(publisher.posts()).toHaveLength(1);
+
+    lose = false;
+    const second = restart();
+    second.recover();
+    await runUntil(second, publisher, "2026-11-13T13:00:00Z");
+    expect(postedSelects(publisher)).toEqual([id]);
+    const [run] = second.history();
+    expect(run).toMatchObject({ state: "posted", selectId: id, postId: publisher.posts()[0]?.id });
   });
 });
