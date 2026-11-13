@@ -7,7 +7,8 @@
  */
 
 export const LIVE_INSTAGRAM_URL = "https://graph.instagram.com";
-export const GRAPH_VERSION = "v24.0";
+/** A Graph API version Meta supports; checked against its changelog in November 2026. */
+export const GRAPH_VERSION = "v26.0";
 
 /** How long one request may take before it counts as a transient failure. */
 const REQUEST_TIMEOUT_MS = 30_000;
