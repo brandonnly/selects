@@ -1,0 +1,21 @@
+server/src/capture.ts
+  s_05ed5efd81d47f::t_96b62327928928 102-103,137
+server/src/capture-api.test.ts
+  s_05ed5efd81d47f::t_96b62327928928 125,306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5cc0ea0318f5238794a55ea951cd11942b0bc902",
+  "prompts": {},
+  "sessions": {
+    "s_05ed5efd81d47f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3c4924a8-afdf-4308-afe2-4dfc73eb2c54",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
