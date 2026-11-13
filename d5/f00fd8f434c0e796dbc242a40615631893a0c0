@@ -1,0 +1,43 @@
+server/src/frame-references.ts
+  s_05ed5efd81d47f::t_ddbeba2cb7dbe8 13
+  s_05ed5efd81d47f::t_7b9c1e8eb68bf4 51
+server/src/zones.ts
+  s_05ed5efd81d47f::t_5ab6592a545d74 4-31,72
+  s_05ed5efd81d47f::t_059a47240c9442 1-3,32-71,73-74
+server/src/app.ts
+  s_05ed5efd81d47f::t_aecccc1f8a79a2 6-7,24,26,106-107,115,134-135,137,149,165
+server/src/frame.test.ts
+  s_05ed5efd81d47f::t_7b9c1e8eb68bf4 6,9,25,28-30,121,352,362
+server/src/zones.test.ts
+  s_05ed5efd81d47f::t_1fd5260da667ab 1-33,38-52,56-76
+  s_05ed5efd81d47f::t_8fbf86dd6d762a 34-37,53-55
+server/src/capture-api.test.ts
+  s_05ed5efd81d47f::t_0dca39283e779d 1-191,193-214
+  s_05ed5efd81d47f::t_3a1adf8d42d55f 192
+server/src/capture.ts
+  s_05ed5efd81d47f::t_8fbf86dd6d762a 80-84,123-125
+  s_05ed5efd81d47f::t_cc7ae365de0e39 1-79,85-122,126-205
+server/src/capture-routes.ts
+  s_05ed5efd81d47f::t_8fbf86dd6d762a 35-38,49-54
+  s_05ed5efd81d47f::t_47ef6b338f650f 1-34,39-48,55-57
+server/src/migrations.ts
+  s_05ed5efd81d47f::t_7dc1332c21174e 60-82
+server/src/frame.ts
+  s_05ed5efd81d47f::t_aecccc1f8a79a2 2,129-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d5f00fd8f434c0e796dbc242a40615631893a0c0",
+  "prompts": {},
+  "sessions": {
+    "s_05ed5efd81d47f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3c4924a8-afdf-4308-afe2-4dfc73eb2c54",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
