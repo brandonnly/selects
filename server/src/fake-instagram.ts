@@ -53,7 +53,13 @@ export type FakeFailure =
   /** The work is done, then the answer is lost: a 500 as if the connection dropped. */
   | "lost"
   /** The work is done and no answer ever comes. */
-  | "hang";
+  | "hang"
+  /** The token lacks a permission the request needs. */
+  | "permission"
+  /** Instagram restricts the action as possible spam. */
+  | "spam"
+  /** A 4xx Selects has no special handling for. */
+  | "invalid";
 
 export type FakeOperation = "me" | "refresh" | "container" | "status" | "publish" | "permalink" | "media";
 
@@ -113,6 +119,18 @@ export function createFakeInstagram({
       return graphError(500, 2, "Service temporarily unavailable", { is_transient: true });
     if (failure === "rate-limit")
       return graphError(400, 4, "Application request limit reached", { is_transient: true });
+    if (failure === "permission") {
+      return graphError(403, 10, "Application does not have permission for this action");
+    }
+    if (failure === "spam") {
+      return graphError(
+        400,
+        4,
+        "We restrict certain activity to protect our community. Tell us if you think we made a mistake.",
+        { error_subcode: 2207051 },
+      );
+    }
+    if (failure === "invalid") return graphError(400, 100, "Invalid parameter");
     if (failure === "publish-limit") {
       return graphError(400, 9, "The account has reached its publishing limit.", { error_subcode: 2207042 });
     }

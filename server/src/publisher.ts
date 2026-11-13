@@ -554,6 +554,13 @@ export function createPublisher(options: PublisherOptions) {
           false,
         );
       }
+      if (error.kind === "permission") {
+        return new PostFailure(
+          "Instagram refused: the token lacks a permission publishing needs. Paste a token in Settings made with the instagram_business_basic and instagram_business_content_publish permissions.",
+          false,
+        );
+      }
+      if (error.kind === "refused") return new PostFailure(error.message, false);
       return new PostFailure(error.message, true);
     }
     if (error instanceof BucketError) return new PostFailure(error.message, true);

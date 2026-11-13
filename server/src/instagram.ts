@@ -38,11 +38,13 @@ export type InstagramApi = {
 /**
  * Why a request failed:
  * - `token`: the token is invalid or expired; nothing works until a new one is pasted.
+ * - `permission`: the token lacks a permission the request needs; a new token must be made.
  * - `rate-limit`: a request or publishing limit; worth trying later.
  * - `transient`: Instagram or the network failed; worth trying again.
- * - `refused`: Instagram refused the request itself.
+ * - `refused`: Instagram refused the request itself (the image, the account, spam, anything
+ *   else it answered with a 4xx); trying the same again will not help.
  */
-export type InstagramErrorKind = "token" | "rate-limit" | "transient" | "refused";
+export type InstagramErrorKind = "token" | "permission" | "rate-limit" | "transient" | "refused";
 
 export class InstagramError extends Error {
   override name = "InstagramError";
@@ -55,7 +57,37 @@ export class InstagramError extends Error {
 }
 
 const RATE_LIMIT_CODES = new Set([4, 9, 17, 32, 613]);
-const TRANSIENT_CODES = new Set([1, 2]);
+/** Server errors and download timeouts Meta says to retry. */
+const TRANSIENT_CODES = new Set([-2, -1, 1, 2]);
+/**
+ * Subcodes Meta says to retry: the image could not be fetched (a new link is made next time),
+ * the container is not ready or not found yet.
+ */
+const TRANSIENT_SUBCODES = new Set([2207052, 2207027, 2207008, 2207003, 2207001, 2207032]);
+/** Instagram restricts the action as possible spam. Sent with code 4, but no rate limit. */
+const SPAM_SUBCODE = 2207051;
+
+/** Sorts Meta's answer into what Selects does about it. */
+export function errorKindOf(
+  status: number,
+  code: number | undefined,
+  subcode: number | undefined,
+  isTransient: boolean,
+): InstagramErrorKind {
+  if (code === 190 || code === 102 || status === 401) return "token";
+  if (subcode === SPAM_SUBCODE) return "refused";
+  if (code === 10 || (code !== undefined && code >= 200 && code <= 299)) return "permission";
+  if ((code !== undefined && RATE_LIMIT_CODES.has(code)) || status === 429) return "rate-limit";
+  if (
+    status >= 500 ||
+    isTransient ||
+    (code !== undefined && TRANSIENT_CODES.has(code)) ||
+    (subcode !== undefined && TRANSIENT_SUBCODES.has(subcode))
+  ) {
+    return "transient";
+  }
+  return "refused";
+}
 
 export function createInstagramApi({ baseUrl }: { baseUrl: string }): InstagramApi {
   const versioned = (path: string) => `${baseUrl}/${GRAPH_VERSION}/${path}`;
@@ -83,24 +115,19 @@ export function createInstagramApi({ baseUrl }: { baseUrl: string }): InstagramA
       throw new InstagramError("transient", "Instagram could not be reached.");
     }
     const body = (await response.json().catch(() => undefined)) as Record<string, unknown> | undefined;
-    const error = body?.error as { message?: unknown; code?: unknown; is_transient?: unknown } | undefined;
+    const error = body?.error as
+      | { message?: unknown; code?: unknown; error_subcode?: unknown; is_transient?: unknown }
+      | undefined;
     if (response.ok && body !== undefined && error === undefined) return body;
 
     const code = typeof error?.code === "number" ? error.code : undefined;
+    const subcode = typeof error?.error_subcode === "number" ? error.error_subcode : undefined;
     const said = typeof error?.message === "string" ? clean(error.message, token) : `HTTP ${response.status}`;
-    const message = `Instagram: ${said}${code === undefined ? "" : ` (code ${code})`}`;
-    if (code === 190 || code === 102 || response.status === 401) throw new InstagramError("token", message);
-    if ((code !== undefined && RATE_LIMIT_CODES.has(code)) || response.status === 429) {
-      throw new InstagramError("rate-limit", message);
-    }
-    if (
-      response.status >= 500 ||
-      error?.is_transient === true ||
-      (code !== undefined && TRANSIENT_CODES.has(code))
-    ) {
-      throw new InstagramError("transient", message);
-    }
-    throw new InstagramError("refused", message);
+    const message = `Instagram: ${said}${code === undefined ? "" : ` (code ${code}${subcode === undefined ? "" : `/${subcode}`})`}`;
+    throw new InstagramError(
+      errorKindOf(response.status, code, subcode, error?.is_transient === true),
+      message,
+    );
   }
 
   const text = (value: unknown, what: string): string => {

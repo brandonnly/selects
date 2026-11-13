@@ -106,7 +106,10 @@ export function createInstagramAccount({
       try {
         owner = await api.me(token);
       } catch (error) {
-        if (error instanceof InstagramError && (error.kind === "token" || error.kind === "refused")) {
+        if (
+          error instanceof InstagramError &&
+          (error.kind === "token" || error.kind === "refused" || error.kind === "permission")
+        ) {
           throw new InstagramError(
             "token",
             "Instagram did not accept the token. Check it and paste it again.",

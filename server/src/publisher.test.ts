@@ -385,6 +385,63 @@ describe("a failed publish", () => {
     expect(instagram.media).toHaveLength(1);
   });
 
+  test("refused by Instagram for its image fails at once with Instagram's reason, and frees the select", async () => {
+    // A frame of an aspect ratio Instagram refuses.
+    const wide = await sharp({ create: { width: 1440, height: 400, channels: 3, background: "#808080" } })
+      .jpeg()
+      .toBuffer();
+    const { publisher, account } = setup({ renderer: { render: async () => wide } });
+    await connect(account);
+    const id = await addSelect("portrait");
+
+    const post = await postNow(publisher, id);
+
+    expect(post.state).toBe("failed");
+    expect(post.attempts).toBe(1);
+    expect(post.error).toContain("aspect ratio");
+    expect(library.pool()).toEqual([id]);
+  });
+
+  test("refused for a missing permission fails at once and asks for a token with the right permissions", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("container", "permission");
+
+    const post = await postNow(publisher, id);
+
+    expect(post.state).toBe("failed");
+    expect(post.attempts).toBe(1);
+    expect(post.error).toContain("instagram_business_content_publish");
+    expect(library.pool()).toEqual([id]);
+  });
+
+  test("restricted by Instagram as spam fails at once, and is not retried as a rate limit", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("container", "spam");
+
+    const post = await postNow(publisher, id);
+
+    expect(post.state).toBe("failed");
+    expect(post.attempts).toBe(1);
+    expect(post.error).toContain("restrict certain activity");
+    expect(library.pool()).toEqual([id]);
+  });
+
+  test("refused for a reason Selects does not know fails at once", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("container", "invalid");
+
+    const post = await postNow(publisher, id);
+
+    expect(post.state).toBe("failed");
+    expect(post.attempts).toBe(1);
+  });
+
   test("retries a bucket that fails for a while", async () => {
     const { publisher, account } = setup();
     await connect(account);
