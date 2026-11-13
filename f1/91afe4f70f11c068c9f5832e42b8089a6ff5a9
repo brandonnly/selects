@@ -1,0 +1,19 @@
+server/src/frame.ts
+  s_e242c501dd158b::t_4742e96c2da942 49-64,74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f191afe4f70f11c068c9f5832e42b8089a6ff5a9",
+  "prompts": {},
+  "sessions": {
+    "s_e242c501dd158b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9094f290-7dab-41e0-a49f-28ad7706fcee",
+        "model": "unknown"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
