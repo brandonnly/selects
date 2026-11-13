@@ -51,8 +51,15 @@ export function FrameScreen() {
   latest.current = settings;
   /** Saves go one after another, so an earlier one can never land after a later one. */
   const saving = useRef<Promise<unknown>>(Promise.resolve());
+  /** The settings the server has confirmed holding, as JSON. */
+  const confirmed = useRef<string | undefined>(undefined);
   const send = useCallback((next: FrameSettings) => {
-    const sent = saving.current.then(() => api.frame.put(next));
+    const sent = saving.current
+      .then(() => api.frame.put(next))
+      .then((result) => {
+        if (!result.error) confirmed.current = JSON.stringify(next);
+        return result;
+      });
     saving.current = sent.catch(() => {});
     return sent;
   }, []);
@@ -65,6 +72,7 @@ export function FrameScreen() {
         if (frame.data) {
           const { settings: saved, ...rest } = frame.data;
           lastSaved.current = JSON.stringify(saved);
+          confirmed.current = lastSaved.current;
           setSettings(saved);
           setOptions(rest);
         }
@@ -115,9 +123,10 @@ export function FrameScreen() {
   useEffect(() => {
     const flush = () => {
       const pending = latest.current;
-      if (pending === undefined || lastSaved.current === undefined) return;
+      if (pending === undefined || confirmed.current === undefined) return;
       const json = JSON.stringify(pending);
-      if (json === lastSaved.current) return;
+      // Compared with what the server confirmed, so a save still waiting its turn is sent too.
+      if (json === confirmed.current) return;
       lastSaved.current = json;
       fetch("/api/frame", {
         method: "PUT",
