@@ -17,6 +17,16 @@ export type Schedule = {
 
 export const DEFAULT_SCHEDULE: Schedule = { slots: [], timeZone: "UTC", graceMinutes: 120 };
 
+/** How often the timer calls `tick`. */
+export const SCHEDULE_INTERVAL_MS = 30 * 1000;
+
+/**
+ * How late a tick may find a slot and still count it as on time: one timer interval, and as much
+ * again for a tick that runs late. Lateness past this is downtime, which the grace period covers,
+ * so a grace period of 0 means "never post after downtime" and still posts on time.
+ */
+export const toleranceFor = (intervalMs: number) => 2 * intervalMs;
+
 /** Limits on what the schedule editor can save. */
 export const SCHEDULE_LIMITS = { slots: 50, spreadMinutes: 720, graceMinutes: 24 * 60 } as const;
 
@@ -78,6 +88,8 @@ export type SchedulerOptions = {
   random?: () => number;
   /** Told about each slot that came round. Issue #10 sends notifications from here. */
   notify?: (event: ScheduleEvent) => void;
+  /** How often the timer calls `tick`. Default: `SCHEDULE_INTERVAL_MS`. */
+  intervalMs?: number;
 };
 
 type RunRow = {
@@ -129,6 +141,7 @@ export function createScheduler(options: SchedulerOptions) {
   const { db, library, captures, publisher, clock } = options;
   const random = options.random ?? Math.random;
   const notify = options.notify ?? (() => {});
+  const tolerance = toleranceFor(options.intervalMs ?? SCHEDULE_INTERVAL_MS);
 
   const readSetting = <T>(key: string): T | undefined => {
     const row = db.query<{ value: string }, [string]>("SELECT value FROM settings WHERE key = ?").get(key);
@@ -298,7 +311,8 @@ export function createScheduler(options: SchedulerOptions) {
       for (const row of due) finish(row, "paused", { note: "Posting was paused." });
       return;
     }
-    const grace = stored().graceMinutes * MINUTE;
+    // Found within the timer's tolerance is on time; the grace period covers lateness past that.
+    const grace = stored().graceMinutes * MINUTE + tolerance;
     const latest = due.at(-1) as RunRow;
     for (const row of due) {
       if (row.due_at < now - grace) {

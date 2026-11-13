@@ -392,6 +392,27 @@ describe("next up", () => {
 });
 
 describe("downtime", () => {
+  test("with a grace period of 0, a slot still posts on time with the timer at any offset", async () => {
+    const { scheduler, publisher } = await setup();
+    const id = await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 0 });
+    // The timer runs every 30 seconds from an arbitrary start: it never lands on the slot's millisecond.
+    clock.advance(7_300);
+    await runUntil(scheduler, publisher, "2026-11-13T12:01:00Z", 30_000);
+    expect(postedSelects(publisher)).toEqual([id]);
+  });
+
+  test("with a grace period of 0, a slot found after downtime does not post", async () => {
+    const { scheduler, publisher } = await setup();
+    await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 0 });
+    clock.advance(at("2026-11-13T12:05:00Z") - clock.now());
+    await scheduler.tick();
+    await publisher.settled();
+    expect(publisher.posts()).toEqual([]);
+    expect(scheduler.history()[0]?.state).toBe("missed");
+  });
+
   test("a slot missed while the app was down posts late within the grace period", async () => {
     const { scheduler, publisher, restart } = await setup();
     const id = await addSelect("portrait");
@@ -409,7 +430,8 @@ describe("downtime", () => {
     const { scheduler, publisher } = await setup();
     const id = await addSelect("portrait");
     scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
-    clock.advance(at("2026-11-13T14:01:00Z") - clock.now());
+    // Past the two hours and the timer's minute of tolerance.
+    clock.advance(at("2026-11-13T14:02:00Z") - clock.now());
     await scheduler.tick();
     await publisher.settled();
     expect(publisher.posts()).toEqual([]);

@@ -7,14 +7,13 @@ import { openDatabase } from "./db";
 import { startFakes } from "./fakes";
 import { createLibrary, errorKind } from "./library";
 import { migrations } from "./migrations";
+import { SCHEDULE_INTERVAL_MS } from "./scheduler";
 import { MAX_UPLOAD_BYTES } from "./upload";
 
 /** How often the inbox is scanned for new files. */
 const INBOX_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 /** How often due retries run. */
 const RETRY_INTERVAL_MS = 30 * 1000;
-/** How often the schedule is checked: a slot posts within this long of its time. */
-const SCHEDULE_INTERVAL_MS = 30 * 1000;
 /** How often the Instagram token is checked for a refresh. */
 const TOKEN_CHECK_INTERVAL_MS = HOUR;
 
