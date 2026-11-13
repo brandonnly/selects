@@ -771,6 +771,37 @@ describe("the public base URL", () => {
   });
 });
 
+describe("a fake-mode restart", () => {
+  test("writes again what the in-memory bucket lost, so the manifest never lists a missing file", async () => {
+    const before = setup();
+    await connect(before.account);
+    const kept = await postNow(before, await addSelect("portrait"));
+    const removed = await postNow(before, await addSelect("square"));
+    fakeBucket.failNext(1000);
+    before.gallery.remove(removed.id);
+    await before.gallery.settled();
+    fakeBucket.failNext(0);
+
+    // Restarted in fake mode: the fake bucket starts empty.
+    fakeBucket.objects.clear();
+    const after = setup();
+    after.gallery.recover({ bucketEmptied: true });
+    await after.gallery.runDue();
+
+    const written = manifest();
+    expect(written?.posts.map((p) => p.id)).toEqual([kept.id]);
+    for (const post of written?.posts ?? []) {
+      expect(fakeBucket.objects.has(keyOf(post.images.clean.url))).toBe(true);
+      // The framed image was lost with the bucket, and is never rendered again.
+      expect(post.images.framed).toBeNull();
+    }
+    expect(after.gallery.view().posts.map((p) => [p.postId, p.state])).toEqual([
+      [removed.id, "removed"],
+      [kept.id, "listed"],
+    ]);
+  });
+});
+
 describe("modes", () => {
   test("a post made in fake mode never has gallery files written to or deleted from another mode's bucket", async () => {
     const fake = setup();

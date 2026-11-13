@@ -547,9 +547,24 @@ export function createGallery(options: GalleryOptions) {
      * Takes up what a stop left: posts recorded for the gallery and not yet taken in. Called once
      * at start, before frame cleanup runs; `runDue` does the same on each run.
      */
-    recover(): void {
+    recover({ bucketEmptied = false }: { bucketEmptied?: boolean } = {}): void {
       if (bucket === undefined) return;
       adoptPending();
+      // The fake bucket keeps objects in memory: a fake-mode start finds it empty. What was
+      // written is written again (the framed image is not rendered again), and what was being
+      // removed is gone already, so the manifest never lists a missing file.
+      if (bucketEmptied) {
+        db.transaction(() => {
+          db.query(
+            `UPDATE gallery_posts SET state = 'writing', frame_key = NULL, attempts = 0, next_attempt_at = NULL,
+               error = NULL WHERE mode = ? AND state IN ('writing', 'written')`,
+          ).run(mode);
+          db.query(
+            `UPDATE gallery_posts SET state = 'removed', image_key = NULL, frame_key = NULL, next_attempt_at = NULL
+              WHERE mode = ? AND state = 'removing'`,
+          ).run(mode);
+        }).immediate();
+      }
     },
 
     /**
