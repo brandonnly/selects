@@ -8,7 +8,7 @@ import { captionRoutes } from "./caption-routes";
 import { createCaptionStore } from "./caption-store";
 import { createCaptures } from "./capture";
 import { captureRoutes } from "./capture-routes";
-import { type Clock, systemClock } from "./clock";
+import { type Clock, MINUTE, systemClock } from "./clock";
 import type { BucketConfig, BucketSettings, Config } from "./config";
 import { databaseStatus } from "./db";
 import {
@@ -153,6 +153,8 @@ function createServices({
     bucket: bucket.status === "configured" ? createBucket(bucket) : bucket,
     clock,
     mode: config.instagram,
+    // The fake finishes a container at once; only the real API is polled as Meta advises.
+    containerPolling: config.instagram === "fake" ? { intervalMs: 1000, limitMs: MINUTE } : undefined,
   });
   return { library: lib, settings, renderer, zones, captures, captionStore, account, publisher, bucket };
 }

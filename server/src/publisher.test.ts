@@ -243,6 +243,30 @@ describe("post now", () => {
     expect(instagram.requests.filter((r) => r.operation === "status").length).toBeGreaterThanOrEqual(5);
   });
 
+  test("checks a container about once a minute, for at most five minutes, as Meta advises", async () => {
+    const polled: number[] = [];
+    const { publisher, account } = setup({
+      wrapApi: (api) => ({
+        ...api,
+        async containerStatus(...args) {
+          polled.push(clock.now());
+          return api.containerStatus(...args);
+        },
+      }),
+    });
+    await connect(account);
+    instagram.setProcessingPolls(1000);
+    const id = await addSelect("portrait");
+
+    const post = await postNow(publisher, id);
+
+    expect(post.state).toBe("retrying");
+    expect(post.error).toContain("took too long");
+    const gaps = polled.slice(1).map((at, i) => at - (polled[i] ?? at));
+    expect(gaps.every((gap) => gap === MINUTE)).toBe(true);
+    expect((polled.at(-1) ?? 0) - (polled[0] ?? 0)).toBe(5 * MINUTE);
+  });
+
   test("is unavailable without a bucket, naming what is missing", async () => {
     const { publisher, account } = setup({ noBucket: true });
     await connect(account);

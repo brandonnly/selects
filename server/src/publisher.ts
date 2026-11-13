@@ -126,6 +126,8 @@ export type PublisherOptions = {
   clock: Clock;
   /** Which Instagram the API talks to; recorded on each post. */
   mode: InstagramMode;
+  /** How a container is checked while it is processed. Default: Meta's advice. */
+  containerPolling?: { intervalMs: number; limitMs: number };
   /** Picks a hashtag set. Default: Math.random. */
   random?: () => number;
 };
@@ -133,9 +135,11 @@ export type PublisherOptions = {
 /** The wait before each retry: three retries over fifteen minutes. */
 export const RETRY_DELAYS = [2 * MINUTE, 5 * MINUTE, 8 * MINUTE] as const;
 
-/** How often a container is checked while Instagram processes it, and for how long. */
-const POLL_MS = 5_000;
-const MAX_POLLS = 60;
+/**
+ * How often a container is checked while Instagram processes it, and for how long: about once a
+ * minute for at most five minutes, as Meta advises for the real API.
+ */
+export const META_CONTAINER_POLLING = { intervalMs: MINUTE, limitMs: 5 * MINUTE } as const;
 
 /** How often the content is built again when a select's capture data changes during an attempt. */
 const MAX_ROUNDS = 3;
@@ -562,12 +566,15 @@ export function createPublisher(options: PublisherOptions) {
   }
 
   async function waitUntilFinished(token: string, containerId: string): Promise<void> {
-    for (let poll = 0; poll < MAX_POLLS; poll++) {
+    const { intervalMs, limitMs } = options.containerPolling ?? META_CONTAINER_POLLING;
+    const started = clock.now();
+    for (;;) {
       const status = await api.containerStatus(token, containerId);
       if (status === "FINISHED") return;
       if (status !== "IN_PROGRESS")
         throw new PostFailure(`Instagram could not process the image (${status}).`, true);
-      await clock.sleep(POLL_MS);
+      if (clock.now() - started + intervalMs > limitMs) break;
+      await clock.sleep(intervalMs);
     }
     throw new PostFailure("Instagram took too long to process the image.", true);
   }
