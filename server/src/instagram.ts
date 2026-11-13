@@ -3,7 +3,7 @@
  * API only when `INSTAGRAM_API=live`; otherwise it is the fake server in this repo.
  *
  * The token goes in the Authorization header, or in the query where Meta documents only that
- * (refresh). A request URL is never logged, and an error never carries the token.
+ * (refresh). A request URL is never logged, and an error never carries the token or a URL.
  */
 
 export const LIVE_INSTAGRAM_URL = "https://graph.instagram.com";
@@ -181,9 +181,16 @@ export function createInstagramApi({ baseUrl }: { baseUrl: string }): InstagramA
   };
 }
 
-/** Meta's message, short and on one line, with the token taken out should it ever be echoed. */
-function clean(message: string, token: string): string {
+/** A URL, or the start of one, anywhere in a message. */
+const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/\S*|\bwww\.\S+/gi;
+
+/**
+ * Meta's message, short and on one line, with every URL and the token taken out. Meta names the
+ * URI it could not fetch, which may be a presigned link.
+ */
+export function clean(message: string, token: string): string {
   const oneLine = message.replace(/\s+/g, " ").trim();
-  const redacted = token === "" ? oneLine : oneLine.split(token).join("[token]");
+  const withoutToken = token === "" ? oneLine : oneLine.split(token).join("[token]");
+  const redacted = withoutToken.replace(URL_IN_TEXT, "[link]");
   return redacted.length > 300 ? `${redacted.slice(0, 300)}…` : redacted;
 }

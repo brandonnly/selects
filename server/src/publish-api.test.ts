@@ -67,7 +67,10 @@ afterEach(async () => {
 // biome-ignore lint/suspicious/noExplicitAny: each test's assertions check the body's shape.
 type Body = any;
 
-async function request(path: string, init?: RequestInit): Promise<{ status: number; body: Body }> {
+async function request(
+  path: string,
+  init?: RequestInit,
+): Promise<{ status: number; body: Body; text: string }> {
   const response = await app.fetch(new Request(`http://selects.test${path}`, init));
   const text = await response.text();
   bodies.push(text);
@@ -75,7 +78,7 @@ async function request(path: string, init?: RequestInit): Promise<{ status: numb
   try {
     body = JSON.parse(text);
   } catch {}
-  return { status: response.status, body };
+  return { status: response.status, body, text };
 }
 
 const send = (method: string, path: string, body: unknown) =>
@@ -283,6 +286,35 @@ describe("post now", () => {
 
     expect(status).toBe(409);
     expect(instagram.media).toHaveLength(0 + 1);
+  });
+
+  test("never stores, logs or shows the link Instagram could not fetch the frame from", async () => {
+    await connect();
+    const id = await addSelect("portrait");
+    // Every fetch of the frame fails, and Meta's error names the URI it tried.
+    bucket.failReads(true);
+    const lines: unknown[] = [];
+    const spies = (["log", "error", "warn", "info"] as const).map((method) =>
+      spyOn(console, method).mockImplementation((...args: unknown[]) => {
+        lines.push(...args);
+      }),
+    );
+    try {
+      await postNow(id);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+
+    const fetched = instagram.fetches[0]?.url ?? "missing";
+    expect(fetched).toContain("X-Amz-Signature");
+    const output = lines.map((line) => Bun.inspect(line)).join("\n");
+    const stored = JSON.stringify(db.query("SELECT * FROM posts").all());
+    const shown = (await request("/api/posts")).text;
+    for (const place of [output, stored, shown]) {
+      expect(place).not.toContain(bucket.endpoint);
+      expect(place).not.toContain("X-Amz-");
+    }
+    expect(shown).toContain("could not be fetched");
   });
 
   test("is a dry run while the switch is on: recorded and shown, with its frame, and nothing sent", async () => {

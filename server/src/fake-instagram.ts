@@ -155,7 +155,7 @@ export function createFakeInstagram({
         const caption = typeof body.caption === "string" ? body.caption : "";
         if (caption.length > 2200) return graphError(400, 100, "The caption is too long.");
         const image = await download(imageUrl);
-        if (typeof image === "string") return graphError(400, 9004, image, { error_subcode: 2207052 });
+        if (!(image instanceof Uint8Array)) return image;
         const id = newId();
         containers.set(id, {
           id,
@@ -236,25 +236,51 @@ export function createFakeInstagram({
     return account;
   }
 
-  /** Fetches an image as Meta does: a JPEG of at most 8 MB, 1440 px wide at most, 4:5 to 1.91:1. */
-  async function download(imageUrl: string): Promise<Uint8Array | string> {
+  /**
+   * Fetches an image as Meta does: a JPEG of at most 8 MB, 4:5 to 1.91:1. A refusal is Meta's
+   * documented error for it, with the URI in the message where Meta puts it there.
+   */
+  async function download(imageUrl: string): Promise<Uint8Array | Response> {
+    const unfetched = () =>
+      graphError(400, 9004, `The media could not be fetched from this uri: ${imageUrl}`, {
+        error_subcode: 2207052,
+        error_user_msg: `The media could not be fetched from this uri: ${imageUrl}`,
+      });
     let response: Response;
     try {
       response = await fetch(imageUrl, { signal: AbortSignal.timeout(10_000) });
     } catch {
       fetches.push({ url: imageUrl, status: 0 });
-      return "Media download has failed. The media URI doesn't meet our requirements.";
+      return unfetched();
     }
     fetches.push({ url: imageUrl, status: response.status });
-    if (!response.ok) return "Media download has failed. The media URI doesn't meet our requirements.";
+    if (!response.ok) return unfetched();
     const image = new Uint8Array(await response.arrayBuffer());
-    if (image.byteLength > MAX_IMAGE_BYTES) return "The image is larger than 8 MB.";
+    if (image.byteLength > MAX_IMAGE_BYTES) {
+      return graphError(400, 36000, "The image is too large to download. It should be less than 8 MiB.", {
+        error_subcode: 2207004,
+      });
+    }
     const meta = await sharp(image)
       .metadata()
       .catch(() => undefined);
-    if (meta?.format !== "jpeg") return "Only JPEG images are supported.";
+    if (meta?.format !== "jpeg") {
+      return graphError(
+        400,
+        36001,
+        `The image format ${meta?.format ?? "unknown"} is not supported. Supported formats are: JPEG.`,
+        { error_subcode: 2207005 },
+      );
+    }
     const ratio = meta.width / meta.height;
-    if (meta.width > 1440 || ratio < 0.8 - 1e-3 || ratio > 1.91) return "The aspect ratio is not supported.";
+    if (ratio < 0.8 - 1e-3 || ratio > 1.91) {
+      return graphError(
+        400,
+        36003,
+        `The submitted image with aspect ratio ${ratio.toFixed(2)} cannot be published. Please submit an image with a valid aspect ratio.`,
+        { error_subcode: 2207009 },
+      );
+    }
     return image;
   }
 

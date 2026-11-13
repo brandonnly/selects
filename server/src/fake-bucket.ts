@@ -41,6 +41,7 @@ export function createFakeBucket({
   /** Requests answered, without their query or headers. */
   const requests: { method: string; path: string }[] = [];
   let failures = 0;
+  let readsFail = false;
 
   const server = Bun.serve({
     port,
@@ -51,6 +52,7 @@ export function createFakeBucket({
       requests.push({ method: request.method, path });
 
       const publicPrefix = "/public/";
+      if (readsFail && (request.method === "GET" || request.method === "HEAD")) return error(503, "SlowDown");
       if (path.startsWith(publicPrefix)) {
         if (request.method !== "GET" && request.method !== "HEAD") return new Response(null, { status: 405 });
         return serve(path.slice(publicPrefix.length));
@@ -127,6 +129,10 @@ export function createFakeBucket({
     /** The next `count` writes or deletes fail as a busy bucket's would. */
     failNext(count = 1) {
       failures = count;
+    },
+    /** While on, every read of an object fails, as an unreachable bucket's would. */
+    failReads(on: boolean) {
+      readsFail = on;
     },
     stop: () => server.stop(true),
   };
