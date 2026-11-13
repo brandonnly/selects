@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -13,11 +13,11 @@ import { createFakeBucket, FAKE_BUCKET_KEYS, type FakeBucket } from "./fake-buck
 import { createFakeInstagram, type FakeInstagram } from "./fake-instagram";
 import { type FixtureName, generateFixtures } from "./fixtures";
 import { createFrameRenderer } from "./frame";
-import { createInstagramApi, type InstagramApi } from "./instagram";
+import { createInstagramApi, type InstagramApi, InstagramError } from "./instagram";
 import { createInstagramAccount } from "./instagram-account";
 import { createLibrary, type Library } from "./library";
 import { migrations } from "./migrations";
-import { createPublisher, type Publisher } from "./publisher";
+import { createPublisher, type Publisher, RETRY_DELAYS } from "./publisher";
 import { createScheduler, type Scheduler } from "./scheduler";
 import { createSettings } from "./settings";
 import type { Slot } from "./slots";
@@ -501,5 +501,170 @@ describe("downtime", () => {
     expect(postedSelects(publisher)).toEqual([id]);
     const [run] = second.history();
     expect(run).toMatchObject({ state: "posted", selectId: id, postId: publisher.posts()[0]?.id });
+  });
+});
+
+describe("switches", () => {
+  test("the pause switch stops all posting", async () => {
+    const { scheduler, publisher } = await setup();
+    const id = await addSelect("portrait");
+    scheduler.setQueue([id]);
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    scheduler.setPaused(true);
+    await runUntil(scheduler, publisher, "2026-11-13T13:00:00Z");
+    expect(publisher.posts()).toEqual([]);
+    expect(scheduler.history()[0]?.state).toBe("paused");
+    expect(scheduler.queue()).toEqual([id]);
+    // Unpaused within the grace period, the paused slot still does not post: the next one does.
+    scheduler.setPaused(false);
+    await runUntil(scheduler, publisher, "2026-11-14T11:00:00Z");
+    expect(publisher.posts()).toEqual([]);
+    await runUntil(scheduler, publisher, "2026-11-14T12:30:00Z");
+    expect(postedSelects(publisher)).toEqual([id]);
+  });
+
+  test("in dry run, a slot records a dry run and the select stays where it was", async () => {
+    const { scheduler, publisher, settings } = await setup();
+    const id = await addSelect("portrait");
+    scheduler.setQueue([id]);
+    settings.setPublishing({ dryRun: true });
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");
+    expect(publisher.posts()).toEqual([]);
+    expect(publisher.dryRuns().map((post) => post.selectIds[0])).toEqual([id]);
+    expect(scheduler.history()[0]).toMatchObject({ state: "dry-run", postId: publisher.dryRuns()[0]?.id });
+    expect(scheduler.queue()).toEqual([id]);
+    expect(library.get(id)?.inPool).toBe(true);
+  });
+});
+
+describe("publishing", () => {
+  test("with no account, slots do not burn through the queue, and say why", async () => {
+    const { scheduler, publisher, account } = await setup({ connect: false });
+    const a = await addSelect("portrait");
+    const b = await addSelect("landscape");
+    scheduler.setQueue([a, b]);
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    expect(scheduler.problems()).toEqual(["No Instagram account is connected."]);
+    await runUntil(scheduler, publisher, "2026-11-15T13:00:00Z");
+    expect(publisher.posts()).toEqual([]);
+    expect(scheduler.queue()).toEqual([a, b]);
+    expect(scheduler.history().map((run) => [run.state, run.note])).toEqual([
+      ["unavailable", "No Instagram account is connected."],
+      ["unavailable", "No Instagram account is connected."],
+      ["unavailable", "No Instagram account is connected."],
+    ]);
+    instagram.addAccount(TOKEN, { userId: "1784140001", username: "selects_test" });
+    await account.connect(TOKEN);
+    expect(scheduler.problems()).toEqual([]);
+    await runUntil(scheduler, publisher, "2026-11-16T13:00:00Z");
+    expect(postedSelects(publisher)).toEqual([a]);
+  });
+
+  test("a post that fails for good returns its select to the pool, and the schedule keeps running", async () => {
+    let refuse = true;
+    const { scheduler, publisher } = await setup({
+      wrapApi: (api) => ({
+        ...api,
+        createContainer: (...args) =>
+          refuse
+            ? Promise.reject(new InstagramError("refused", "The image was refused."))
+            : api.createContainer(...args),
+      }),
+    });
+    const id = await addSelect("portrait");
+    scheduler.setQueue([id]);
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    await runUntil(scheduler, publisher, "2026-11-13T13:00:00Z");
+    expect(publisher.posts().map((post) => post.state)).toEqual(["failed"]);
+    expect(library.get(id)?.inPool).toBe(true);
+    refuse = false;
+    await runUntil(scheduler, publisher, "2026-11-14T13:00:00Z");
+    expect(publisher.posts().map((post) => post.state)).toEqual(["published", "failed"]);
+  });
+
+  test("an unconfirmed post keeps its select out of the pool", async () => {
+    const { scheduler, publisher } = await setup({
+      wrapApi: (api) => ({
+        ...api,
+        publish: () => Promise.reject(new InstagramError("transient", "Instagram did not answer.")),
+      }),
+    });
+    const a = await addSelect("portrait");
+    const b = await addSelect("landscape");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    await runUntil(scheduler, publisher, "2026-11-13T12:00:00Z");
+    for (const delay of RETRY_DELAYS) {
+      clock.advance(delay);
+      await publisher.runDue();
+    }
+    expect(publisher.posts().map((post) => post.state)).toEqual(["unconfirmed"]);
+    expect(library.get(a)?.inPool).toBe(false);
+    await runUntil(scheduler, publisher, "2026-11-14T12:30:00Z");
+    expect(postedSelects(publisher)).toEqual([a, b]);
+  });
+});
+
+describe("pick rules", () => {
+  test("are the scheduler's, and a change chooses next up again", async () => {
+    const { scheduler } = await setup();
+    await addSelect("portrait");
+    const oldest = await addSelect("rotated");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    expect(scheduler.upcoming()[0]?.selectId).not.toBe(oldest);
+    scheduler.setRules({ ...scheduler.rules(), order: "oldest" });
+    expect(scheduler.upcoming()[0]?.selectId).toBe(oldest);
+  });
+
+  test("spacing by place never puts a location in the logs", async () => {
+    const lines: string[] = [];
+    const log = spyOn(console, "log").mockImplementation((...args) => void lines.push(args.join(" ")));
+    const error = spyOn(console, "error").mockImplementation((...args) => void lines.push(args.join(" ")));
+    try {
+      const { scheduler, publisher } = await setup();
+      await addSelect("portrait");
+      await addSelect("landscape");
+      scheduler.setRules({ ...scheduler.rules(), place: { on: true, km: 100, posts: 5 } });
+      scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+      await runUntil(scheduler, publisher, "2026-11-14T13:00:00Z");
+      expect(publisher.posts()).toHaveLength(2);
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+    }
+    const text = lines.join("\n");
+    for (const coordinate of ["10.5", "40.25", "35.125", "165.75"]) expect(text).not.toContain(coordinate);
+  });
+});
+
+describe("daylight saving", () => {
+  // In New York, 2027-03-14 jumps from 02:00 to 03:00, and 2027-11-07 goes from 02:00 back to 01:00.
+  async function dryRunsEachDay(time: string, from: string, to: string) {
+    const { scheduler, publisher, settings } = await setup({ connect: false });
+    await addSelect("portrait");
+    settings.setPublishing({ dryRun: true });
+    clock.advance(at(from) - clock.now());
+    scheduler.setSchedule({ slots: [everyDay(time)], timeZone: "America/New_York", graceMinutes: 120 });
+    await runUntil(scheduler, publisher, to, 10 * MINUTE);
+    return scheduler
+      .history()
+      .reverse()
+      .map((run) => `${run.date} ${run.state} ${new Date(run.dueAt).toISOString()}`);
+  }
+
+  test("a slot at a time skipped as the clocks go forward posts once that day", async () => {
+    expect(await dryRunsEachDay("02:30", "2027-03-13T00:00:00Z", "2027-03-16T00:00:00Z")).toEqual([
+      "2027-03-13 dry-run 2027-03-13T07:30:00.000Z",
+      "2027-03-14 dry-run 2027-03-14T07:30:00.000Z",
+      "2027-03-15 dry-run 2027-03-15T06:30:00.000Z",
+    ]);
+  });
+
+  test("a slot at a time that happens twice as the clocks go back posts once that day", async () => {
+    expect(await dryRunsEachDay("01:30", "2027-11-06T00:00:00Z", "2027-11-09T00:00:00Z")).toEqual([
+      "2027-11-06 dry-run 2027-11-06T05:30:00.000Z",
+      "2027-11-07 dry-run 2027-11-07T05:30:00.000Z",
+      "2027-11-08 dry-run 2027-11-08T06:30:00.000Z",
+    ]);
   });
 });
