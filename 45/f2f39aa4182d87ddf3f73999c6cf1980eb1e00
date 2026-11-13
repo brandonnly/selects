@@ -1,0 +1,19 @@
+web/src/screens/frame.tsx
+  s_fcdebae46ffdb9::t_afb34e8a85a991 142-149,388-389
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "45f2f39aa4182d87ddf3f73999c6cf1980eb1e00",
+  "prompts": {},
+  "sessions": {
+    "s_fcdebae46ffdb9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "df4edecd-ed79-4f72-a1d3-7f84843b9a5f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
