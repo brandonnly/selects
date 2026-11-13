@@ -16,11 +16,17 @@ import type { Settings } from "./settings";
 /**
  * - `publishing`: being sent now, or waiting its turn.
  * - `retrying`: an attempt failed; the next is at `nextAttemptAt`.
+ * - `unconfirmed`: Instagram was asked to publish it and has not said whether it did. Its selects
+ *   stay out of the pool; its container is checked again at `nextAttemptAt`, and the owner can
+ *   say what happened.
  * - `published`: on Instagram.
  * - `failed`: given up on. Its selects are back in the pool.
  * - `dry-run`: rendered and recorded only; nothing was uploaded or published.
  */
-export type PostState = "publishing" | "retrying" | "published" | "failed" | "dry-run";
+export type PostState = "publishing" | "retrying" | "unconfirmed" | "published" | "failed" | "dry-run";
+
+/** What the owner says happened to a post Instagram has not confirmed. */
+export type Resolution = { posted: true; permalink?: string | null } | { posted: false };
 
 /** What a dry run did, and what it would have done. */
 export type DryRunReport = {
@@ -119,6 +125,12 @@ const MAX_ROUNDS = 3;
  * after this long: Instagram may still be publishing it.
  */
 const PUBLISH_SETTLE_MS = 10 * MINUTE;
+
+/** How often the container of an unconfirmed post is checked again. */
+export const UNCONFIRMED_CHECK_MS = 10 * MINUTE;
+
+const UNCONFIRMED_MESSAGE =
+  "Instagram was asked to publish it and has not said whether it did. Check Instagram, then say whether it was posted.";
 
 /** Dry runs kept, with their frames. */
 const DRY_RUNS_KEPT = 20;
@@ -368,7 +380,7 @@ export function createPublisher(options: PublisherOptions) {
     const update = (fields: Partial<Record<Column, string | number | null>>) => {
       const columns = Object.keys(fields) as Column[];
       db.query(
-        `UPDATE posts SET ${columns.map((c) => `${c} = ?`).join(", ")} WHERE id = ? AND attempts = ?`,
+        `UPDATE posts SET ${columns.map((c) => `${c} = ?`).join(", ")} WHERE id = ? AND attempts = ? AND state = 'publishing'`,
       ).run(...columns.map((c) => fields[c] ?? null), id, number);
     };
     const current = () => row(id) ?? claimed;
@@ -388,6 +400,14 @@ export function createPublisher(options: PublisherOptions) {
           attempts: number - 1,
         });
         console.error(`Post ${id} attempt ${number} is tried again at once: ${failure.message}`);
+      } else if (final && current().publish_requested_at !== null) {
+        // Instagram may have published it: never back to the pool without knowing.
+        update({
+          state: "unconfirmed",
+          error: `${failure.message} ${UNCONFIRMED_MESSAGE}`,
+          next_attempt_at: clock.now() + UNCONFIRMED_CHECK_MS,
+        });
+        console.error(`Post ${id} needs checking after ${number} attempts: ${failure.message}`);
       } else if (final) {
         update({ state: "failed", error: failure.message, next_attempt_at: null });
         console.error(
@@ -512,9 +532,12 @@ export function createPublisher(options: PublisherOptions) {
     throw new PostFailure("Instagram took too long to process the image.", true);
   }
 
-  /** The media a container became, found among the account's latest by its caption. */
+  /**
+   * The media a container became, found among the account's latest by its caption. Best effort:
+   * undefined when it cannot be looked up.
+   */
   async function findPublished(token: string, userId: string, post: PostRow) {
-    const recent = await api.recentMedia(token, userId);
+    const recent = await api.recentMedia(token, userId).catch(() => []);
     const since = (post.publish_requested_at ?? post.created_at) - PUBLISH_SETTLE_MS;
     return recent.find((media) => {
       const at = Date.parse(media.timestamp);
@@ -567,6 +590,51 @@ export function createPublisher(options: PublisherOptions) {
     return new PostFailure(`Something went wrong (${errorKind(error)}).`, true);
   }
 
+  /**
+   * Checks the container of a post Instagram has not confirmed, with the token in use now. It is
+   * recorded as published when Instagram says so, and returned to the pool only when Instagram
+   * shows it was never published, a while after it was asked to.
+   */
+  async function checkUnconfirmed(id: string): Promise<void> {
+    const found = row(id);
+    if (found === null || found.state !== "unconfirmed") return;
+    const later = () =>
+      db
+        .query("UPDATE posts SET next_attempt_at = ? WHERE id = ? AND state = 'unconfirmed'")
+        .run(clock.now() + UNCONFIRMED_CHECK_MS, id);
+    const credentials = account.credentials();
+    if (credentials === undefined || found.container_id === null) return void later();
+    let status: Awaited<ReturnType<InstagramApi["containerStatus"]>>;
+    try {
+      status = await api.containerStatus(credentials.token, found.container_id);
+    } catch (error) {
+      if (error instanceof InstagramError && error.kind === "token") account.markInvalid(credentials.token);
+      return void later();
+    }
+    if (status === "PUBLISHED") {
+      const media = await findPublished(credentials.token, credentials.userId, found);
+      db.query(
+        `UPDATE posts SET state = 'published', media_id = ?, permalink = ?, published_at = ?, error = ?,
+           next_attempt_at = NULL WHERE id = ? AND state = 'unconfirmed'`,
+      ).run(
+        media?.id ?? null,
+        media?.permalink ?? null,
+        clock.now(),
+        media?.permalink ? null : "Published; its link could not be found.",
+        id,
+      );
+      console.log(`Post ${id} was published, Instagram says.`);
+      return dropObject(id);
+    }
+    const settled = clock.now() - (found.publish_requested_at ?? 0) >= PUBLISH_SETTLE_MS;
+    if (status === "IN_PROGRESS" || !settled) return void later();
+    db.query(
+      "UPDATE posts SET state = 'failed', error = ?, next_attempt_at = NULL WHERE id = ? AND state = 'unconfirmed'",
+    ).run(`Instagram shows it was not published (${status}).`, id);
+    console.error(`Post ${id} was not published, Instagram says; its select is back in the pool.`);
+    return dropObject(id);
+  }
+
   let running: Promise<void> | undefined;
 
   async function runDueNow(): Promise<void> {
@@ -576,6 +644,12 @@ export function createPublisher(options: PublisherOptions) {
       )
       .all(clock.now());
     for (const { id } of due) await serially(() => attempt(id));
+    const unconfirmed = db
+      .query<{ id: string }, [number]>(
+        "SELECT id FROM posts WHERE state = 'unconfirmed' AND next_attempt_at <= ? ORDER BY next_attempt_at, rowid",
+      )
+      .all(clock.now());
+    for (const { id } of unconfirmed) await serially(() => checkUnconfirmed(id));
     const left = db
       .query<{ id: string }, []>(
         "SELECT id FROM posts WHERE object_key IS NOT NULL AND state IN ('published', 'failed')",
@@ -682,6 +756,31 @@ export function createPublisher(options: PublisherOptions) {
         )
         .all()
         .map(toPost);
+    },
+
+    /**
+     * Records what the owner says happened to a post Instagram has not confirmed: published,
+     * with the link if they give one, or not posted, which returns its selects to the pool.
+     */
+    resolve(id: string, resolution: Resolution): Promise<Post | "not-found" | "not-unconfirmed"> {
+      return serially(async () => {
+        const found = row(id);
+        if (found === null) return "not-found" as const;
+        if (found.state !== "unconfirmed") return "not-unconfirmed" as const;
+        if (resolution.posted) {
+          db.query(
+            `UPDATE posts SET state = 'published', permalink = ?, published_at = ?, next_attempt_at = NULL,
+               error = 'Marked as posted by hand.' WHERE id = ? AND state = 'unconfirmed'`,
+          ).run(resolution.permalink ?? null, clock.now(), id);
+        } else {
+          db.query(
+            `UPDATE posts SET state = 'failed', next_attempt_at = NULL,
+               error = 'Marked as not posted by hand.' WHERE id = ? AND state = 'unconfirmed'`,
+          ).run(id);
+        }
+        await dropObject(id);
+        return postOf(id);
+      });
     },
 
     post(id: string): Post | undefined {

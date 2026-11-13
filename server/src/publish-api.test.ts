@@ -317,6 +317,40 @@ describe("post now", () => {
     expect(shown).toContain("could not be fetched");
   });
 
+  test("that Instagram has not confirmed is shown as needing a check, and the owner says what happened", async () => {
+    await connect();
+    const id = await addSelect("portrait");
+    instagram.fail("publish", "lost");
+    const { body } = await postNow(id);
+    instagram.fail("status", "transient", "transient", "transient");
+    for (let i = 0; i < 3; i++) {
+      clock.advance(10 * 60 * 1000);
+      await app.publisher.runDue();
+    }
+
+    const listed = (await request("/api/posts")).body.posts;
+    expect(listed.map((post: Body) => post.state)).toEqual(["unconfirmed"]);
+    expect((await request("/api/pool")).body).toEqual([]);
+
+    const unsafe = await send("POST", `/api/posts/${body.post.id}/resolve`, {
+      posted: true,
+      permalink: "javascript:alert(1)",
+    });
+    expect(unsafe.status).toBe(422);
+    const resolved = await send("POST", `/api/posts/${body.post.id}/resolve`, {
+      posted: true,
+      permalink: "https://www.instagram.com/p/abc/",
+    });
+    expect(resolved.status).toBe(200);
+    expect(resolved.body).toMatchObject({
+      state: "published",
+      permalink: "https://www.instagram.com/p/abc/",
+    });
+    const again = await send("POST", `/api/posts/${body.post.id}/resolve`, { posted: false });
+    expect(again.status).toBe(409);
+    expect((await send("POST", "/api/posts/missing/resolve", { posted: false })).status).toBe(404);
+  });
+
   test("is a dry run while the switch is on: recorded and shown, with its frame, and nothing sent", async () => {
     await connect();
     await send("PUT", "/api/publishing", { dryRun: true });

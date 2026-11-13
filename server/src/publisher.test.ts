@@ -698,6 +698,157 @@ describe("a publish interrupted part way", () => {
   });
 });
 
+describe("a publish whose outcome Instagram has not confirmed", () => {
+  /** Publishes with the answer lost, then lets every retry fail to check the container. */
+  async function unconfirmed(publisher: Publisher, id: string, statusFailures = 3) {
+    instagram.fail("publish", "lost");
+    let post = await postNow(publisher, id);
+    instagram.fail("status", ...Array<"transient">(statusFailures).fill("transient"));
+    while (post.state === "retrying") {
+      await after(publisher, (post.nextAttemptAt ?? 0) - clock.now());
+      post = publisher.post(post.id) ?? post;
+    }
+    return post;
+  }
+
+  test("is kept out of the pool and needs checking, never posted twice", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+
+    const post = await unconfirmed(publisher, id);
+
+    expect(post.state).toBe("unconfirmed");
+    expect(post.error).toContain("Check Instagram");
+    expect(library.pool()).toEqual([]);
+    expect(library.get(id)?.post).toBe("unconfirmed");
+    expect((await publisher.publish({ selectIds: [id], dryRun: false })).status).toBe("not-in-pool");
+    expect(instagram.media).toHaveLength(1);
+  });
+
+  test("is recorded as published once Instagram answers a later check", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    const post = await unconfirmed(publisher, id);
+    expect(post.state).toBe("unconfirmed");
+
+    await after(publisher, (post.nextAttemptAt ?? 0) - clock.now());
+
+    const checked = publisher.post(post.id);
+    expect(checked?.state).toBe("published");
+    expect(checked?.permalink).toBe(instagram.media[0]?.permalink ?? "missing");
+    expect(instagram.media).toHaveLength(1);
+    expect(fakeBucket.objects.size).toBe(0);
+  });
+
+  test("is returned to the pool once Instagram shows it was never published", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    // The publish request fails before Instagram does anything, then every check fails too.
+    instagram.fail("publish", "transient");
+    let post = await postNow(publisher, id);
+    instagram.fail("status", "transient", "transient", "transient");
+    while (post.state === "retrying") {
+      await after(publisher, (post.nextAttemptAt ?? 0) - clock.now());
+      post = publisher.post(post.id) ?? post;
+    }
+    expect(post.state).toBe("unconfirmed");
+
+    await after(publisher, 30 * MINUTE);
+
+    expect(publisher.post(post.id)?.state).toBe("failed");
+    expect(publisher.post(post.id)?.error).toContain("not published");
+    expect(library.pool()).toEqual([id]);
+    expect(instagram.media).toHaveLength(0);
+  });
+
+  test("with a token that stops working stays out of the pool until the owner says what happened", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("publish", "lost");
+    const first = await postNow(publisher, id);
+    expect(first.state).toBe("retrying");
+    instagram.expireToken(TOKEN);
+
+    await after(publisher, 2 * MINUTE);
+
+    const post = publisher.post(first.id);
+    expect(post?.state).toBe("unconfirmed");
+    expect(library.pool()).toEqual([]);
+    expect(account.view()?.status).toBe("invalid");
+  });
+
+  test("is marked as posted by the owner, with the link they give", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    const post = await unconfirmed(publisher, id);
+
+    const resolved = await publisher.resolve(post.id, {
+      posted: true,
+      permalink: "https://www.instagram.com/p/abc/",
+    });
+
+    expect(resolved).toMatchObject({ state: "published", permalink: "https://www.instagram.com/p/abc/" });
+    expect(library.pool()).toEqual([]);
+    // A later check no longer touches it.
+    await after(publisher, 30 * MINUTE);
+    expect(publisher.post(post.id)?.permalink).toBe("https://www.instagram.com/p/abc/");
+  });
+
+  test("is marked as not posted by the owner, which returns the select to the pool", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    const post = await unconfirmed(publisher, id);
+
+    const resolved = await publisher.resolve(post.id, { posted: false });
+
+    expect(resolved).toMatchObject({ state: "failed" });
+    expect(library.pool()).toEqual([id]);
+    expect(fakeBucket.objects.size).toBe(0);
+  });
+
+  test("can be resolved by hand only while it needs checking", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    const post = await postNow(publisher, id);
+
+    expect(await publisher.resolve(post.id, { posted: false })).toBe("not-unconfirmed");
+    expect(await publisher.resolve("missing", { posted: false })).toBe("not-found");
+    expect(publisher.post(post.id)?.state).toBe("published");
+  });
+
+  test("found published is recorded so even when its link cannot be looked up", async () => {
+    const { publisher, account } = setup({
+      wrapApi: (api) => ({
+        ...api,
+        recentMedia: async () => {
+          throw new Error("down");
+        },
+        permalink: async () => {
+          throw new Error("down");
+        },
+      }),
+    });
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("publish", "lost");
+
+    const first = await postNow(publisher, id);
+    await after(publisher, 2 * MINUTE);
+
+    const post = publisher.post(first.id);
+    expect(post?.state).toBe("published");
+    expect(post?.permalink).toBeNull();
+    expect(instagram.media).toHaveLength(1);
+  });
+});
+
 describe("dry run", () => {
   test("goes through every step and publishes and uploads nothing", async () => {
     const { publisher, account } = setup();

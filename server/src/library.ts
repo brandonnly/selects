@@ -35,10 +35,11 @@ export type Select = CaptureData & {
   height: number;
   alreadyPosted: boolean;
   /**
-   * Its post: `publishing` while one is being sent or retried, `published` once it is out. Null
-   * when it is in no such post; a post that failed for good leaves it null again.
+   * Its post: `publishing` while one is being sent or retried, `unconfirmed` while Instagram has
+   * not said whether it published it, `published` once it is out. Null when it is in no such
+   * post; a post that failed for good leaves it null again.
    */
-  post: "publishing" | "published" | null;
+  post: "publishing" | "unconfirmed" | "published" | null;
   /** Not posted, not being posted and not marked as already posted: eligible to be picked. */
   inPool: boolean;
   addedAt: string;
@@ -116,7 +117,7 @@ type SelectRow = {
   already_posted: 0 | 1;
   added_at: string;
   /** The state of a post that holds it and has not failed, if any. */
-  post_state: "publishing" | "retrying" | "published" | null;
+  post_state: "publishing" | "retrying" | "unconfirmed" | "published" | null;
 };
 
 type RejectionRow = {
@@ -507,13 +508,19 @@ export type Library = ReturnType<typeof createLibrary>;
  */
 const SELECT_WITH_POST = `SELECT selects.*, rowid, (
     SELECT posts.state FROM post_selects JOIN posts ON posts.id = post_selects.post_id
-    WHERE post_selects.select_id = selects.id AND posts.state IN ('publishing', 'retrying', 'published')
-    ORDER BY posts.state = 'published' DESC LIMIT 1
+    WHERE post_selects.select_id = selects.id
+      AND posts.state IN ('publishing', 'retrying', 'unconfirmed', 'published')
+    ORDER BY posts.state = 'published' DESC, posts.state = 'unconfirmed' DESC LIMIT 1
   ) AS post_state FROM selects`;
 
 function toSelect(row: SelectRow): Select {
   const alreadyPosted = row.already_posted === 1;
-  const post = row.post_state === null ? null : row.post_state === "published" ? "published" : "publishing";
+  const post =
+    row.post_state === null
+      ? null
+      : row.post_state === "published" || row.post_state === "unconfirmed"
+        ? row.post_state
+        : "publishing";
   return {
     id: row.id,
     fileName: row.file_name,

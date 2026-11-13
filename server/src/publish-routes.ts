@@ -114,6 +114,34 @@ export function publishRoutes({ publisher, account, settings, bucket, instagram 
       )
       .get("/api/posts", () => ({ posts: publisher.posts(), dryRuns: publisher.dryRuns() }))
       .get("/api/posts/:id", ({ params, status }) => publisher.post(params.id) ?? status(404, notFound))
+      // The owner's answer for a post Instagram has not confirmed.
+      .post(
+        "/api/posts/:id/resolve",
+        async ({ params, body, status }) => {
+          const permalink = body.posted ? (body.permalink ?? null) : null;
+          if (permalink !== null && !isWebLink(permalink)) {
+            return status(422, { problems: ["The link must be an http or https address."] });
+          }
+          const result = await publisher.resolve(
+            params.id,
+            body.posted ? { posted: true, permalink } : { posted: false },
+          );
+          if (result === "not-found") return status(404, notFound);
+          if (result === "not-unconfirmed") {
+            return status(409, { problems: ["This post no longer needs checking."] });
+          }
+          return result;
+        },
+        {
+          body: t.Object(
+            {
+              posted: t.Boolean(),
+              permalink: t.Optional(t.Union([t.String({ maxLength: 2000 }), t.Null()])),
+            },
+            { additionalProperties: false },
+          ),
+        },
+      )
       .get("/api/posts/:id/frame", ({ params, status }) => {
         const frame = publisher.dryRunFrame(params.id);
         if (frame === undefined) return status(404, notFound);
@@ -122,4 +150,13 @@ export function publishRoutes({ publisher, account, settings, bucket, instagram 
         });
       })
   );
+}
+
+function isWebLink(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
 }

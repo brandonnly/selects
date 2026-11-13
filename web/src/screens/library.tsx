@@ -227,7 +227,9 @@ export function LibraryScreen() {
                       ? "Already posted"
                       : select.post === "published"
                         ? "Posted"
-                        : "Posting"}
+                        : select.post === "unconfirmed"
+                          ? "Needs checking"
+                          : "Posting"}
                   </span>
                 )}
               </button>

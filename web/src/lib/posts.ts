@@ -13,6 +13,13 @@ export function describePost(post: Pick<Post, "state" | "error" | "nextAttemptAt
         label: "Retrying",
         detail: `${post.error ?? "The last attempt failed."} Next attempt ${post.nextAttemptAt === null ? "soon" : `at ${time(post.nextAttemptAt)}`} (${post.attempts + 1} of 4).`,
       };
+    case "unconfirmed":
+      return {
+        label: "Needs checking",
+        detail:
+          post.error ??
+          "Instagram was asked to publish it and has not said whether it did. Check Instagram, then say whether it was posted.",
+      };
     case "published":
       return { label: "Posted", detail: post.error };
     case "failed":

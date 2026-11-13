@@ -84,7 +84,11 @@ export function PostNow({ select, onPosted }: { select: Select; onPosted: () => 
   if (state.step !== "sent" && select.post !== null) {
     return (
       <p className="text-sm text-muted-foreground">
-        {select.post === "published" ? "Posted. " : "Being posted. "}
+        {select.post === "published"
+          ? "Posted. "
+          : select.post === "unconfirmed"
+            ? "Needs checking: Instagram has not said whether it was posted. "
+            : "Being posted. "}
         <Link to="/posted" className="underline underline-offset-4">
           See Posted
         </Link>
@@ -204,7 +208,15 @@ function Sent({ post }: { post: Post }) {
     <div role="status" className="flex flex-col gap-2 text-sm">
       <p className="font-medium">{label}</p>
       {detail && (
-        <p className={post.state === "failed" ? "text-destructive" : "text-muted-foreground"}>{detail}</p>
+        <p
+          className={
+            post.state === "failed" || post.state === "unconfirmed"
+              ? "text-destructive"
+              : "text-muted-foreground"
+          }
+        >
+          {detail}
+        </p>
       )}
       {post.permalink !== null && (
         <a

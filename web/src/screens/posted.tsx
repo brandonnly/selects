@@ -1,13 +1,17 @@
 import type { Post } from "@selects/server";
 import { ExternalLink } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "@/api";
+import { Button } from "@/components/ui/button";
+import { problemsIn } from "@/lib/autosave";
 import { dateTime, describePost } from "@/lib/posts";
 import { cn } from "@/lib/utils";
 import { Screen } from "./screen";
 
 /** How often the list is checked again while a post is still being published. */
 const POLL_MS = 3000;
+/** And while one needs checking: Selects checks with Instagram every few minutes. */
+const UNCONFIRMED_POLL_MS = 60_000;
 
 type Loaded = { posts: Post[]; dryRuns: Post[] };
 
@@ -31,11 +35,13 @@ export function PostedScreen() {
 
   const pending =
     loaded?.posts.some((post) => post.state === "publishing" || post.state === "retrying") ?? false;
+  const unconfirmed = loaded?.posts.some((post) => post.state === "unconfirmed") ?? false;
+  const pollMs = pending ? POLL_MS : unconfirmed ? UNCONFIRMED_POLL_MS : undefined;
   useEffect(() => {
-    if (!pending) return;
-    const timer = setInterval(() => void load(), POLL_MS);
+    if (pollMs === undefined) return;
+    const timer = setInterval(() => void load(), pollMs);
     return () => clearInterval(timer);
-  }, [pending, load]);
+  }, [pollMs, load]);
 
   return (
     <Screen title="Posted">
@@ -53,7 +59,7 @@ export function PostedScreen() {
         )}
         <ul className="flex flex-col divide-y rounded-lg border bg-card text-card-foreground">
           {loaded?.posts.map((post) => (
-            <PostRow key={post.id} post={post} />
+            <PostRow key={post.id} post={post} onChange={load} />
           ))}
         </ul>
       </section>
@@ -79,7 +85,7 @@ export function PostedScreen() {
   );
 }
 
-function PostRow({ post }: { post: Post }) {
+function PostRow({ post, onChange }: { post: Post; onChange: () => Promise<void> }) {
   const { label, detail } = describePost(post);
   const [selectId] = post.selectIds;
   return (
@@ -87,7 +93,14 @@ function PostRow({ post }: { post: Post }) {
       <Thumbnail selectId={selectId} />
       <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-          <span className={cn("font-medium", post.state === "failed" && "text-destructive")}>{label}</span>
+          <span
+            className={cn(
+              "font-medium",
+              (post.state === "failed" || post.state === "unconfirmed") && "text-destructive",
+            )}
+          >
+            {label}
+          </span>
           <span className="text-xs text-muted-foreground">
             {dateTime(post.publishedAt ?? post.createdAt)}
           </span>
@@ -95,7 +108,12 @@ function PostRow({ post }: { post: Post }) {
         <p className="line-clamp-2 whitespace-pre-line break-words text-muted-foreground">{post.caption}</p>
         {detail && (
           <p
-            className={cn("text-xs", post.state === "failed" ? "text-destructive" : "text-muted-foreground")}
+            className={cn(
+              "text-xs",
+              post.state === "failed" || post.state === "unconfirmed"
+                ? "text-destructive"
+                : "text-muted-foreground",
+            )}
           >
             {detail}
           </p>
@@ -111,8 +129,104 @@ function PostRow({ post }: { post: Post }) {
             <ExternalLink aria-hidden className="size-3.5" />
           </a>
         )}
+        {post.state === "unconfirmed" && <Resolve post={post} onResolved={onChange} />}
       </div>
     </li>
+  );
+}
+
+/** The owner's answer for a post Instagram has not confirmed: posted, or not. */
+function Resolve({ post, onResolved }: { post: Post; onResolved: () => Promise<void> }) {
+  const [step, setStep] = useState<"choose" | "posted" | "not-posted">("choose");
+  const [permalink, setPermalink] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problems, setProblems] = useState<string[] | undefined>();
+  const linkId = `permalink-${post.id}`;
+
+  const answer = async (posted: boolean) => {
+    setBusy(true);
+    setProblems(undefined);
+    try {
+      const link = permalink.trim();
+      const { error } = await api
+        .posts({ id: post.id })
+        .resolve.post(posted ? { posted, permalink: link === "" ? null : link } : { posted });
+      if (error) {
+        setProblems(problemsIn(error.value));
+        return;
+      }
+      await onResolved();
+    } catch {
+      setProblems([]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitPosted = (event: FormEvent) => {
+    event.preventDefault();
+    void answer(true);
+  };
+
+  return (
+    <div className="mt-1 flex flex-col gap-2">
+      {step === "choose" && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => setStep("posted")}>
+            It was posted…
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setStep("not-posted")}>
+            It was not posted…
+          </Button>
+        </div>
+      )}
+      {step === "posted" && (
+        <form onSubmit={submitPosted} className="flex flex-col gap-2">
+          <label htmlFor={linkId} className="text-xs font-medium">
+            Link to the post on Instagram (optional)
+          </label>
+          <input
+            id={linkId}
+            type="url"
+            inputMode="url"
+            autoComplete="off"
+            placeholder="https://www.instagram.com/p/…"
+            value={permalink}
+            onChange={(event) => setPermalink(event.currentTarget.value)}
+            className="h-10 rounded-md border bg-background px-3 text-base md:text-sm"
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" type="submit" disabled={busy}>
+              Mark as posted
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setStep("choose")} disabled={busy}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
+      {step === "not-posted" && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-muted-foreground">
+            The select goes back to the pool and can be posted again. Check Instagram first: if it is there,
+            it would be posted twice.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="destructive" onClick={() => void answer(false)} disabled={busy}>
+              Mark as not posted
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setStep("choose")} disabled={busy}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+      {problems !== undefined && (
+        <p className="text-xs text-destructive">
+          {problems.length > 0 ? problems.join(" ") : "Couldn't save. Try again."}
+        </p>
+      )}
+    </div>
   );
 }
 
