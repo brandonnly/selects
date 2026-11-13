@@ -13,7 +13,7 @@ export function describePost(
     case "retrying":
       return {
         label: "Retrying",
-        detail: `${post.error ?? "The last attempt failed."} Next attempt ${post.nextAttemptAt === null ? "soon" : `at ${time(post.nextAttemptAt)}`} (${post.attempts + 1} of 4).`,
+        detail: `${post.error ?? "The last attempt failed."} Next attempt ${post.nextAttemptAt === null ? "soon" : `at ${time(post.nextAttemptAt)}`} (${Math.min(post.attempts + 1, 4)} of 4).`,
       };
     case "unconfirmed":
       return {

@@ -444,11 +444,13 @@ describe("post now", () => {
     await connect();
     await send("PUT", "/api/publishing", { dryRun: true });
     const id = await addSelect("portrait");
+    const requestsBefore = instagram.requests.length;
 
     const { status, body } = await postNow(id);
 
     expect(status).toBe(202);
     expect(body.post.state).toBe("dry-run");
+    expect(instagram.requests).toHaveLength(requestsBefore);
     expect(instagram.media).toHaveLength(0);
     expect(bucket.requests).toHaveLength(0);
     const posts = await request("/api/posts");

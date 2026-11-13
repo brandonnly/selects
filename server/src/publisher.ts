@@ -586,10 +586,12 @@ export function createPublisher(options: PublisherOptions) {
   async function findPublished(token: string, userId: string, post: PostRow) {
     const recent = await api.recentMedia(token, userId).catch(() => []);
     const since = (post.publish_requested_at ?? post.created_at) - PUBLISH_SETTLE_MS;
-    return recent.find((media) => {
+    const matches = recent.filter((media) => {
       const at = Date.parse(media.timestamp);
       return media.caption === post.caption && (!Number.isFinite(at) || at >= since);
     });
+    // Two posts can share a caption: with more than one match the link is left unset, not guessed.
+    return matches.length === 1 ? matches[0] : undefined;
   }
 
   /**

@@ -24,7 +24,16 @@ type Step =
  * "Post now" for one select. Posting is permanent, so it goes in two steps: the first shows the
  * frame, caption and alt text that will go out, and only the second sends them.
  */
-export function PostNow({ select, onPosted }: { select: Select; onPosted: () => void }) {
+export function PostNow({
+  select,
+  refresh = 0,
+  onPosted,
+}: {
+  select: Select;
+  /** Changes when the select's capture data or caption is saved, so an open confirmation is built again. */
+  refresh?: number;
+  onPosted: () => void;
+}) {
   const [state, setState] = useState<Step>({ step: "idle" });
   const live = useRef(true);
   // The caller's function changes on each of its renders; the latest is called.
@@ -60,6 +69,16 @@ export function PostNow({ select, onPosted }: { select: Select; onPosted: () => 
     if (data && "caption" in data) setState({ step: "confirm", preview: data });
     else setState({ step: "failed", problems: problemsIn(error?.value) });
   };
+
+  // An open confirmation never shows what was true before a save: it is loaded again.
+  const confirming = state.step === "confirm";
+  const seen = useRef(refresh);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a change of `refresh` loads again.
+  useEffect(() => {
+    if (seen.current === refresh) return;
+    seen.current = refresh;
+    if (confirming) void review();
+  }, [refresh]);
 
   const send = async (preview: PostPreview) => {
     setState({ step: "sending", preview });

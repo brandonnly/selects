@@ -90,7 +90,7 @@ function PostRow({ post, onChange }: { post: Post; onChange: () => Promise<void>
   const [selectId] = post.selectIds;
   return (
     <li className="flex gap-3 p-3">
-      <Thumbnail selectId={selectId} />
+      <Thumbnail selectId={selectId} alt={post.altText} />
       <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
           <span
@@ -289,14 +289,14 @@ function DryRunRow({ post }: { post: Post }) {
   );
 }
 
-function Thumbnail({ selectId }: { selectId: string | undefined }) {
+function Thumbnail({ selectId, alt }: { selectId: string | undefined; alt: string }) {
   if (selectId === undefined) {
     return <div aria-hidden className="size-16 shrink-0 rounded-sm bg-muted" />;
   }
   return (
     <img
       src={`/api/selects/${encodeURIComponent(selectId)}/thumbnail`}
-      alt=""
+      alt={alt}
       loading="lazy"
       className="size-16 shrink-0 rounded-sm bg-muted object-cover"
     />

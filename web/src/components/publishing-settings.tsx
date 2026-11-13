@@ -99,12 +99,20 @@ function InstagramAccount({
     }
   };
 
+  const [removeFailed, setRemoveFailed] = useState(false);
   const remove = async () => {
     setBusy(true);
+    setRemoveFailed(false);
     try {
-      await api.instagram.token.delete();
+      const { error } = await api.instagram.token.delete();
+      if (error) {
+        setRemoveFailed(true);
+        return;
+      }
       setConfirmRemove(false);
       await onChange();
+    } catch {
+      setRemoveFailed(true);
     } finally {
       setBusy(false);
     }
@@ -160,8 +168,21 @@ function InstagramAccount({
               {busy ? "Checking…" : "Connect"}
             </Button>
             {replacing && (
-              <Button variant="ghost" onClick={() => setReplacing(false)} disabled={busy}>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  // The token typed and not sent does not stay on the page.
+                  setToken("");
+                  setReplacing(false);
+                }}
+                disabled={busy}
+              >
                 Cancel
+              </Button>
+            )}
+            {account?.status === "invalid" && (
+              <Button variant="destructive" type="button" onClick={remove} disabled={busy}>
+                Disconnect
               </Button>
             )}
           </div>
@@ -190,6 +211,11 @@ function InstagramAccount({
       {confirmRemove && (
         <p className="text-xs text-muted-foreground">
           Removes the token from Selects. Nothing posts until one is pasted.
+        </p>
+      )}
+      {removeFailed && (
+        <p role="alert" className="text-destructive">
+          Couldn't disconnect: the token is still kept. Try again.
         </p>
       )}
     </div>

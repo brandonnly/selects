@@ -116,6 +116,10 @@ function readBucket(read: (name: string) => string | undefined, problems: string
   const missing = BUCKET_REQUIRED.filter((name) => read(name) === undefined);
   const endpoint = httpUrl(read("BUCKET_ENDPOINT"), "BUCKET_ENDPOINT", problems);
   const publicBaseUrl = httpUrl(read("BUCKET_PUBLIC_URL"), "BUCKET_PUBLIC_URL", problems);
+  // Object keys are added to the end of it, so nothing may follow its path.
+  if (publicBaseUrl !== undefined && /[?#]/.test(publicBaseUrl)) {
+    problems.push("BUCKET_PUBLIC_URL must not have a query or a fragment");
+  }
   if (missing.length > 0) return { status: "missing", missing };
   return new BucketSettings(
     endpoint ?? "",

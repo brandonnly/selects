@@ -101,7 +101,8 @@ Publishing needs an S3-compatible bucket and an Instagram account (see
 1. Set `INSTAGRAM_API=live`. Without it, Selects talks only to its fake Instagram server and fake
    bucket, and nothing is posted.
 2. Set `BUCKET_ENDPOINT`, `BUCKET_NAME`, `BUCKET_ACCESS_KEY_ID` and `BUCKET_SECRET_ACCESS_KEY`,
-   and `BUCKET_PUBLIC_URL` if the bucket serves its objects publicly. They are used only in live
+   and `BUCKET_PUBLIC_URL`, the URL the bucket serves its objects from. Publishing without a
+   public URL, through a presigned link, is not yet proven against Instagram. They are used only in live
    mode; without them Selects runs, and Settings names the variables still missing.
 3. Paste a long-lived token from your Meta app in Settings. Selects shows the account it belongs
    to, refreshes it daily and never shows it again. Its expiry shows once a refresh works.

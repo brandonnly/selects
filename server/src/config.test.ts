@@ -157,4 +157,10 @@ describe("loadConfig: Instagram", () => {
   test("refuses any other value, naming the variable", () => {
     expect(() => loadConfig({ ...minimal, INSTAGRAM_API: "real" })).toThrow(/INSTAGRAM_API/);
   });
+
+  test("refuses a public base URL with a query or a fragment, since keys are added to its end", () => {
+    for (const url of ["https://images.test/frames/?token=x", "https://images.test/frames#top"]) {
+      expect(() => loadConfig({ ...minimal, BUCKET_PUBLIC_URL: url })).toThrow(/BUCKET_PUBLIC_URL/);
+    }
+  });
 });

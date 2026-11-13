@@ -98,7 +98,7 @@ export function SelectDetails({
               )}
               {!select.alreadyPosted && (
                 <DetailsSection title="Post">
-                  <PostNow key={select.id} select={select} onPosted={onChanged} />
+                  <PostNow key={select.id} select={select} refresh={version} onPosted={onChanged} />
                 </DetailsSection>
               )}
               <DetailsSection title="Capture data">
