@@ -46,6 +46,11 @@ describe("frameText", () => {
     expect(frameText(none, settings())).toBe("");
   });
 
+  test("a camera or lens name longer than 48 characters is cut there", () => {
+    const long = "L".repeat(200);
+    expect(frameText({ ...none, lens: long, fNumber: 8 }, settings())).toBe(`${"L".repeat(48)} · f/8`);
+  });
+
   test("a field switched off leaves no gap", () => {
     const fields = { ...DEFAULT_FRAME_SETTINGS.fields, camera: false, shutter: false, date: false };
     expect(frameText(full, settings({ fields }))).toBe(

@@ -97,6 +97,11 @@ function load(path: string): Typeface | null {
   try {
     loaded = typeface(parse(readFileSync(path)));
     loaded.outline(SAMPLE, 0, 0, 10);
+    const font = loaded;
+    if ([...SAMPLE].some((character) => !font.hasGlyph(character))) {
+      loaded = null;
+      console.error("A font file lacks a character every frame prints, so it is not used.");
+    }
   } catch (error) {
     loaded = null;
     // Logged once per version of the file. Its name is the user's own, so it stays out.

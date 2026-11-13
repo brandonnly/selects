@@ -310,3 +310,37 @@ describe("frame settings", () => {
     expect(width(isoOnly)).toBeGreaterThan(60);
   });
 });
+
+describe("photos and text at the edges", () => {
+  test("a sliver of a photo still renders", async () => {
+    const path = join(dir, "sliver.png");
+    await sharp({ create: { width: 8000, height: 2, channels: 3, background: "#804020" } })
+      .png()
+      .toFile(path);
+    const photo = await inspectPhoto(path);
+    if (photo === undefined) throw new Error("the sliver is not a photo");
+
+    const jpeg = await renderer().render({ path, capture: photo }, settings());
+
+    expect((await sharp(jpeg).metadata()).height).toBe(1800);
+  });
+
+  test("a character the typeface lacks is left out of the line, not printed as a box", async () => {
+    const { path, capture } = await source("square");
+    const fields = { ...DEFAULT_FRAME_SETTINGS.fields };
+    for (const field of Object.keys(fields) as (keyof typeof fields)[]) fields[field] = field === "camera";
+    const render = (camera: string) =>
+      renderer().render({ path, capture: { ...capture, camera } }, settings({ fields }));
+
+    // IBM Plex Mono has no CJK glyphs.
+    expect((await render("FX \u65e5\u672c 1")).equals(await render("FX 1"))).toBe(true);
+  });
+
+  test("more renders than run at once all finish", async () => {
+    const one = await source("square");
+    const frames = await Promise.all(
+      Array.from({ length: 6 }, () => renderer().render(one, settings(), { width: 240 })),
+    );
+    expect(frames.every((frame) => frame.byteLength > 0)).toBe(true);
+  });
+});

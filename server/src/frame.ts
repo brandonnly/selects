@@ -47,8 +47,8 @@ const SEPARATOR = " · ";
 /** The line of metadata a frame prints: each shown field the select has, with nothing for the rest. */
 export function frameText(capture: CaptureData, settings: FrameSettings): string {
   const values: Record<FrameField, string | null> = {
-    camera: capture.camera,
-    lens: capture.lens,
+    camera: clip(capture.camera),
+    lens: clip(capture.lens),
     focalLength: capture.focalLength === null ? null : `${decimals(capture.focalLength, 1)}mm`,
     shutter: capture.exposureTime === null ? null : shutterSpeed(capture.exposureTime),
     aperture: capture.fNumber === null ? null : `f/${decimals(capture.fNumber, 1)}`,
@@ -63,6 +63,13 @@ export function frameText(capture: CaptureData, settings: FrameSettings): string
     .map((field) => values[field])
     .filter((value): value is string => value !== null && value !== "")
     .join(SEPARATOR);
+}
+
+/** The longest camera or lens name a frame prints: a longer one would shrink the line too far to read. */
+const MAX_NAME = 48;
+
+function clip(name: string | null): string | null {
+  return name === null ? null : [...name].slice(0, MAX_NAME).join("").trim();
 }
 
 /** Up to `places` decimals, without trailing zeros: 8 → "8", 2.80 → "2.8". */
@@ -110,6 +117,8 @@ const TEXT_MARGIN = 32;
  */
 const SPARE_ABOVE = 0.4;
 const JPEG_QUALITY = 92;
+/** Renders at once. Each decodes a whole original, so more would stack up memory. */
+const MAX_RENDERS = 2;
 
 const COLORS = {
   light: { background: "#ffffff", text: "#444444" },
@@ -133,8 +142,9 @@ function layout(photo: { width: number; height: number }, border: number) {
     height: FRAME_HEIGHT - 2 * border - TEXT_BAND,
   };
   const scale = Math.min(space.width / photo.width, space.height / photo.height);
-  const width = Math.round(photo.width * scale);
-  const height = Math.round(photo.height * scale);
+  // At least a pixel each way, so a sliver of a photo still renders.
+  const width = Math.max(1, Math.round(photo.width * scale));
+  const height = Math.max(1, Math.round(photo.height * scale));
   const box: Box = {
     left: Math.round((FRAME_WIDTH - width) / 2),
     top: border + Math.round((space.height - height) * SPARE_ABOVE),
@@ -180,44 +190,85 @@ function pathData(commands: PathCommand[]): string {
  */
 export function createFrameRenderer({ dataDir }: { dataDir: string }) {
   const fonts = createFontSource(dataDir);
+  const turn = turns(MAX_RENDERS);
   return {
     /** The font file in the data folder that overrides the typeface setting, if there is one. */
     fontOverride: () => fonts.override(),
 
     async render(source: FrameSource, settings: FrameSettings, options: RenderOptions = {}): Promise<Buffer> {
-      const colors = COLORS[settings.color];
-      const border = Math.max(0, Math.min(MAX_BORDER, Math.round(settings.border)));
-
-      const original = sharp(source.path).rotate();
-      const { autoOrient } = await original.metadata();
-      const place = layout(autoOrient, border);
-      const photo = await original
-        .resize(place.photo.width, place.photo.height, { fit: "fill" })
-        // Converts from the original's own profile, so wide-gamut colors survive.
-        .toColourspace("srgb")
-        .flatten({ background: colors.background })
-        .png({ compressionLevel: 0 })
-        .toBuffer();
-
-      const layers: OverlayOptions[] = [{ input: photo, left: place.photo.left, top: place.photo.top }];
-      const text = frameText(source.capture, settings);
-      if (text !== "") {
-        const svg = textSvg(text, fonts.font(settings.typeface, text), colors.text, border);
-        layers.push({ input: Buffer.from(svg), left: 0, top: place.textTop });
+      await turn.take();
+      try {
+        return await renderFrame(source, settings, options);
+      } finally {
+        turn.give();
       }
+    },
+  };
 
-      const frame = sharp({
-        create: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 3, background: colors.background },
-      }).composite(layers);
+  async function renderFrame(
+    source: FrameSource,
+    settings: FrameSettings,
+    options: RenderOptions,
+  ): Promise<Buffer> {
+    const colors = COLORS[settings.color];
+    const border = Math.max(0, Math.min(MAX_BORDER, Math.round(settings.border)));
 
-      if (options.width === undefined || options.width >= FRAME_WIDTH) {
-        return frame.jpeg({ quality: JPEG_QUALITY }).toBuffer();
+    const original = sharp(source.path).rotate();
+    const { autoOrient } = await original.metadata();
+    const place = layout(autoOrient, border);
+    const photo = await original
+      .resize(place.photo.width, place.photo.height, { fit: "fill" })
+      // Converts from the original's own profile, so wide-gamut colors survive.
+      .toColourspace("srgb")
+      .flatten({ background: colors.background })
+      .png({ compressionLevel: 0 })
+      .toBuffer();
+
+    const layers: OverlayOptions[] = [{ input: photo, left: place.photo.left, top: place.photo.top }];
+    const line = frameText(source.capture, settings);
+    const font = fonts.font(settings.typeface, line);
+    // A character the font lacks is left out, where it would print as an empty box.
+    const text = [...line]
+      .filter((character) => font.hasGlyph(character))
+      .join("")
+      .replace(/ {2,}/g, " ")
+      .trim();
+    if (text !== "") {
+      const svg = textSvg(text, font, colors.text, border);
+      layers.push({ input: Buffer.from(svg), left: 0, top: place.textTop });
+    }
+
+    const frame = sharp({
+      create: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 3, background: colors.background },
+    }).composite(layers);
+
+    if (options.width === undefined || options.width >= FRAME_WIDTH) {
+      return frame.jpeg({ quality: JPEG_QUALITY }).toBuffer();
+    }
+    const full = await frame.raw().toBuffer({ resolveWithObject: true });
+    return sharp(full.data, { raw: full.info })
+      .resize(Math.max(1, Math.round(options.width)))
+      .jpeg({ quality: JPEG_QUALITY })
+      .toBuffer();
+  }
+}
+
+/** Lets `limit` holders through at a time; the rest wait their turn in order. */
+function turns(limit: number) {
+  let free = limit;
+  const waiting: (() => void)[] = [];
+  return {
+    take(): Promise<void> {
+      if (free > 0) {
+        free--;
+        return Promise.resolve();
       }
-      const full = await frame.raw().toBuffer({ resolveWithObject: true });
-      return sharp(full.data, { raw: full.info })
-        .resize(Math.max(1, Math.round(options.width)))
-        .jpeg({ quality: JPEG_QUALITY })
-        .toBuffer();
+      return new Promise((resolve) => waiting.push(resolve));
+    },
+    give() {
+      const next = waiting.shift();
+      if (next) next();
+      else free++;
     },
   };
 }

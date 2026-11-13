@@ -111,6 +111,25 @@ export function FrameScreen() {
     [send],
   );
 
+  // Closing or reloading the tab runs no cleanup, so an unsaved change is sent as the page goes.
+  useEffect(() => {
+    const flush = () => {
+      const pending = latest.current;
+      if (pending === undefined || lastSaved.current === undefined) return;
+      const json = JSON.stringify(pending);
+      if (json === lastSaved.current) return;
+      lastSaved.current = json;
+      fetch("/api/frame", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: json,
+        keepalive: true,
+      }).catch(() => {});
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, []);
+
   const change = (update: Partial<FrameSettings>) =>
     setSettings((current) => (current === undefined ? current : { ...current, ...update }));
 
@@ -169,9 +188,13 @@ export function FrameScreen() {
               />
             </label>
 
-            <label className="flex flex-col gap-2 text-sm">
-              <span className="font-medium">Typeface</span>
+            <div className="flex flex-col gap-2 text-sm">
+              <label htmlFor="typeface" className="font-medium">
+                Typeface
+              </label>
               <select
+                id="typeface"
+                aria-describedby="typeface-note"
                 value={settings.typeface}
                 onChange={(event) =>
                   change({ typeface: event.currentTarget.value as FrameSettings["typeface"] })
@@ -184,8 +207,10 @@ export function FrameScreen() {
                   </option>
                 ))}
               </select>
-              <FontOverrideNote override={options.fontOverride} />
-            </label>
+              <span id="typeface-note">
+                <FontOverrideNote override={options.fontOverride} />
+              </span>
+            </div>
 
             <fieldset className="flex flex-col gap-2 text-sm">
               <legend className="mb-2 font-medium">Show</legend>
