@@ -435,6 +435,20 @@ describe("the manifest", () => {
     expect(fakeBucket.objects.has(keyOf(framed?.url ?? ""))).toBe(true);
   });
 
+  test("lists a location to four decimal places, as the frame prints it", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const id = await addFile(large);
+    parts.captures.save(id, {
+      edits: { coordinates: { latitude: -20.123456789, longitude: -120.987654321 } },
+      locationHidden: false,
+    });
+
+    await postNow(parts, id);
+
+    expect(manifest()?.posts[0]?.location).toEqual({ latitude: -20.1235, longitude: -120.9877 });
+  });
+
   test("keeps the capture data a post was published with, whatever is edited later", async () => {
     const parts = setup();
     await connect(parts.account);

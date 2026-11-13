@@ -35,8 +35,8 @@ const MANIFEST_HEADERS: ObjectHeaders = {
 /** The wait before each retry of a failed write: then once an hour, for as long as it fails. */
 const RETRY_DELAYS = [MINUTE, 5 * MINUTE, 15 * MINUTE, 60 * MINUTE] as const;
 
-/** Decimal places kept in a published coordinate: about 10 cm. */
-const COORDINATE_PLACES = 6;
+/** Decimal places kept in a published coordinate: about 11 m, as the frame prints a decimal one. */
+const COORDINATE_PLACES = 4;
 
 /** One post in `posts.json`, as docs/manifest.md documents it. */
 export type ManifestEntry = {
