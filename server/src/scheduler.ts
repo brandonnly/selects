@@ -152,6 +152,8 @@ const RECHECK = 20;
 const VERIFY_TRIES = 20;
 /** A last tick this recent means Selects was running: a slot found late was a tick held up. */
 const RUNNING_WITHIN = 10;
+/** How many times a hashtag set is drawn for a post before its select is taken as not postable. */
+const HASHTAG_DRAWS = 8;
 
 /** How far ahead next up is chosen. */
 const LOOKAHEAD = DAY;
@@ -611,6 +613,23 @@ export function createScheduler(options: SchedulerOptions) {
       finish(row, "empty", { note, selectId: null });
       return;
     }
+    // The hashtag set is drawn here and sent with the post, so the caption checked is the caption
+    // posted. A draw whose caption is over a limit is drawn again; a select no draw fits is left
+    // as needing attention.
+    let hashtagSet: string | undefined;
+    let fits = false;
+    let problems: string[] = [];
+    for (let draw = 0; draw < HASHTAG_DRAWS && !fits; draw++) {
+      const shown = publisher.preview([selectId]);
+      problems = shown === undefined ? ["The select is gone."] : shown.check.problems;
+      fits = problems.length === 0;
+      hashtagSet = shown?.hashtagSet ?? undefined;
+    }
+    if (!fits) {
+      unpostable.set(selectId, problems);
+      finish(row, "empty", { note: NOTHING_POSTABLE, selectId: null });
+      return;
+    }
     // Claimed before the publisher is called: from here a restart finds it and never posts it twice.
     const claimed = db
       .query(
@@ -621,7 +640,7 @@ export function createScheduler(options: SchedulerOptions) {
     const claimedRow = runRow(row.slot_id, row.date) ?? row;
     let result: Awaited<ReturnType<typeof publisher.publish>>;
     try {
-      result = await publisher.publish({ selectIds: [selectId] });
+      result = await publisher.publish({ selectIds: [selectId], hashtagSet });
     } catch (error) {
       finish(claimedRow, "failed", { note: `The post could not be started (${errorKind(error)}).` });
       console.error(`${label(row)} could not post (${errorKind(error)}).`);
