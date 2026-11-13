@@ -10,7 +10,7 @@ Accepted, November 13, 2026.
 leaves open what a spread means, how a time is read across daylight saving changes, which rule
 relaxes first, what "oldest" goes by, when a new slot first posts, how running late is told
 apart from downtime, what the pause switch holds back, what happens to a select that cannot be
-posted, and how a restart is kept from posting a slot twice. As with publishing
+posted or whose post fails for good, and how a restart is kept from posting a slot twice. As with publishing
 ([ADR 0006](0006-publishing-safety.md)), each leans towards posting nothing rather than twice.
 
 ## Decision
@@ -25,8 +25,11 @@ posted, and how a restart is kept from posting a slot twice. As with publishing
   the change as it would have been (02:30 becomes 03:30); a time that happens twice as they go
   back posts the first time. These are Temporal's "compatible" choices.
 - **A slot added or changed posts from its next time on**, never for a time before the change,
-  even within the grace period. Changing the timezone changes every slot. A slot moved to a later
-  time on a day it was missed, paused, empty or not posted comes round again at the new time.
+  even within the grace period. Changing the timezone changes every slot. That day's run takes
+  the new time, keeping the spread already drawn when the spread is unchanged; if the new time
+  has already passed, that day's run is dropped whatever its spread, so a slot moved earlier
+  never posts later that day through its old spread. A slot moved to a later time on a day it
+  was missed, paused, empty or not posted comes round again at the new time.
 - **A skip belongs to the slot's day.** Editing the slot's spread, days or time, the timezone or
   the grace period keeps it, as long as that day is still one of the slot's days; if the time or
   the timezone moves the slot, the skip moves with it on that local date. Skip can be taken back
@@ -49,17 +52,41 @@ posted, and how a restart is kept from posting a slot twice. As with publishing
 - **A select that cannot be posted as it stands is passed over.** Before a slot takes a select,
   what would be sent is checked: one whose caption or alt text is over a limit, or that is gone,
   is passed over for the next candidate, stays queued or in the pool, and is listed on the Queue
-  screen as needing attention, with why. A slot with nothing else left is recorded as empty.
+  screen as needing attention, with why. It stays listed, and passed over, until it is postable
+  again or leaves the pool: each plan checks again up to 20 of those listed, the longest
+  unchecked first. A slot with nothing else left is recorded as empty.
+- **A select whose post failed for good is held back for 7 days.** When a select's latest post
+  (dry runs aside), scheduled or by Post now, has failed for good, slots pass it over, in the
+  queue and the pool, for 7 days from when Selects saw the failure (within a tick), or until its
+  owner presses Try again on the Queue screen, which clears the hold at once. It keeps its place
+  in the queue, out of the head's way, and is listed as needing attention with the failure's
+  reason and when it will be tried again. Post now still posts it. A later post of it replaces
+  the hold: published ends it, a newer failure starts a new one. Failures are recorded in
+  `post_failures`; one made before that table existed counts from when its post was made.
+- **Planning is bounded.** A plan works out each select's eligibility and checks what would be
+  sent at most once, works the pick rules out once per step of relaxing them rather than once
+  per select passed over, and checks at most 50 selects (rechecks included), in pick order. A
+  select past that is taken as postable until its turn: when a slot is about to post, next up
+  is checked, and if it cannot be posted the slot plans again (up to 20 times) before it is
+  recorded as empty. Reading the schedule makes one plan, and one more check for what would stop
+  any post (the account and the bucket); listing what needs attention checks nothing.
 - **The timer checks every 30 seconds, and a slot found within a minute of its due time is on
   time.** The minute is the tolerance: one timer interval, and as much again for a tick that runs
-  late. Lateness past it is downtime (Selects or its timer was not running at the slot's time).
-- **While Selects runs, every due slot posts**, one after another, two at the same minute
-  included; the publisher runs attempts one at a time.
-- **Missed slots never stack.** Of the slots found past the tolerance, only the latest posts,
-  only within the grace period plus the tolerance (120 minutes by default, 0 to 1,440), and only
-  if no slot on time posts at that check. The others are recorded as missed. A grace period of 0
-  means a slot never posts after downtime; it still posts on time. After a stop, the slots that
-  came round while it lasted are recorded as missed, as far back as history is kept (30 days).
+  late. A slot found later than that is late, whatever the cause.
+- **Late is told apart from downtime by the last tick.** Each tick records when it started and
+  when it ended. A slot found late when the last tick was within 5 minutes (10 intervals) is
+  recorded as found late: Selects was running but checked late, held up by a long post or the
+  machine. After a longer gap in ticks it is recorded as missed: Selects was not running.
+- **Every due slot found on time posts**, one after another, two at the same minute included;
+  the publisher runs attempts one at a time. As each awaits its post, each slot after it is read
+  again before it is claimed: one paused meanwhile is recorded as paused, and one skipped, moved
+  later or otherwise settled meanwhile does not post now. Dry run is read when the slot is
+  claimed, not before the tick.
+- **Late slots never stack.** Of the slots found late, only the latest posts, only within the
+  grace period plus the tolerance (120 minutes by default, 0 to 1,440), and only if no slot on
+  time posts at that check. The others are recorded as missed or found late. A grace period of 0
+  means a slot found late never posts; it still posts on time. After a stop, the slots that came
+  round while it lasted are recorded as missed, as far back as history is kept (30 days).
 - **A slot is claimed before the publisher is called**, with the select and the time. At start,
   a claimed slot whose post exists (a post of that select made since the claim) is recorded
   with it; one with no post goes back to waiting, and posts if still within the grace period.
@@ -69,8 +96,9 @@ posted, and how a restart is kept from posting a slot twice. As with publishing
   the reason, and its select stays queued or in the pool. The Queue screen says why slots
   cannot post before they come, and in dry run what a real post would lack.
 - **The pause switch holds back scheduled slots only.** A slot due while paused is recorded as
-  paused (or missed, if it was already past grace when found) and does not post when the switch
-  goes off. Post now, and the retries of a post already started, still run. The Queue screen
+  paused (or missed or found late, if it was already past grace when found) and does not post
+  when the switch goes off. It is checked again before each slot in a tick, so pausing while one
+  posts holds back the rest. Post now, and the retries of a post already started, still run. The Queue screen
   says so beside the switch, and shows each slot to come as paused.
 - **Pick rules.** The queue ignores them. In the pool, spacing by capture day compares the
   calendar day the camera recorded; a select with no capture date passes it. Spacing by place
@@ -83,7 +111,8 @@ posted, and how a restart is kept from posting a slot twice. As with publishing
 - **The scheduler posts only through the publisher**, which decides dry run, retries,
   `unconfirmed` and the return to the pool. In dry run a slot records a dry run and the select
   stays where it was. A queued select stays in the queue until its post is published, so one
-  whose post fails for good, or is marked as not posted, is back at the head. A slot's history
+  whose post fails for good, or is marked as not posted, keeps its place there, held back as
+  above. A slot's history
   follows its post's state to the end: posting, retrying, needs checking, published or failed.
 - **Slot IDs are 1 to 64 letters, digits, `-` or `_`**, unique in the schedule: they name a
   slot's day in a URL. Logs name a run by its date and the slot's place in the schedule, never
@@ -97,8 +126,15 @@ posted, and how a restart is kept from posting a slot twice. As with publishing
   again that day.
 - After a stop longer than the grace period, the schedule resumes at the next slot without
   catching up.
-- A slot found more than a minute late while Selects runs (the machine asleep, a tick held up)
-  counts as downtime.
+- A slot found more than a minute late while Selects runs (a tick held up, the machine asleep)
+  is late: it posts only within the grace period, and only the latest. It is recorded as found
+  late when the last tick was recent, and as missed after a longer gap.
+- A select Instagram refuses for good no longer takes every slot: it is tried again a week
+  later, or when its owner says so, and the queue and pool behind it keep posting meanwhile. A
+  select marked as not posted by hand is held back the same way.
+- With thousands of selects, a plan stays quick: at most 50 checks, and one pass of the pick
+  rules per step. A select fixed after it was listed as needing attention may wait a few plans
+  before it is checked again and picked.
 - A caption that grows past a limit after its select was queued holds that select back, not the
   queue behind it.
 - A day with a 25-hour or 23-hour length still posts each slot once.
