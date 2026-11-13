@@ -381,6 +381,8 @@ export function createNotifier(options: NotifierOptions) {
         if (token === undefined) state.tokenWarnedAt = null;
         else if (
           events().events.token &&
+          // Counted only once there is a channel to tell, like the pool below.
+          hasChannel() &&
           (state.tokenWarnedAt === null || now - state.tokenWarnedAt >= TOKEN_REPEAT_MS)
         ) {
           send(token);
