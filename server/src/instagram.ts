@@ -47,7 +47,16 @@ export type InstagramApi = {
  * - `too-new`: refresh only; the token is too new to be refreshed, as Meta refreshes a token
  *   only once it is a day old. Recognised by its message, which is unverified against Meta.
  */
-export type InstagramErrorKind = "token" | "permission" | "rate-limit" | "transient" | "refused" | "too-new";
+export type InstagramErrorKind =
+  | "token"
+  | "permission"
+  | "rate-limit"
+  | "transient"
+  /** Instagram refused this request for what it holds: the image or the caption. */
+  | "refused"
+  /** Instagram refuses the account for now, whatever is posted: its daily limit, or a restriction. */
+  | "account"
+  | "too-new";
 
 export class InstagramError extends Error {
   override name = "InstagramError";
@@ -84,7 +93,7 @@ export function errorKindOf(
   isTransient: boolean,
 ): InstagramErrorKind {
   if (code === 190 || code === 102 || status === 401) return "token";
-  if (subcode === SPAM_SUBCODE || subcode === DAILY_LIMIT_SUBCODE) return "refused";
+  if (subcode === SPAM_SUBCODE || subcode === DAILY_LIMIT_SUBCODE) return "account";
   if (code === 10 || (code !== undefined && code >= 200 && code <= 299)) return "permission";
   if ((code !== undefined && RATE_LIMIT_CODES.has(code)) || status === 429) return "rate-limit";
   if (

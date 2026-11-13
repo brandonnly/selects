@@ -271,4 +271,48 @@ export const migrations: readonly Migration[] = [
   );
   CREATE INDEX gallery_posts_state ON gallery_posts (mode, state);
   `,
+  // 9: the queue, and each time a slot comes round: when it posts, with its random spread drawn
+  // once so a restart never moves it, its next up, and what became of it. A slot comes round at
+  // most once a day, so (slot, date) is the key that keeps it from posting twice.
+  `
+  CREATE TABLE queue (
+    select_id TEXT PRIMARY KEY REFERENCES selects (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL
+  );
+
+  CREATE TABLE slot_runs (
+    slot_id TEXT NOT NULL,
+    -- The slot's day, in the install's timezone.
+    date TEXT NOT NULL,
+    -- The slot's time that day, and that time with the random spread added. Milliseconds.
+    slot_at INTEGER NOT NULL,
+    due_at INTEGER NOT NULL,
+    -- Next up: the select to post, chosen a day ahead. Content is built only when it posts.
+    select_id TEXT REFERENCES selects (id) ON DELETE SET NULL,
+    picked TEXT CHECK (picked IN ('queue', 'pool', 'swap')),
+    -- Selects swapped away for this slot, as a JSON list.
+    passed TEXT NOT NULL DEFAULT '[]',
+    state TEXT NOT NULL CHECK (state IN ('planned', 'skipped', 'posting', 'posted', 'dry-run', 'missed', 'late',
+      'paused', 'empty', 'unavailable', 'failed')),
+    -- Set before the publisher is called, so a restart finds a slot that was firing.
+    claimed_at INTEGER,
+    post_id TEXT REFERENCES posts (id) ON DELETE SET NULL,
+    note TEXT,
+    PRIMARY KEY (slot_id, date)
+  );
+  CREATE INDEX slot_runs_due ON slot_runs (state, due_at);
+
+  -- Why a post failed for good: 'select' when Instagram refused the select's own image or
+  -- caption, so trying it again as it is would fail again. Null for any other failure.
+  ALTER TABLE posts ADD COLUMN failure_kind TEXT CHECK (failure_kind IN ('select'));
+  -- When Selects saw each post fail for good. While a select's latest post is a failure seen
+  -- less than 7 days ago and not cleared by its owner, slots pass the select over.
+  CREATE TABLE post_failures (
+    post_id TEXT PRIMARY KEY REFERENCES posts (id) ON DELETE CASCADE,
+    failed_at INTEGER NOT NULL,
+    cleared INTEGER NOT NULL DEFAULT 0 CHECK (cleared IN (0, 1))
+  );
+  -- Posts that failed before this was kept count from when they were made.
+  INSERT INTO post_failures (post_id, failed_at) SELECT id, created_at FROM posts WHERE state = 'failed';
+  `,
 ];

@@ -27,6 +27,8 @@ import { createLibrary, duplicateMessage, errorKind, type Library } from "./libr
 import { passwordGate } from "./password";
 import { publishRoutes } from "./publish-routes";
 import { createPublisher } from "./publisher";
+import { scheduleRoutes } from "./schedule-routes";
+import { createScheduler } from "./scheduler";
 import { createSettings } from "./settings";
 import { TYPEFACE_IDS, TYPEFACES, type TypefaceId } from "./typefaces";
 import { serveUi } from "./ui";
@@ -39,7 +41,10 @@ export type { FrameField, FrameSettings } from "./frame";
 export type { GalleryPost, GalleryView } from "./gallery";
 export type { AccountView } from "./instagram-account";
 export type { Rejection, ScanResult, Select, UploadResult } from "./library";
+export type { PickRules } from "./pick";
 export type { DryRunReport, Post, PostPreview, PostState } from "./publisher";
+export type { Run, RunState, Schedule } from "./scheduler";
+export type { Slot, Weekday } from "./slots";
 export type { FontOverride } from "./typefaces";
 export type { PrivacyZone } from "./zones";
 
@@ -172,6 +177,7 @@ function createServices({
     // The fake finishes a container at once; only the real API is polled as Meta advises.
     containerPolling: config.instagram === "fake" ? { intervalMs: 1000, limitMs: MINUTE } : undefined,
   });
+  const scheduler = createScheduler({ db, library: lib, captures, publisher, clock });
   return {
     library: lib,
     settings,
@@ -183,6 +189,7 @@ function createServices({
     publisher,
     gallery,
     bucket,
+    scheduler,
   };
 }
 
@@ -217,6 +224,7 @@ function createRoutes(
     publisher,
     gallery,
     bucket,
+    scheduler,
   }: Services,
 ) {
   const uploadDir = join(config.dataDir, "uploads");
@@ -294,6 +302,7 @@ function createRoutes(
     )
     .use(publishRoutes({ publisher, account, settings, bucket, instagram: config.instagram }))
     .use(galleryRoutes({ gallery }))
+    .use(scheduleRoutes({ scheduler, library: lib, captures, settings }))
     .delete("/api/selects/:id", ({ params, status }) =>
       lib.remove(params.id) ? status(204) : status(404, notFound),
     )
@@ -444,9 +453,10 @@ export function createApp(options: AppOptions) {
   const gate = password === undefined ? undefined : passwordGate(password, dataDir);
 
   return {
-    /** For the timers in `main.ts` and, later, the scheduler. */
+    /** For the timers in `main.ts`. */
     publisher: services.publisher,
     gallery: services.gallery,
+    scheduler: services.scheduler,
     instagramAccount: services.account,
     fetch: async (request: Request): Promise<Response> => {
       if (isCrossOrigin(request)) return Response.json({ error: "Forbidden" }, { status: 403 });

@@ -26,15 +26,21 @@ export function useAutosave<T>({
   save,
   url,
   ms,
+  onNewer,
 }: {
-  /** Undefined until loaded. */
+  /** Undefined until loaded, and while what is typed cannot be saved: nothing is sent then. */
   value: T | undefined;
-  /** What the server held when the screen loaded. */
+  /** What the server holds: as the screen loaded it, or newer. */
   loaded: T | undefined;
   save: (value: T) => Promise<Answer>;
   /** Where a PUT of the value goes, for the last save as the page closes. */
   url: string;
   ms: number;
+  /**
+   * Given a newer `loaded` (saved in another tab, say) while nothing here is unsaved or on its
+   * way: the screen takes it up. Without it, a newer `loaded` is ignored.
+   */
+  onNewer?: (loaded: T) => void;
 }): SaveState {
   const [state, setState] = useState<SaveState>({ state: "idle" });
   /** The value the server holds, as JSON: what was loaded or last sent. */
@@ -47,10 +53,24 @@ export function useAutosave<T>({
   const saveRef = useRef(save);
   saveRef.current = save;
 
+  const onNewerRef = useRef(onNewer);
+  onNewerRef.current = onNewer;
   useEffect(() => {
-    if (loaded === undefined || lastSaved.current !== undefined) return;
-    lastSaved.current = JSON.stringify(loaded);
-    confirmed.current = lastSaved.current;
+    if (loaded === undefined) return;
+    const json = JSON.stringify(loaded);
+    if (lastSaved.current === undefined) {
+      lastSaved.current = json;
+      confirmed.current = json;
+      return;
+    }
+    if (json === confirmed.current || onNewerRef.current === undefined) return;
+    // Taken up only with no edit unsaved and no save on its way, so nothing typed here is lost.
+    const showing = latest.current === undefined ? undefined : JSON.stringify(latest.current);
+    if (showing !== lastSaved.current || lastSaved.current !== confirmed.current || unanswered.current > 0)
+      return;
+    lastSaved.current = json;
+    confirmed.current = json;
+    onNewerRef.current(loaded);
   }, [loaded]);
 
   const send = useCallback((next: T) => {

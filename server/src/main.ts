@@ -7,6 +7,7 @@ import { openDatabase } from "./db";
 import { startFakes } from "./fakes";
 import { createLibrary, errorKind } from "./library";
 import { migrations } from "./migrations";
+import { SCHEDULE_INTERVAL_MS } from "./scheduler";
 import { MAX_UPLOAD_BYTES } from "./upload";
 
 /** How often the inbox is scanned for new files. */
@@ -52,6 +53,8 @@ app.publisher.recover();
 // Posts a stop left recorded for the gallery and not yet taken in, before any frame is cleaned up.
 // In fake mode the fake bucket starts empty: the gallery writes again what it lost.
 app.gallery.recover({ bucketEmptied: config.instagram === "fake" });
+// Slots a stop left part way are settled before the schedule runs: never posted twice.
+app.scheduler.recover();
 
 const server = Bun.serve({
   port: config.port,
@@ -104,6 +107,10 @@ const retryTimer = setInterval(runDue, RETRY_INTERVAL_MS);
 const runGallery = () => app.gallery.runDue();
 void runGallery();
 const galleryTimer = setInterval(runGallery, GALLERY_INTERVAL_MS);
+const tick = () =>
+  app.scheduler.tick().catch((error) => console.error(`The schedule could not run (${errorKind(error)}).`));
+void tick();
+const scheduleTimer = setInterval(tick, SCHEDULE_INTERVAL_MS);
 const refreshToken = () => app.instagramAccount.refreshIfDue().catch(() => {});
 void refreshToken();
 const tokenTimer = setInterval(refreshToken, TOKEN_CHECK_INTERVAL_MS);
@@ -112,6 +119,7 @@ const shutdown = () => {
   clearInterval(inboxTimer);
   clearInterval(retryTimer);
   clearInterval(galleryTimer);
+  clearInterval(scheduleTimer);
   clearInterval(tokenTimer);
   // Let requests in flight finish, the fakes they may be using still up, before the database closes.
   server
