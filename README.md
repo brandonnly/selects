@@ -262,6 +262,43 @@ API under `/api` and the built UI everywhere else. It needs `DATA_DIR` set: a mi
 or an invalid `PORT` stops startup and names the variable. Everything under
 [Running Selects](#running-selects) and [Posting to Instagram](#posting-to-instagram) applies.
 
+### Backups and restoring
+
+Each night at 03:30, in the timezone set on the Queue screen, Selects copies its database to
+`backups/selects-YYYY-MM-DD.db` in `DATA_DIR`, keeping the latest seven. It also makes one at
+start when the last copy is from before last night. Settings shows when the last copy was made
+and why the last try failed, if it did. Each copy holds the Instagram token and the notification
+channels, so it is readable by its owner only; keep it that way wherever you copy it.
+
+To restore a copy:
+
+1. Stop Selects.
+2. Copy the database aside, in case you want it back: `selects.db`, `selects.db-wal` and
+   `selects.db-shm` in `DATA_DIR`.
+3. Replace `selects.db` with the copy, named `selects.db`, and keep it owner-only
+   (`chmod 600 selects.db`).
+4. Remove `selects.db-wal` and `selects.db-shm`. They belong to the database you replaced, and
+   SQLite would apply them to the copy.
+5. Start Selects with `SELECTS_START_PAUSED=true`. It starts with posting paused, and a post
+   that was under way when the copy was made is held on the Posted screen for you to check
+   instead of being sent again. Without this, a slot that is due could post before you get to
+   the pause switch.
+
+Restoring takes the library, posts, schedule, settings, Instagram token and notification
+channels back to the night of the copy. Before you resume:
+
+- A select posted since the copy is back in the pool and could be posted again. The Posted
+  screen shows only what the copy knew of, so compare your Instagram feed with the Library and
+  delete from the Library any select already on Instagram (its hash is kept, so it is never
+  picked again).
+- The photos are not in the database: originals, thumbnails and fonts stay in `DATA_DIR` and
+  are not part of a copy. A select added since the copy is no longer in the library though its
+  file is still on disk; upload it again.
+- If the token was replaced since the copy, paste the current one in Settings.
+
+Then remove `SELECTS_START_PAUSED`, so a later restart does not pause again, and turn the pause
+switch off on the Queue screen.
+
 ## Checks
 
 These run in CI on every pull request, with a build of the image that is started and checked by

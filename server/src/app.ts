@@ -3,6 +3,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { Elysia, t } from "elysia";
 import rootPackage from "../../package.json";
+import { createBackups } from "./backup";
 import { createBucket } from "./bucket";
 import { captionRoutes } from "./caption-routes";
 import { createCaptionStore } from "./caption-store";
@@ -24,6 +25,8 @@ import { galleryRoutes } from "./gallery-routes";
 import { createInstagramApi, type InstagramApi, InstagramError, LIVE_INSTAGRAM_URL } from "./instagram";
 import { createInstagramAccount } from "./instagram-account";
 import { createLibrary, duplicateMessage, errorKind, type Library } from "./library";
+import { createNotifier, NOTICE_HEADER } from "./notify";
+import { notifyRoutes } from "./notify-routes";
 import { passwordGate } from "./password";
 import { publishRoutes } from "./publish-routes";
 import { createPublisher } from "./publisher";
@@ -35,12 +38,14 @@ import { serveUi } from "./ui";
 import { MAX_UPLOAD_BYTES, receiveUpload } from "./upload";
 import { createZones } from "./zones";
 
+export type { BackupStatus } from "./backup";
 export type { CaptionOverride, CaptionTemplates, HashtagSet, LimitCheck } from "./captions";
 export type { CaptureEdits, CaptureView, Withheld } from "./capture";
 export type { FrameField, FrameSettings } from "./frame";
 export type { GalleryPost, GalleryView } from "./gallery";
 export type { AccountView } from "./instagram-account";
 export type { Rejection, ScanResult, Select, UploadResult } from "./library";
+export type { NotificationsView, NotifyEvent, SentNotice, TestResult } from "./notify";
 export type { PickRules } from "./pick";
 export type { DryRunReport, Post, PostPreview, PostState } from "./publisher";
 export type { Run, RunState, Schedule } from "./scheduler";
@@ -159,6 +164,14 @@ function createServices({
     mode: config.instagram,
     clock,
   });
+  // Sends nothing outside the process in fake mode (ADR 0009).
+  const notifier = createNotifier({
+    db,
+    clock,
+    mode: config.instagram,
+    poolSize: () => lib.pool().length,
+    account: () => account.view(),
+  });
   const publisher = createPublisher({
     db,
     dataDir: config.dataDir,
@@ -174,10 +187,27 @@ function createServices({
     mode: config.instagram,
     galleryWanted: gallery.wanted,
     onPublished: gallery.published,
+    onSettled: (outcome) => {
+      notifier.postSettled(outcome);
+      notifier.check();
+    },
     // The fake finishes a container at once; only the real API is polled as Meta advises.
     containerPolling: config.instagram === "fake" ? { intervalMs: 1000, limitMs: MINUTE } : undefined,
   });
-  const scheduler = createScheduler({ db, library: lib, captures, publisher, clock });
+  const scheduler = createScheduler({
+    db,
+    library: lib,
+    captures,
+    publisher,
+    clock,
+    notify: () => notifier.check(),
+  });
+  const backups = createBackups({
+    db,
+    dataDir: config.dataDir,
+    clock,
+    timeZone: () => scheduler.schedule().timeZone,
+  });
   return {
     library: lib,
     settings,
@@ -190,6 +220,8 @@ function createServices({
     gallery,
     bucket,
     scheduler,
+    notifier,
+    backups,
   };
 }
 
@@ -225,6 +257,8 @@ function createRoutes(
     gallery,
     bucket,
     scheduler,
+    notifier,
+    backups,
   }: Services,
 ) {
   const uploadDir = join(config.dataDir, "uploads");
@@ -302,6 +336,7 @@ function createRoutes(
     )
     .use(publishRoutes({ publisher, account, settings, bucket, instagram: config.instagram }))
     .use(galleryRoutes({ gallery }))
+    .use(notifyRoutes({ notifier, backups }))
     .use(scheduleRoutes({ scheduler, library: lib, captures, settings }))
     .delete("/api/selects/:id", ({ params, status }) =>
       lib.remove(params.id) ? status(204) : status(404, notFound),
@@ -475,8 +510,12 @@ export function createApp(options: AppOptions) {
     gallery: services.gallery,
     scheduler: services.scheduler,
     instagramAccount: services.account,
+    notifier: services.notifier,
+    backups: services.backups,
     fetch: async (request: Request): Promise<Response> => {
       if (isCrossOrigin(request)) return Response.json({ error: "Forbidden" }, { status: 403 });
+      // A notice of Selects' own, aimed back at it by a webhook set to its own address.
+      if (request.headers.has(NOTICE_HEADER)) return Response.json({ error: "Forbidden" }, { status: 403 });
       const refused = await gate?.(request);
       if (refused === undefined) return routes.handle(request);
       if (isRead(request) && new URL(request.url).pathname === "/api/health") {

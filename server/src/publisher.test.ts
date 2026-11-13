@@ -73,6 +73,7 @@ function setup(
     wrapApi?: (api: InstagramApi) => InstagramApi;
     renderer?: PublisherOptions["renderer"];
     mode?: PublisherOptions["mode"];
+    onSettled?: PublisherOptions["onSettled"];
   } = {},
 ) {
   const zones = createZones(db);
@@ -103,6 +104,7 @@ function setup(
     clock,
     mode: options.mode ?? "fake",
     random: () => 0,
+    onSettled: options.onSettled,
   });
   return { publisher, zones, captures, settings, captionStore, account, renderer };
 }
@@ -851,6 +853,55 @@ describe("a publish interrupted part way", () => {
     expect(post?.permalink).toBe(instagram.media[0]?.permalink ?? "missing");
   });
 
+  test("on a start that holds, as on a restored copy, is not sent again and waits to be checked", async () => {
+    const before = setup();
+    await connect(before.account);
+    const id = await addSelect("portrait");
+    instagram.fail("container", "transient");
+    const first = await postNow(before.publisher, id);
+    expect(first.state).toBe("retrying");
+    const requests = instagram.requests.length;
+
+    const { publisher } = setup();
+    publisher.recover({ hold: true });
+    // Well past the time an unconfirmed post is checked on its own: this one never is.
+    for (let i = 0; i < 6; i++) {
+      clock.advance(5 * MINUTE);
+      await publisher.runDue();
+    }
+
+    expect(publisher.post(first.id)?.state).toBe("unconfirmed");
+    expect(instagram.media).toHaveLength(0);
+    expect(instagram.requests.filter((r) => r.operation === "container")).toHaveLength(
+      instagram.requests.slice(0, requests).filter((r) => r.operation === "container").length,
+    );
+    expect(library.pool()).toEqual([]);
+  });
+
+  test("on a start that holds, a post with a container is never checked on its own", async () => {
+    const before = setup();
+    await connect(before.account);
+    const id = await addSelect("portrait");
+    // The container is made, then checking on it fails: the copy knows a container.
+    instagram.fail("status", "transient");
+    const first = await postNow(before.publisher, id);
+    expect(first.state).toBe("retrying");
+
+    const { publisher } = setup();
+    publisher.recover({ hold: true });
+    const statusChecks = () => instagram.requests.filter((r) => r.operation === "status").length;
+    const checked = statusChecks();
+    for (let i = 0; i < 6; i++) {
+      clock.advance(5 * MINUTE);
+      await publisher.runDue();
+    }
+
+    expect(statusChecks()).toBe(checked);
+    expect(publisher.post(first.id)?.state).toBe("unconfirmed");
+    expect(instagram.media).toHaveLength(0);
+    expect(library.pool()).toEqual([]);
+  });
+
   test("by a restart is finished after it, and published once", async () => {
     const before = setup();
     await connect(before.account);
@@ -1109,5 +1160,96 @@ describe("dry run", () => {
 
     expect(post.state).toBe("dry-run");
     expect(instagram.media).toHaveLength(0);
+  });
+});
+
+describe("a post settling", () => {
+  /** Every outcome the publisher tells, in order. */
+  function told() {
+    const outcomes: string[] = [];
+    return { outcomes, onSettled: (outcome: string) => void outcomes.push(outcome) };
+  }
+
+  test("is told once published, and a dry run is not told", async () => {
+    const settled = told();
+    const { publisher, account } = setup({ onSettled: settled.onSettled });
+    await connect(account);
+    const dry = await addSelect("landscape");
+    await postNow(publisher, dry, { dryRun: true });
+    const id = await addSelect("portrait");
+
+    await postNow(publisher, id);
+
+    expect(settled.outcomes).toEqual(["published"]);
+  });
+
+  test("is told once it fails for good, and not for an attempt that will be retried", async () => {
+    const settled = told();
+    const { publisher, account } = setup({ onSettled: settled.onSettled });
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("container", "transient", "transient", "transient", "transient");
+
+    let post = await postNow(publisher, id);
+    expect(settled.outcomes).toEqual([]);
+    while (post.state === "retrying") {
+      await after(publisher, (post.nextAttemptAt ?? 0) - clock.now());
+      post = publisher.post(post.id) ?? post;
+    }
+
+    expect(post.state).toBe("failed");
+    expect(settled.outcomes).toEqual(["failed"]);
+  });
+
+  test("is told when left needing a check, and again once Instagram says it was published", async () => {
+    const settled = told();
+    const { publisher, account } = setup({ onSettled: settled.onSettled });
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("publish", "lost");
+    let post = await postNow(publisher, id);
+    instagram.fail("status", "transient", "transient", "transient");
+    while (post.state === "retrying") {
+      await after(publisher, (post.nextAttemptAt ?? 0) - clock.now());
+      post = publisher.post(post.id) ?? post;
+    }
+    expect(settled.outcomes).toEqual(["unconfirmed"]);
+
+    await after(publisher, (post.nextAttemptAt ?? 0) - clock.now());
+
+    expect(settled.outcomes).toEqual(["unconfirmed", "published"]);
+  });
+
+  test("is not told when the owner says what happened", async () => {
+    const settled = told();
+    const { publisher, account } = setup({ onSettled: settled.onSettled });
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("publish", "lost");
+    let post = await postNow(publisher, id);
+    instagram.fail("status", "transient", "transient", "transient");
+    while (post.state === "retrying") {
+      await after(publisher, (post.nextAttemptAt ?? 0) - clock.now());
+      post = publisher.post(post.id) ?? post;
+    }
+
+    await publisher.resolve(post.id, { posted: false });
+
+    expect(settled.outcomes).toEqual(["unconfirmed"]);
+  });
+
+  test("a hook that throws touches nothing", async () => {
+    const { publisher, account } = setup({
+      onSettled: () => {
+        throw new Error("boom");
+      },
+    });
+    await connect(account);
+    const id = await addSelect("portrait");
+
+    const post = await postNow(publisher, id);
+
+    expect(post.state).toBe("published");
+    expect(instagram.media).toHaveLength(1);
   });
 });

@@ -19,6 +19,8 @@ const RETRY_INTERVAL_MS = 30 * 1000;
 const GALLERY_INTERVAL_MS = 30 * 1000;
 /** How often the Instagram token is checked for a refresh. */
 const TOKEN_CHECK_INTERVAL_MS = HOUR;
+/** How often the token and the pool are checked for notifications, and the nightly backup for being due. */
+const HOUSEKEEPING_INTERVAL_MS = 60 * 1000;
 
 const webDir = resolve(import.meta.dir, "../../web/dist");
 
@@ -56,11 +58,16 @@ const app = createApp({
   fakeBucket: fakes?.bucket,
 });
 // Posts a stop left mid-attempt are taken up again, before any request can start a new one.
-app.publisher.recover();
+app.publisher.recover({ hold: config.startPaused });
 // Posts a stop left recorded for the gallery and not yet taken in, before any frame is cleaned up.
 // In fake mode the fake bucket starts empty: the gallery writes again what it lost.
 app.gallery.recover({ bucketEmptied: config.instagram === "fake" });
 // Slots a stop left part way are settled before the schedule runs: never posted twice.
+// Asked to start paused, as on a restored copy: no slot posts until its owner resumes.
+if (config.startPaused) {
+  app.scheduler.setPaused(true);
+  console.log("Started with posting paused (SELECTS_START_PAUSED). Resume on the Queue screen.");
+}
 app.scheduler.recover();
 
 const server = Bun.serve({
@@ -121,6 +128,13 @@ const scheduleTimer = setInterval(tick, SCHEDULE_INTERVAL_MS);
 const refreshToken = () => app.instagramAccount.refreshIfDue().catch(() => {});
 void refreshToken();
 const tokenTimer = setInterval(refreshToken, TOKEN_CHECK_INTERVAL_MS);
+// Neither throws. The backup runs at start when the last copy is from before last night.
+const housekeeping = () => {
+  app.notifier.check();
+  void app.backups.runDue();
+};
+housekeeping();
+const housekeepingTimer = setInterval(housekeeping, HOUSEKEEPING_INTERVAL_MS);
 
 const shutdown = () => {
   clearInterval(inboxTimer);
@@ -128,6 +142,7 @@ const shutdown = () => {
   clearInterval(galleryTimer);
   clearInterval(scheduleTimer);
   clearInterval(tokenTimer);
+  clearInterval(housekeepingTimer);
   // Let requests in flight finish, the fakes they may be using still up, before the database closes.
   server
     .stop()

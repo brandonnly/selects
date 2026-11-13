@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "@/api";
+import { BackupStatus } from "@/components/backup-status";
 import { GallerySettings } from "@/components/gallery-settings";
+import { NotificationSettings } from "@/components/notification-settings";
 import { PrivacyZones } from "@/components/privacy-zones";
 import { PublishingSettings } from "@/components/publishing-settings";
 import { Screen } from "./screen";
@@ -44,12 +46,14 @@ export function SettingsScreen() {
     <Screen title="Settings">
       <PublishingSettings />
       <GallerySettings />
+      <NotificationSettings />
       <section aria-labelledby="privacy-zones" className="flex flex-col gap-3">
         <h2 id="privacy-zones" className="text-sm font-medium text-muted-foreground">
           Privacy zones
         </h2>
         <PrivacyZones />
       </section>
+      <BackupStatus />
       <section aria-labelledby="about" className="flex flex-col gap-3">
         <h2 id="about" className="text-sm font-medium text-muted-foreground">
           About
