@@ -45,6 +45,15 @@ describe("the bucket", () => {
     expect(await response.text()).toBe('{"version":1}');
   });
 
+  test("stores an object while the bucket's clock runs a few minutes ahead of Selects'", async () => {
+    const bucket = createBucket(settings(fake.publicBaseUrl));
+    fake.clockAhead(4 * 60 * 1000);
+
+    await bucket.putObject("gallery/x.jpg", JPEG, { type: "image/jpeg", cacheControl: "no-cache" });
+
+    expect(fake.objects.get("gallery/x.jpg")?.bytes).toEqual(JPEG);
+  });
+
   test("gives up on an object upload that never answers, and says nothing of the link it used", async () => {
     const bucket = createBucket(settings(), { timeoutMs: 200 });
     fake.hang(true);

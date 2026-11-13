@@ -44,6 +44,8 @@ export function createFakeBucket({
   let readsFail = false;
   let hanging = false;
   let slowWrites = 0;
+  /** How far the bucket's clock runs ahead of this one, in milliseconds. */
+  let ahead = 0;
   const held: (() => void)[] = [];
 
   const server = Bun.serve({
@@ -119,7 +121,9 @@ export function createFakeBucket({
     const signedAt = Date.parse(
       date.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z"),
     );
-    return Number.isFinite(signedAt) && Number.isFinite(expires) && Date.now() <= signedAt + expires * 1000;
+    return (
+      Number.isFinite(signedAt) && Number.isFinite(expires) && Date.now() + ahead <= signedAt + expires * 1000
+    );
   }
 
   function serve(key: string): Response {
@@ -153,6 +157,10 @@ export function createFakeBucket({
     /** Makes each write take this long before it is stored and answered. */
     slow(ms: number) {
       slowWrites = ms;
+    },
+    /** Runs the bucket's clock this far ahead, as a bucket whose clock differs from Selects'. */
+    clockAhead(ms: number) {
+      ahead = ms;
     },
     /** While on, writes and deletes are taken and never answered. */
     hang(on: boolean) {

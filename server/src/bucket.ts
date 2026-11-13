@@ -28,7 +28,7 @@ export type Bucket = {
   urlFor(key: string): string;
   /**
    * Stores an object with its type and caching, for objects read from the public URL (gallery
-   * output). Uploaded through a presigned link that lasts a minute, since Bun's client cannot
+   * output). Uploaded through a presigned link that lasts five minutes, since Bun's client cannot
    * set Cache-Control; the link is never logged or stored. `landedLate` is as for `put`.
    */
   putObject(
@@ -43,8 +43,11 @@ export type Bucket = {
 /** How an object is served: its type, and how long a browser or CDN may keep it. */
 export type ObjectHeaders = { type: string; cacheControl: string };
 
-/** How long the presigned link for an object upload lasts, in seconds. */
-const UPLOAD_LINK_SECONDS = 60;
+/**
+ * How long the presigned link for an object upload lasts, in seconds: used at once, but long
+ * enough that a clock a little behind the bucket's does not fail every write.
+ */
+const UPLOAD_LINK_SECONDS = 5 * 60;
 
 export class BucketError extends Error {
   override name = "BucketError";
