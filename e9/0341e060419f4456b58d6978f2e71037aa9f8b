@@ -1,0 +1,21 @@
+server/src/captions-api.test.ts
+  s_e242c501dd158b::t_51f5075628518d 251-269
+server/src/caption-routes.ts
+  s_e242c501dd158b::t_c20e137291d4b4 114-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e90341e060419f4456b58d6978f2e71037aa9f8b",
+  "prompts": {},
+  "sessions": {
+    "s_e242c501dd158b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9094f290-7dab-41e0-a49f-28ad7706fcee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
