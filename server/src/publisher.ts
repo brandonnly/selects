@@ -130,6 +130,11 @@ export type PublisherOptions = {
   containerPolling?: { intervalMs: number; limitMs: number };
   /** Picks a hashtag set. Default: Math.random. */
   random?: () => number;
+  /**
+   * Told of each post once it is recorded as published, before its frame is deleted: gallery
+   * output takes the frame from here. It must not throw, and nothing it does touches the post.
+   */
+  onPublished?: (postId: string) => void;
 };
 
 /** The wait before each retry: three retries over fifteen minutes. */
@@ -580,6 +585,7 @@ export function createPublisher(options: PublisherOptions) {
         next_attempt_at: null,
       });
       console.log(`Post ${post.id} published.`);
+      options.onPublished?.(post.id);
       await dropObject(post.id);
     };
 
@@ -816,6 +822,7 @@ export function createPublisher(options: PublisherOptions) {
         id,
       );
       console.log(`Post ${id} was published, Instagram says.`);
+      options.onPublished?.(id);
       return dropObject(id);
     }
     const settled = clock.now() - (found.publish_requested_at ?? 0) >= PUBLISH_SETTLE_MS;
@@ -984,6 +991,7 @@ export function createPublisher(options: PublisherOptions) {
             `UPDATE posts SET state = 'published', permalink = ?, published_at = ?, next_attempt_at = NULL,
                error = 'Marked as posted by hand.' WHERE id = ? AND state = 'unconfirmed'`,
           ).run(resolution.permalink ?? null, clock.now(), id);
+          options.onPublished?.(id);
         } else {
           db.query(
             `UPDATE posts SET state = 'failed', next_attempt_at = NULL,

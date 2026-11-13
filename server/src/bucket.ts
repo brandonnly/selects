@@ -26,8 +26,25 @@ export type Bucket = {
   put(key: string, jpeg: Uint8Array, landedLate?: () => Promise<void>): Promise<void>;
   /** The URL Instagram fetches the object from. A presigned one is never logged or stored. */
   urlFor(key: string): string;
+  /**
+   * Stores an object with its type and caching, for objects read from the public URL (gallery
+   * output). Uploaded through a presigned link that lasts a minute, since Bun's client cannot
+   * set Cache-Control; the link is never logged or stored. `landedLate` is as for `put`.
+   */
+  putObject(
+    key: string,
+    body: Uint8Array,
+    headers: ObjectHeaders,
+    landedLate?: () => Promise<void>,
+  ): Promise<void>;
   delete(key: string): Promise<void>;
 };
+
+/** How an object is served: its type, and how long a browser or CDN may keep it. */
+export type ObjectHeaders = { type: string; cacheControl: string };
+
+/** How long the presigned link for an object upload lasts, in seconds. */
+const UPLOAD_LINK_SECONDS = 60;
 
 export class BucketError extends Error {
   override name = "BucketError";
@@ -95,6 +112,33 @@ export function createBucket(
       publicBaseUrl === undefined
         ? client.presign(key, { expiresIn: PRESIGNED_SECONDS, method: "GET" })
         : `${publicBaseUrl}/${key}`,
-    delete: (key) => attempt("delete the frame", () => client.delete(key)),
+    putObject: async (key, body, headers, landedLate) => {
+      // Signed for the host only: the headers ride along unsigned, as S3 allows.
+      const link = client.presign(key, { method: "PUT", expiresIn: UPLOAD_LINK_SECONDS });
+      let landed: Promise<unknown> | undefined;
+      try {
+        await attempt("store the object", async () => {
+          const sent = fetch(link, {
+            method: "PUT",
+            body: body as Uint8Array<ArrayBuffer>,
+            headers: { "content-type": headers.type, "cache-control": headers.cacheControl },
+          }).then((response) => {
+            if (!response.ok) throw Object.assign(new Error(), { code: response.status });
+          });
+          landed = sent;
+          await sent;
+        });
+      } catch (error) {
+        // As for `put`: an upload given up on may land later, and is then deleted.
+        if (error instanceof BucketError && error.timedOut && landed !== undefined) {
+          void landed.then(
+            () => (landedLate?.() ?? client.delete(key)).catch(() => {}),
+            () => {},
+          );
+        }
+        throw error;
+      }
+    },
+    delete: (key) => attempt("delete the object", () => client.delete(key)),
   };
 }

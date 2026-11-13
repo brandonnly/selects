@@ -70,7 +70,10 @@ export function createFakeBucket({
         return serve(key);
       }
 
-      if (!signedFor(request)) return error(403, "SignatureDoesNotMatch");
+      // A write is signed in its header, or through a presigned link for an object with headers.
+      if (!signedFor(request) && !(request.method === "PUT" && presignedFor(url))) {
+        return error(403, "SignatureDoesNotMatch");
+      }
       if (hanging) {
         return new Promise<Response>((resolve) =>
           held.push(() => resolve(new Response(null, { status: 504 }))),
@@ -122,8 +125,12 @@ export function createFakeBucket({
   function serve(key: string): Response {
     const object = objects.get(key);
     if (object === undefined) return error(404, "NoSuchKey");
+    const cacheControl = object.headers["cache-control"];
     return new Response(object.bytes, {
-      headers: { "content-type": object.contentType ?? "binary/octet-stream" },
+      headers: {
+        "content-type": object.contentType ?? "binary/octet-stream",
+        ...(cacheControl === undefined ? {} : { "cache-control": cacheControl }),
+      },
     });
   }
 
