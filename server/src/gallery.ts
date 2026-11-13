@@ -162,6 +162,8 @@ export function createGallery(options: GalleryOptions) {
     nextAt: 0,
     /** The manifest whose write failed. Another one is tried at once: the wait is for this one. */
     failedHash: undefined as string | undefined,
+    /** Counts given-up manifest writes that landed late, each of which may have replaced a newer one. */
+    lateWrites: 0,
   };
 
   const rowOf = (postId: string) =>
@@ -464,14 +466,25 @@ export function createGallery(options: GalleryOptions) {
       // A privacy change or a removal never waits behind the backoff of an earlier manifest.
       if (hash !== manifest.failedHash) Object.assign(manifest, { failures: 0, nextAt: 0 });
       if (manifest.nextAt > clock.now()) return;
+      const lateBefore = manifest.lateWrites;
       try {
         await bucket.putObject(MANIFEST_KEY, new TextEncoder().encode(body), MANIFEST_HEADERS, async () => {
           // A write given up on that landed anyway, maybe over a newer one. The manifest is
           // shared, so it is never deleted: it is written again at once.
+          manifest.lateWrites++;
           Object.assign(manifest, { hash: undefined, nextAt: 0 });
           void runDue();
         });
-        Object.assign(manifest, { hash, error: null, failures: 0, nextAt: 0, failedHash: undefined });
+        // A late write that landed while this one was on its way may have landed after it: then
+        // what is stored is not known to be this body, and it is written again.
+        Object.assign(manifest, {
+          hash: manifest.lateWrites === lateBefore ? hash : undefined,
+          error: null,
+          failures: 0,
+          nextAt: 0,
+          failedHash: undefined,
+        });
+        if (manifest.lateWrites !== lateBefore) void runDue();
       } catch (error) {
         const delay = RETRY_DELAYS[Math.min(manifest.failures, RETRY_DELAYS.length - 1)] ?? MINUTE;
         Object.assign(manifest, {
