@@ -708,11 +708,12 @@ describe("downtime", () => {
     restarted.recover();
     await restarted.tick();
     await publisher.settled();
-    expect(restarted.history().map((run) => `${run.date} ${run.state}`)).toEqual([
-      "2026-11-16 posted",
-      "2026-11-15 missed",
-      "2026-11-14 missed",
-      "2026-11-13 posted",
+    expect(restarted.history().map((run) => `${run.date} ${run.state} ${run.fileName}`)).toEqual([
+      "2026-11-16 posted landscape.tif",
+      // Planned before the stop: what was next up. Never planned: nothing.
+      "2026-11-15 missed null",
+      "2026-11-14 missed landscape.tif",
+      "2026-11-13 posted portrait.jpg",
     ]);
   });
 

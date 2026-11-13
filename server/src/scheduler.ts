@@ -521,7 +521,7 @@ export function createScheduler(options: SchedulerOptions) {
     const now = clock.now();
     plan(now);
     writeSetting("scheduleTickedAt", now);
-    replan();
+    // Settles what is missed or paused first, then plans again before each slot posts.
     await fire(now);
     replan();
     prune(now);
