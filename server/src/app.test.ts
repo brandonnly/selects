@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "./app";
@@ -160,7 +160,7 @@ describe("the optional password", () => {
   });
 
   test("refuses API calls without a session", async () => {
-    const response = await get(locked(), "/api/health");
+    const response = await get(locked(), "/api/selects");
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: "Unauthorized" });
@@ -177,6 +177,72 @@ describe("the optional password", () => {
       expect(body).not.toContain("<title>Selects</title>");
       expect(body).not.toContain("console.log('ui')");
     }
+  });
+
+  test("answers a health check without a session, saying only whether the app is up", async () => {
+    const response = await get(locked(), "/api/health");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "ok" });
+  });
+
+  test("reports an unreachable database to a health check without a session", async () => {
+    const app = locked();
+    db.close();
+
+    const response = await get(app, "/api/health");
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ status: "error" });
+  });
+
+  test("gives the full health report to a session", async () => {
+    const app = locked();
+    const cookie = sessionCookie(await logIn(app, "correct horse"));
+
+    const response = await get(app, "/api/health", { headers: { cookie } });
+
+    expect(await response.json()).toEqual({
+      version: rootPackage.version,
+      database: { status: "ok", schemaVersion: 1 },
+    });
+  });
+
+  test("serves the app's icons and web manifest without a session, for installing it", async () => {
+    // The build copies brand/favicon to the UI's root; browsers fetch these without the cookie.
+    const favicons = join(import.meta.dir, "../../brand/favicon");
+    cpSync(favicons, webDir, { recursive: true });
+    const types: Record<string, string> = {
+      ".png": "image/png",
+      ".svg": "image/svg+xml",
+      ".webmanifest": "application/manifest+json",
+    };
+
+    for (const name of readdirSync(favicons)) {
+      const response = await get(locked(), `/${name}`);
+
+      expect(response.status).toBe(200);
+      const type = types[name.slice(name.lastIndexOf("."))];
+      expect(type).toBeDefined();
+      expect(response.headers.get("content-type")).toStartWith(type ?? "");
+    }
+  });
+
+  test("keeps every other file behind the password", async () => {
+    writeFileSync(join(webDir, "robots.txt"), "private");
+
+    for (const path of ["/robots.txt", "/index.html", "/icon-192.png/", "/assets/icon-192.png"]) {
+      const response = await get(locked(), path);
+
+      expect(response.status).toBe(401);
+      expect(await response.text()).toContain('name="password"');
+    }
+  });
+
+  test("opens only reading the health check", async () => {
+    const response = await get(locked(), "/api/health", { method: "POST" });
+
+    expect(response.status).toBe(401);
   });
 
   test("rejects a wrong password without starting a session", async () => {
@@ -238,7 +304,7 @@ describe("the optional password", () => {
     const cookie = sessionCookie(await logIn(locked(), "correct horse"));
     const changed = appWith({ SELECTS_PASSWORD: "new password" }, webDir);
 
-    expect((await get(changed, "/api/health", { headers: { cookie } })).status).toBe(401);
+    expect((await get(changed, "/api/selects", { headers: { cookie } })).status).toBe(401);
   });
 
   test("ignores a forged session cookie", async () => {
@@ -246,7 +312,7 @@ describe("the optional password", () => {
     for (const forged of ["forged", "0".repeat(64), "\u00e9".repeat(64)]) {
       const cookie = `selects_session=${forged}`;
 
-      expect((await get(locked(), "/api/health", { headers: { cookie } })).status).toBe(401);
+      expect((await get(locked(), "/api/selects", { headers: { cookie } })).status).toBe(401);
     }
   });
 });
