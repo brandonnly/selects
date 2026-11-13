@@ -329,19 +329,41 @@ export function createPublisher(options: PublisherOptions) {
   /**
    * A fingerprint of everything a post is built from except where it was taken: the templates,
    * the select's own caption, the hashtag set, the frame settings and font, and the capture
-   * data without its coordinates. A post is sent only while this is what it was confirmed with;
-   * a location withheld since then still changes the caption and frame, and is allowed to.
+   * data, once as shown and once with its coordinates left out. A post is sent only while it is
+   * what it was confirmed with, or that with its location since withheld.
    */
-  function confirmedFingerprint(selectIds: string[], content: Content): string {
-    const inputs = {
-      templates: captionStore.templates(),
-      own: selectIds.map((selectId) => captionStore.override(selectId)),
-      hashtagSet: content.hashtagSet,
-      frame: settings.frame(),
-      font: fontVersion(),
-      captures: content.sources.map(({ capture }) => ({ ...capture, latitude: null, longitude: null })),
+  function confirmedFingerprint(
+    selectIds: string[],
+    content: Content,
+  ): { asShown: string; withheld: string } {
+    const hash = (captures: unknown) =>
+      createHash("sha256")
+        .update(
+          JSON.stringify({
+            templates: captionStore.templates(),
+            own: selectIds.map((selectId) => captionStore.override(selectId)),
+            hashtagSet: content.hashtagSet,
+            frame: settings.frame(),
+            font: fontVersion(),
+            captures,
+          }),
+        )
+        .digest("hex")
+        .slice(0, 32);
+    return {
+      asShown: hash(content.sources.map(({ capture }) => capture)),
+      withheld: hash(content.sources.map(({ capture }) => ({ ...capture, latitude: null, longitude: null }))),
     };
-    return createHash("sha256").update(JSON.stringify(inputs)).digest("hex").slice(0, 32);
+  }
+
+  /**
+   * Whether what would be sent now is what the post was confirmed with: the same, or the same
+   * with its location since withheld. A location shown or moved since then is a change.
+   */
+  function stillConfirmed(stored: string, selectIds: string[], content: Content): boolean {
+    const [asShown, withheld] = stored.split(":");
+    const now = confirmedFingerprint(selectIds, content);
+    return now.asShown === asShown || now.asShown === withheld;
   }
 
   /** A short fingerprint of everything the frame is rendered from. */
@@ -375,7 +397,7 @@ export function createPublisher(options: PublisherOptions) {
       extra.state ?? "publishing",
       options.mode,
       account.credentials()?.userId ?? null,
-      confirmedFingerprint(selectIds, content),
+      Object.values(confirmedFingerprint(selectIds, content)).join(":"),
       content.caption,
       content.altText,
       content.hashtagSet,
@@ -595,7 +617,7 @@ export function createPublisher(options: PublisherOptions) {
       if (content === undefined) throw new PostFailure("The select was deleted.", false);
       // Templates, settings or the select's data edited since the post was confirmed: it is
       // not sent as something its owner never saw.
-      if (post.confirmed !== null && confirmedFingerprint(selectIds, content) !== post.confirmed) {
+      if (post.confirmed !== null && !stillConfirmed(post.confirmed, selectIds, content)) {
         throw new PostFailure(
           "The caption, frame or capture data changed since this post was confirmed. Post it again.",
           false,

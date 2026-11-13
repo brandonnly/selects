@@ -566,6 +566,45 @@ describe("a failed publish", () => {
     expect(instagram.media).toHaveLength(0);
   });
 
+  test("is not sent with a location shown since it was confirmed, and is sent with one withheld", async () => {
+    const { publisher, account, captures } = setup();
+    await connect(account);
+    const hidden = await addSelect("portrait");
+    const shown = await addSelect("landscape");
+    captures.save(hidden, { edits: {}, locationHidden: true });
+    instagram.fail("container", "transient", "transient");
+    const first = await postNow(publisher, hidden);
+    const second = await postNow(publisher, shown);
+
+    // Before the retries, one location is shown again and the other is hidden.
+    captures.save(hidden, { edits: {}, locationHidden: false });
+    captures.save(shown, { edits: {}, locationHidden: true });
+    await after(publisher, 2 * MINUTE);
+
+    expect(publisher.post(first.id)?.state).toBe("failed");
+    expect(publisher.post(first.id)?.error).toContain("changed since this post was confirmed");
+    expect(publisher.post(second.id)?.state).toBe("published");
+    expect(instagram.media).toHaveLength(1);
+    expect(instagram.media[0]?.caption).not.toContain("°");
+  });
+
+  test("refused at the publish call for the account's daily limit goes back to the pool once Instagram shows it unpublished", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("publish", "publish-limit");
+
+    const first = await postNow(publisher, id);
+
+    // Publishing was asked for, so it is checked before the select is freed.
+    expect(first.state).toBe("unconfirmed");
+    expect(library.pool()).toEqual([]);
+    await after(publisher, 11 * MINUTE);
+    expect(publisher.post(first.id)?.state).toBe("failed");
+    expect(library.pool()).toEqual([id]);
+    expect(instagram.media).toHaveLength(0);
+  });
+
   test("that Instagram may have published stays out of the pool when Selects starts in the other mode", async () => {
     const live = setup({ mode: "live" });
     await connect(live.account);

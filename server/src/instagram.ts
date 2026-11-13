@@ -67,7 +67,7 @@ const TRANSIENT_CODES = new Set([-2, -1, 1, 2]);
  * Subcodes Meta says to retry: the image could not be fetched (a new link is made next time),
  * the container is not ready or not found yet.
  */
-const TRANSIENT_SUBCODES = new Set([2207052, 2207027, 2207008, 2207006, 2207003, 2207001, 2207032]);
+const TRANSIENT_SUBCODES = new Set([2207052, 2207027, 2207008, 2207003, 2207001, 2207032]);
 /** Instagram restricts the action as possible spam. Sent with code 4, but no rate limit. */
 const SPAM_SUBCODE = 2207051;
 /**

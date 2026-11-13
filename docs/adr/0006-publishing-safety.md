@@ -50,10 +50,10 @@ post cannot be taken back from Selects, so each of these leans towards sending n
   account and a fingerprint of the frame's inputs, and the server refuses it if any changed. A
   confirmed dry run never becomes a real post.
 - **A post is sent only as it was confirmed.** It stores the account it was confirmed for, the
-  mode it was made in, and a fingerprint of everything it is built from except the location.
+  mode it was made in, and a fingerprint of everything it is built from.
   An attempt that finds another account, the other mode, or edited templates, settings or
   capture data fails the post without sending it. A location withheld since then still builds
-  the caption and frame again. A post made in the other mode that Instagram may already have
+  the caption and frame again; one shown or moved since then is a change like any other. A post made in the other mode that Instagram may already have
   published waits as unconfirmed.
 - **Frames leave the bucket.** The framed image is deleted once published (until gallery output,
   issue #9). A deletion that fails is kept in a cleanup record and tried again by the timer.
