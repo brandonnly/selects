@@ -1,0 +1,25 @@
+server/src/fake-bucket.ts
+  s_966d394503842b::t_9cbdf10e17d0b9 44,55,133-136
+server/src/fake-instagram.ts
+  s_966d394503842b::t_ca767b8cd9bf94 158,239-248,254,257,259-263,267-274,276-283
+server/src/instagram.ts
+  s_966d394503842b::t_06dedd98f1e767 6,184-191,193-194
+server/src/publish-api.test.ts
+  s_966d394503842b::t_8fd6a32d599703 70-73,81,291-319
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a7aae4f9cce006392e916cdc445ff3b2584cd58f",
+  "prompts": {},
+  "sessions": {
+    "s_966d394503842b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "251f9d0d-2080-4854-a237-295adb8fa666",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
