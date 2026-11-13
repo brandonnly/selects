@@ -637,6 +637,11 @@ export function createPublisher(options: PublisherOptions) {
       return found === null ? undefined : toPost(found);
     },
 
+    /** Settles once every attempt asked for so far has finished. */
+    settled(): Promise<void> {
+      return serially(async () => {});
+    },
+
     /** The frame a dry run rendered, on disk. */
     dryRunFrame(id: string): string | undefined {
       if (row(id)?.state !== "dry-run") return undefined;

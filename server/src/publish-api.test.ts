@@ -1,0 +1,306 @@
+import type { Database } from "bun:sqlite";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { createApp } from "./app";
+import { createFakeClock, type FakeClock } from "./clock";
+import { loadConfig } from "./config";
+import { openDatabase } from "./db";
+import { createFakeBucket, FAKE_BUCKET_KEYS, type FakeBucket } from "./fake-bucket";
+import { createFakeInstagram, type FakeInstagram } from "./fake-instagram";
+import { type FixtureName, generateFixtures } from "./fixtures";
+import { createInstagramApi } from "./instagram";
+import { migrations } from "./migrations";
+
+const TOKEN = "IGfake-api-token-0001";
+
+let fixtureDir: string;
+let fixtures: Record<FixtureName, string>;
+beforeAll(async () => {
+  fixtureDir = mkdtempSync(join(tmpdir(), "selects-publish-api-fixtures-"));
+  fixtures = await generateFixtures(fixtureDir);
+});
+afterAll(() => rmSync(fixtureDir, { recursive: true, force: true }));
+
+let dataDir: string;
+let db: Database;
+let clock: FakeClock;
+let instagram: FakeInstagram;
+let bucket: FakeBucket;
+let app: ReturnType<typeof createApp>;
+/** Every response body the app sent in a test, to check for secrets. */
+let bodies: string[];
+
+const appWith = (env: Record<string, string> = {}) =>
+  createApp({
+    config: loadConfig({ DATA_DIR: dataDir, ...env }),
+    db,
+    webDir: join(dataDir, "no-ui"),
+    instagram: createInstagramApi({ baseUrl: instagram.url }),
+    clock,
+  });
+
+const bucketEnv = () => ({
+  BUCKET_ENDPOINT: bucket.endpoint,
+  BUCKET_NAME: bucket.name,
+  BUCKET_ACCESS_KEY_ID: FAKE_BUCKET_KEYS.accessKeyId,
+  BUCKET_SECRET_ACCESS_KEY: FAKE_BUCKET_KEYS.secretAccessKey,
+});
+
+beforeEach(() => {
+  dataDir = mkdtempSync(join(tmpdir(), "selects-publish-api-"));
+  db = openDatabase(dataDir, migrations);
+  clock = createFakeClock();
+  instagram = createFakeInstagram({ clock });
+  bucket = createFakeBucket();
+  bodies = [];
+  app = appWith(bucketEnv());
+});
+afterEach(async () => {
+  await instagram.stop();
+  await bucket.stop();
+  db.close();
+  rmSync(dataDir, { recursive: true, force: true });
+});
+
+// biome-ignore lint/suspicious/noExplicitAny: each test's assertions check the body's shape.
+type Body = any;
+
+async function request(path: string, init?: RequestInit): Promise<{ status: number; body: Body }> {
+  const response = await app.fetch(new Request(`http://selects.test${path}`, init));
+  const text = await response.text();
+  bodies.push(text);
+  let body: Body = text;
+  try {
+    body = JSON.parse(text);
+  } catch {}
+  return { status: response.status, body };
+}
+
+const send = (method: string, path: string, body: unknown) =>
+  request(path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+async function addSelect(name: FixtureName): Promise<string> {
+  const { body } = await request(`/api/uploads?name=${basename(fixtures[name])}`, {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: readFileSync(fixtures[name]),
+  });
+  return body.select.id;
+}
+
+async function connect() {
+  instagram.addAccount(TOKEN, { userId: "1784140001", username: "selects_test" });
+  return send("PUT", "/api/instagram/token", { token: TOKEN });
+}
+
+/** Asks for the post as shown, confirms it, and waits for its first attempt. */
+async function postNow(selectId: string) {
+  const preview = await request(`/api/selects/${selectId}/post`);
+  const posted = await send("POST", `/api/selects/${selectId}/post`, {
+    caption: preview.body.caption,
+    altText: preview.body.altText,
+    hashtagSet: preview.body.hashtagSet ?? undefined,
+  });
+  if (posted.status === 202) await app.publisher.settled();
+  return posted;
+}
+
+describe("the Instagram token in Settings", () => {
+  test("is confirmed against its account, and only the account name comes back", async () => {
+    const { status, body } = await connect();
+
+    expect(status).toBe(200);
+    expect(body.account).toMatchObject({ username: "selects_test", status: "connected" });
+    const settings = await request("/api/publishing");
+    expect(settings.body.instagram.account.username).toBe("selects_test");
+    expect(bodies.join("\n")).not.toContain(TOKEN);
+  });
+
+  test("is refused when Instagram does not accept it, without echoing it", async () => {
+    const { status, body } = await send("PUT", "/api/instagram/token", { token: "IGwrong-token-0002" });
+
+    expect(status).toBe(422);
+    expect(body.problems).toEqual(["Instagram did not accept the token. Check it and paste it again."]);
+    expect(bodies.join("\n")).not.toContain("IGwrong-token-0002");
+  });
+
+  test("is refused when empty or too long, without echoing it", async () => {
+    const long = `IG${"x".repeat(5000)}`;
+
+    expect((await send("PUT", "/api/instagram/token", { token: "  " })).status).toBe(422);
+    expect((await send("PUT", "/api/instagram/token", { token: long })).status).toBe(422);
+    expect(bodies.join("\n")).not.toContain(long);
+  });
+
+  test("is not echoed when the request is malformed", async () => {
+    const sent = [
+      await request("/api/instagram/token", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify("IGbare-token-0004"),
+      }),
+      await send("PUT", "/api/instagram/token", { token: "IGbare-token-0004", extra: true }),
+      await send("PUT", "/api/instagram/token", { secret: "IGbare-token-0004" }),
+    ];
+
+    expect(sent.map((r) => r.status)).toEqual([422, 422, 422]);
+    expect(bodies.join("\n")).not.toContain("IGbare-token-0004");
+  });
+
+  test("is never logged", async () => {
+    const lines: unknown[] = [];
+    const spies = (["log", "error", "warn", "info"] as const).map((method) =>
+      spyOn(console, method).mockImplementation((...args: unknown[]) => {
+        lines.push(...args);
+      }),
+    );
+    try {
+      await connect();
+      await send("PUT", "/api/instagram/token", { token: "IGwrong-token-0003" });
+      const id = await addSelect("portrait");
+      await postNow(id);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+
+    const output = lines.map((line) => Bun.inspect(line)).join("\n");
+    expect(output).not.toContain(TOKEN);
+    expect(output).not.toContain("IGwrong-token-0003");
+    expect(output).not.toContain(FAKE_BUCKET_KEYS.secretAccessKey);
+    expect(output).not.toContain("X-Amz-");
+  });
+
+  test("can be removed", async () => {
+    await connect();
+
+    const { status } = await request("/api/instagram/token", { method: "DELETE" });
+
+    expect(status).toBe(204);
+    expect((await request("/api/publishing")).body.instagram.account).toBeNull();
+  });
+});
+
+describe("publishing settings", () => {
+  test("say which bucket variables are missing, by name only", async () => {
+    app = appWith();
+
+    const { body } = await request("/api/publishing");
+
+    expect(body.bucket).toEqual({
+      configured: false,
+      missing: ["BUCKET_ENDPOINT", "BUCKET_NAME", "BUCKET_ACCESS_KEY_ID", "BUCKET_SECRET_ACCESS_KEY"],
+      url: null,
+    });
+  });
+
+  test("say how Instagram will be given the frame, and never show the keys", async () => {
+    const { body } = await request("/api/publishing");
+
+    expect(body.bucket).toEqual({ configured: true, missing: [], url: "presigned" });
+    expect(body.instagram.mode).toBe("fake");
+    expect(bodies.join("\n")).not.toContain(FAKE_BUCKET_KEYS.accessKeyId);
+    expect(bodies.join("\n")).not.toContain(FAKE_BUCKET_KEYS.secretAccessKey);
+  });
+
+  test("switch dry run on and off", async () => {
+    expect((await request("/api/publishing")).body.dryRun).toBe(false);
+
+    const { body } = await send("PUT", "/api/publishing", { dryRun: true });
+
+    expect(body.dryRun).toBe(true);
+    expect((await request("/api/publishing")).body.dryRun).toBe(true);
+  });
+});
+
+describe("post now", () => {
+  test("shows the caption, alt text and readiness before anything is sent", async () => {
+    await connect();
+    const id = await addSelect("portrait");
+
+    const { status, body } = await request(`/api/selects/${id}/post`);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ problems: [], dryRun: false, account: "selects_test", url: "presigned" });
+    expect(body.caption).toContain(`10°30'00"N 40°15'00"W`);
+    expect(body.altText).toBe("Photograph taken on 2024-05-01 with Fixture Optics FX-1");
+    expect(instagram.requests.filter((r) => r.operation === "container")).toHaveLength(0);
+    expect(bucket.requests).toHaveLength(0);
+  });
+
+  test("publishes the select, which leaves the pool and is listed as posted with its link", async () => {
+    await connect();
+    const id = await addSelect("portrait");
+
+    const { status, body } = await postNow(id);
+
+    expect(status).toBe(202);
+    expect(body.post.selectIds).toEqual([id]);
+    const posts = await request("/api/posts");
+    expect(posts.body.posts).toHaveLength(1);
+    expect(posts.body.posts[0]).toMatchObject({
+      state: "published",
+      selectIds: [id],
+      permalink: instagram.media[0]?.permalink,
+    });
+    expect((await request("/api/pool")).body).toEqual([]);
+    const selects = (await request("/api/selects")).body;
+    expect(selects[0]).toMatchObject({ id, inPool: false, post: "published" });
+  });
+
+  test("refuses when what was confirmed is no longer what would be sent", async () => {
+    await connect();
+    const id = await addSelect("portrait");
+
+    const { status, body } = await send("POST", `/api/selects/${id}/post`, {
+      caption: "Not the caption",
+      altText: "Not the alt text",
+    });
+
+    expect(status).toBe(409);
+    expect(body.status).toBe("changed");
+    expect(instagram.media).toHaveLength(0);
+  });
+
+  test("is refused without a bucket, saying what is missing", async () => {
+    app = appWith();
+    await connect();
+    const id = await addSelect("portrait");
+
+    const { status, body } = await postNow(id);
+
+    expect(status).toBe(409);
+    expect(body.problems[0]).toContain("BUCKET_ENDPOINT");
+  });
+
+  test("is refused for a select already posted", async () => {
+    await connect();
+    const id = await addSelect("portrait");
+    await postNow(id);
+
+    const { status } = await postNow(id);
+
+    expect(status).toBe(409);
+    expect(instagram.media).toHaveLength(0 + 1);
+  });
+
+  test("is a dry run while the switch is on: recorded and shown, with its frame, and nothing sent", async () => {
+    await connect();
+    await send("PUT", "/api/publishing", { dryRun: true });
+    const id = await addSelect("portrait");
+
+    const { status, body } = await postNow(id);
+
+    expect(status).toBe(202);
+    expect(body.post.state).toBe("dry-run");
+    expect(instagram.media).toHaveLength(0);
+    expect(bucket.requests).toHaveLength(0);
+    const posts = await request("/api/posts");
+    expect(posts.body.posts).toEqual([]);
+    expect(posts.body.dryRuns).toHaveLength(1);
+    const frame = await app.fetch(new Request(`http://selects.test/api/posts/${body.post.id}/frame`));
+    expect(frame.headers.get("content-type")).toBe("image/jpeg");
+    expect((await request("/api/pool")).body).toEqual([id]);
+  });
+});
