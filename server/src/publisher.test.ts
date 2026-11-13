@@ -73,6 +73,7 @@ function setup(
     wrapApi?: (api: InstagramApi) => InstagramApi;
     renderer?: PublisherOptions["renderer"];
     mode?: PublisherOptions["mode"];
+    onSettled?: PublisherOptions["onSettled"];
   } = {},
 ) {
   const zones = createZones(db);
@@ -103,6 +104,7 @@ function setup(
     clock,
     mode: options.mode ?? "fake",
     random: () => 0,
+    onSettled: options.onSettled,
   });
   return { publisher, zones, captures, settings, captionStore, account, renderer };
 }
@@ -1109,5 +1111,96 @@ describe("dry run", () => {
 
     expect(post.state).toBe("dry-run");
     expect(instagram.media).toHaveLength(0);
+  });
+});
+
+describe("a post settling", () => {
+  /** Every outcome the publisher tells, in order. */
+  function told() {
+    const outcomes: string[] = [];
+    return { outcomes, onSettled: (outcome: string) => void outcomes.push(outcome) };
+  }
+
+  test("is told once published, and a dry run is not told", async () => {
+    const settled = told();
+    const { publisher, account } = setup({ onSettled: settled.onSettled });
+    await connect(account);
+    const dry = await addSelect("landscape");
+    await postNow(publisher, dry, { dryRun: true });
+    const id = await addSelect("portrait");
+
+    await postNow(publisher, id);
+
+    expect(settled.outcomes).toEqual(["published"]);
+  });
+
+  test("is told once it fails for good, and not for an attempt that will be retried", async () => {
+    const settled = told();
+    const { publisher, account } = setup({ onSettled: settled.onSettled });
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("container", "transient", "transient", "transient", "transient");
+
+    let post = await postNow(publisher, id);
+    expect(settled.outcomes).toEqual([]);
+    while (post.state === "retrying") {
+      await after(publisher, (post.nextAttemptAt ?? 0) - clock.now());
+      post = publisher.post(post.id) ?? post;
+    }
+
+    expect(post.state).toBe("failed");
+    expect(settled.outcomes).toEqual(["failed"]);
+  });
+
+  test("is told when left needing a check, and again once Instagram says it was published", async () => {
+    const settled = told();
+    const { publisher, account } = setup({ onSettled: settled.onSettled });
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("publish", "lost");
+    let post = await postNow(publisher, id);
+    instagram.fail("status", "transient", "transient", "transient");
+    while (post.state === "retrying") {
+      await after(publisher, (post.nextAttemptAt ?? 0) - clock.now());
+      post = publisher.post(post.id) ?? post;
+    }
+    expect(settled.outcomes).toEqual(["unconfirmed"]);
+
+    await after(publisher, (post.nextAttemptAt ?? 0) - clock.now());
+
+    expect(settled.outcomes).toEqual(["unconfirmed", "published"]);
+  });
+
+  test("is not told when the owner says what happened", async () => {
+    const settled = told();
+    const { publisher, account } = setup({ onSettled: settled.onSettled });
+    await connect(account);
+    const id = await addSelect("portrait");
+    instagram.fail("publish", "lost");
+    let post = await postNow(publisher, id);
+    instagram.fail("status", "transient", "transient", "transient");
+    while (post.state === "retrying") {
+      await after(publisher, (post.nextAttemptAt ?? 0) - clock.now());
+      post = publisher.post(post.id) ?? post;
+    }
+
+    await publisher.resolve(post.id, { posted: false });
+
+    expect(settled.outcomes).toEqual(["unconfirmed"]);
+  });
+
+  test("a hook that throws touches nothing", async () => {
+    const { publisher, account } = setup({
+      onSettled: () => {
+        throw new Error("boom");
+      },
+    });
+    await connect(account);
+    const id = await addSelect("portrait");
+
+    const post = await postNow(publisher, id);
+
+    expect(post.state).toBe("published");
+    expect(instagram.media).toHaveLength(1);
   });
 });

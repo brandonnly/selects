@@ -140,6 +140,12 @@ export type PublisherOptions = {
    * same update. Such a post's frame is left for the gallery to take, even across a stop.
    */
   galleryWanted?: () => boolean;
+  /**
+   * Told as a post settles: published, failed for good, or left needing a check, as Instagram or
+   * the attempts decide. Not told of dry runs or of what the owner says by hand. It is called
+   * after the post is recorded, must not throw, and nothing it does touches the post.
+   */
+  onSettled?: (outcome: "published" | "failed" | "unconfirmed") => void;
 };
 
 /** The wait before each retry: three retries over fifteen minutes. */
@@ -294,6 +300,14 @@ export function createPublisher(options: PublisherOptions) {
   };
 
   const toGallery = () => (options.galleryWanted?.() ? 1 : 0);
+
+  const tell = (outcome: "published" | "failed" | "unconfirmed") => {
+    try {
+      options.onSettled?.(outcome);
+    } catch (error) {
+      console.error(`A post's outcome could not be passed on (${errorKind(error)}).`);
+    }
+  };
 
   const bucketProblem = (): string | undefined => {
     if (!("missing" in options.bucket)) return undefined;
@@ -537,8 +551,10 @@ export function createPublisher(options: PublisherOptions) {
           error: `${message} ${UNCONFIRMED_MESSAGE}`,
           next_attempt_at: clock.now() + UNCONFIRMED_CHECK_MS,
         });
+        tell("unconfirmed");
       } else {
         update({ state: "failed", error: `${message} Post it again.`, next_attempt_at: null });
+        tell("failed");
       }
       console.error(`Post ${id} was made in another Instagram mode; it was not sent.`);
       return;
@@ -567,6 +583,7 @@ export function createPublisher(options: PublisherOptions) {
           next_attempt_at: clock.now() + UNCONFIRMED_CHECK_MS,
         });
         console.error(`Post ${id} needs checking after ${number} attempts: ${failure.message}`);
+        tell("unconfirmed");
         // Instagram fetched the frame when the container was made: it need not stay in the bucket.
         await dropObject(id);
       } else if (final) {
@@ -579,6 +596,7 @@ export function createPublisher(options: PublisherOptions) {
         console.error(
           `Post ${id} failed after ${number} attempt${number === 1 ? "" : "s"}: ${failure.message}`,
         );
+        tell("failed");
         await dropObject(id);
       } else {
         const delay = RETRY_DELAYS[number - 1] ?? 0;
@@ -629,6 +647,7 @@ export function createPublisher(options: PublisherOptions) {
       });
       console.log(`Post ${post.id} published.`);
       options.onPublished?.(post.id);
+      tell("published");
       await dropObject(post.id);
     };
 
@@ -879,6 +898,7 @@ export function createPublisher(options: PublisherOptions) {
       );
       console.log(`Post ${id} was published, Instagram says.`);
       options.onPublished?.(id);
+      tell("published");
       return dropObject(id);
     }
     const settled = clock.now() - (found.publish_requested_at ?? 0) >= PUBLISH_SETTLE_MS;
@@ -887,6 +907,7 @@ export function createPublisher(options: PublisherOptions) {
       "UPDATE posts SET state = 'failed', error = ?, next_attempt_at = NULL WHERE id = ? AND state = 'unconfirmed'",
     ).run(`Instagram shows it was not published (${status}).`, id);
     console.error(`Post ${id} was not published, Instagram says; its select is back in the pool.`);
+    tell("failed");
     return dropObject(id);
   }
 
