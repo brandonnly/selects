@@ -1,9 +1,10 @@
-import type { Post } from "@selects/server";
+import type { GalleryPost, GalleryView, Post } from "@selects/server";
 import { ExternalLink } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api";
 import { Button } from "@/components/ui/button";
 import { problemsIn } from "@/lib/autosave";
+import { describeGallery } from "@/lib/gallery";
 import { dateTime, describePost } from "@/lib/posts";
 import { cn } from "@/lib/utils";
 import { Screen } from "./screen";
@@ -13,7 +14,7 @@ const POLL_MS = 3000;
 /** And while one needs checking: Selects checks with Instagram every few minutes. */
 const UNCONFIRMED_POLL_MS = 60_000;
 
-type Loaded = { posts: Post[]; dryRuns: Post[] };
+type Loaded = { posts: Post[]; dryRuns: Post[]; gallery: GalleryView | undefined };
 
 export function PostedScreen() {
   const [loaded, setLoaded] = useState<Loaded | undefined>();
@@ -24,10 +25,10 @@ export function PostedScreen() {
   const load = useCallback(async () => {
     const mine = ++turn.current;
     try {
-      const { data, error } = await api.posts.get();
+      const [posts, gallery] = await Promise.all([api.posts.get(), api.gallery.get()]);
       if (mine !== turn.current) return;
-      if (data) setLoaded(data);
-      setLoadError(error !== null);
+      if (posts.data) setLoaded({ ...posts.data, gallery: gallery.data ?? undefined });
+      setLoadError(posts.error !== null);
     } catch {
       if (mine === turn.current) setLoadError(true);
     }
@@ -40,7 +41,10 @@ export function PostedScreen() {
   const pending =
     loaded?.posts.some((post) => post.state === "publishing" || post.state === "retrying") ?? false;
   const unconfirmed = loaded?.posts.some((post) => post.state === "unconfirmed") ?? false;
-  const pollMs = pending ? POLL_MS : unconfirmed ? UNCONFIRMED_POLL_MS : undefined;
+  // Gallery writes and removals finish in the background, and are retried while they fail.
+  const galleryBusy =
+    loaded?.gallery?.posts.some((entry) => entry.state === "writing" || entry.state === "removing") ?? false;
+  const pollMs = pending ? POLL_MS : unconfirmed || galleryBusy ? UNCONFIRMED_POLL_MS : undefined;
   useEffect(() => {
     if (pollMs === undefined) return;
     const timer = setInterval(() => void load(), pollMs);
@@ -63,7 +67,13 @@ export function PostedScreen() {
         )}
         <ul className="flex flex-col divide-y rounded-lg border bg-card text-card-foreground">
           {loaded?.posts.map((post) => (
-            <PostRow key={post.id} post={post} onChange={load} />
+            <PostRow
+              key={post.id}
+              post={post}
+              gallery={loaded.gallery?.posts.find((entry) => entry.postId === post.id)}
+              mode={loaded.gallery?.mode}
+              onChange={load}
+            />
           ))}
         </ul>
       </section>
@@ -89,7 +99,17 @@ export function PostedScreen() {
   );
 }
 
-function PostRow({ post, onChange }: { post: Post; onChange: () => Promise<void> }) {
+function PostRow({
+  post,
+  gallery,
+  mode,
+  onChange,
+}: {
+  post: Post;
+  gallery: GalleryPost | undefined;
+  mode: GalleryPost["mode"] | undefined;
+  onChange: () => Promise<void>;
+}) {
   const { label, detail } = describePost(post);
   const [selectId] = post.selectIds;
   return (
@@ -139,8 +159,85 @@ function PostRow({ post, onChange }: { post: Post; onChange: () => Promise<void>
           </a>
         )}
         {post.state === "unconfirmed" && <Resolve post={post} onResolved={onChange} />}
+        {gallery !== undefined && mode !== undefined && (
+          <GalleryState entry={gallery} mode={mode} onChange={onChange} />
+        )}
       </div>
     </li>
+  );
+}
+
+/** Where a post stands in the public gallery, and "Remove from gallery". */
+function GalleryState({
+  entry,
+  mode,
+  onChange,
+}: {
+  entry: GalleryPost;
+  mode: GalleryPost["mode"];
+  onChange: () => Promise<void>;
+}) {
+  const { label, detail, removable } = describeGallery(entry, mode);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problems, setProblems] = useState<string[] | undefined>();
+
+  const remove = async () => {
+    setBusy(true);
+    setProblems(undefined);
+    try {
+      const { error } = await api.gallery.posts({ id: entry.postId }).delete();
+      if (error) {
+        setProblems(problemsIn(error.value));
+        return;
+      }
+      setConfirming(false);
+      await onChange();
+    } catch {
+      setProblems([]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-1 flex flex-col gap-2 border-t pt-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs">
+          <span className="text-muted-foreground">Gallery: </span>
+          <span data-testid="gallery-state">{label}</span>
+        </span>
+        {removable && !confirming && (
+          <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
+            Remove from gallery…
+          </Button>
+        )}
+      </div>
+      {detail && (
+        <p className={cn("text-xs", entry.error ? "text-destructive" : "text-muted-foreground")}>{detail}</p>
+      )}
+      {confirming && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-muted-foreground">
+            Deletes its images and its entry in posts.json from the bucket. It stays on Instagram, and the
+            select stays posted.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="destructive" onClick={() => void remove()} disabled={busy}>
+              Remove from gallery
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>
+              Keep
+            </Button>
+          </div>
+        </div>
+      )}
+      {problems !== undefined && (
+        <p className="text-xs text-destructive">
+          {problems.length > 0 ? problems.join(" ") : "Couldn't remove it. Try again."}
+        </p>
+      )}
+    </div>
   );
 }
 

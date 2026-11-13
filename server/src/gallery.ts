@@ -88,6 +88,8 @@ export type GalleryPost = {
 export type GalleryView = {
   /** The switch as saved. Gallery output is written only while it is on and available. */
   enabled: boolean;
+  /** The mode Selects runs in: only posts made in it can be written or removed now. */
+  mode: InstagramMode;
   availability: GalleryAvailability;
   /** Why the manifest could not be written; it is tried again. */
   manifestError: string | null;
@@ -480,6 +482,7 @@ export function createGallery(options: GalleryOptions) {
         });
       return {
         enabled: settings.gallery().enabled,
+        mode,
         availability: availability(),
         manifestError: manifest.error,
         posts,
