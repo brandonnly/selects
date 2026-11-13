@@ -111,6 +111,12 @@ export function captionRoutes({ store, coordinateFormat, capture }: CaptionRoute
         ),
       },
     )
+    .post("/api/captions/check", ({ body }) => checkCaption(body), {
+      body: t.Object(
+        { caption: t.String({ maxLength: MAX_TEXT }), altText: t.String({ maxLength: MAX_TEXT }) },
+        { additionalProperties: false },
+      ),
+    })
     .get("/api/selects/:id/caption", ({ params, status }) => {
       const data = capture(params.id);
       if (data === undefined) return status(404, notFound);

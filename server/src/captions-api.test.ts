@@ -248,3 +248,22 @@ describe("a select's own caption", () => {
     expect(db.query("SELECT count(*) AS n FROM select_captions").get()).toEqual({ n: 0 });
   });
 });
+
+describe("caption check", () => {
+  test("measures text being written against Instagram's limits without saving it", async () => {
+    const response = await send("POST", "/api/captions/check", {
+      caption: `${"a".repeat(1990)} #one @two`,
+      altText: "A pier.",
+    });
+
+    expect(response.status).toBe(200);
+    expect(await json(response)).toEqual({
+      captionCharacters: 2000,
+      hashtags: 1,
+      mentions: 1,
+      altTextCharacters: 7,
+      warnings: ["The caption is 2,000 characters, near Instagram's limit of 2,200."],
+      problems: [],
+    });
+  });
+});
