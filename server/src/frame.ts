@@ -1,7 +1,6 @@
-import type { PathCommand } from "opentype.js";
 import sharp, { type OverlayOptions } from "sharp";
 import type { CaptureData } from "./photo";
-import { createFontSource, type Typeface, type TypefaceId } from "./typefaces";
+import { createFontSource, type PathCommand, type Typeface, type TypefaceId } from "./typefaces";
 
 /** The fields that can print on a frame, in the order they print. */
 export const FRAME_FIELDS = [

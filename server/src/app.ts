@@ -135,7 +135,7 @@ function createRoutes({
           fields: fields === undefined ? saved.fields : fieldSwitches(fields),
         };
         const jpeg = await renderer.render({ path: original.path, capture: select }, frame, { width });
-        return new Response(jpeg, {
+        return new Response(new Uint8Array(jpeg), {
           headers: { "content-type": "image/jpeg", "cache-control": "private, no-cache" },
         });
       },

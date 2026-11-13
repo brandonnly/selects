@@ -1,3 +1,4 @@
+/// <reference path="./opentype.d.ts" />
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import { type Font, type Glyph, type PathCommand, parse } from "opentype.js";
@@ -142,3 +143,4 @@ export function createFontSource(dataDir: string) {
 }
 
 export type FontSource = ReturnType<typeof createFontSource>;
+export type { PathCommand };
