@@ -579,6 +579,27 @@ describe("remove from gallery", () => {
     expect(objectKeys()).toEqual(["posts.json"]);
   });
 
+  test("never forgets an image when recording it for deletion fails", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const post = await postNow(parts, await addSelect("portrait"));
+
+    // The cleanup record cannot be written, as a full disk would refuse it.
+    db.run(
+      "CREATE TEMP TRIGGER refuse_cleanup BEFORE INSERT ON bucket_cleanup BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+    );
+    parts.gallery.remove(post.id);
+    await parts.gallery.settled();
+    expect(parts.gallery.view().posts[0]?.state).toBe("removing");
+
+    db.run("DROP TRIGGER refuse_cleanup");
+    await parts.gallery.runDue();
+    await parts.publisher.runDue();
+
+    expect(objectKeys()).toEqual(["posts.json"]);
+    expect(parts.gallery.view().posts[0]?.state).toBe("removed");
+  });
+
   test("twice, or of a post not in the gallery, changes nothing more", async () => {
     const parts = setup();
     await connect(parts.account);

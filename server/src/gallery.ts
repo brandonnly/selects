@@ -444,11 +444,7 @@ export function createGallery(options: GalleryOptions) {
           .query("UPDATE gallery_posts SET frame_key = NULL WHERE post_id = ? AND frame_key = ?")
           .run(postId, key).changes;
         if (changed === 0) return false;
-        db.query("INSERT OR IGNORE INTO bucket_cleanup (key, added_at, mode) VALUES (?, ?, ?)").run(
-          key,
-          clock.now(),
-          mode,
-        );
+        recordForCleanup([key]);
         return true;
       })
       .immediate();
@@ -465,14 +461,17 @@ export function createGallery(options: GalleryOptions) {
           `UPDATE gallery_posts SET state = 'removed', image_key = NULL, frame_key = NULL,
              next_attempt_at = NULL WHERE post_id = ?`,
         ).run(postId);
-        return [row.image_key, row.frame_key].filter((key): key is string => key !== null);
+        const keys = [row.image_key, row.frame_key].filter((key): key is string => key !== null);
+        // In the same transaction: a key leaves the row only once the cleanup record holds it.
+        recordForCleanup(keys);
+        return keys;
       })
       .immediate();
-    await discard(bucket, keys);
+    await deleteKeys(bucket, keys);
   }
 
-  /** Deletes objects through the cleanup record, which the publisher's timer retries. */
-  async function discard(bucket: Bucket, keys: string[]): Promise<void> {
+  /** Puts keys on the cleanup record, whose deletions the publisher's timer retries. */
+  function recordForCleanup(keys: string[]): void {
     for (const key of keys) {
       db.query("INSERT OR IGNORE INTO bucket_cleanup (key, added_at, mode) VALUES (?, ?, ?)").run(
         key,
@@ -480,6 +479,11 @@ export function createGallery(options: GalleryOptions) {
         mode,
       );
     }
+  }
+
+  /** Deletes objects through the cleanup record. */
+  async function discard(bucket: Bucket, keys: string[]): Promise<void> {
+    recordForCleanup(keys);
     await deleteKeys(bucket, keys);
   }
 
