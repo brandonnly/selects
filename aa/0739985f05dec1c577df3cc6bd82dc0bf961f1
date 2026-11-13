@@ -1,0 +1,39 @@
+GLOSSARY.md
+  s_ec702dc6fe9761::t_c40cd5065b1f74 16-18
+docs/adr/0004-caption-templates.md
+  s_ec702dc6fe9761::t_6e63d0d9aae3a3 1-45
+server/src/caption-routes.ts
+  s_c4e8006bf0d88c::t_80854118abbb77 131-133
+server/src/captions.test.ts
+  s_ec702dc6fe9761::t_ac7a952f8fdb00 94-105,278
+server/src/captions.ts
+  s_c4e8006bf0d88c::t_ccebccff0475c6 72-74,94-99,157-159,161,163,255-256
+web/src/components/select-caption.tsx
+  s_c4e8006bf0d88c::t_0f4bd8f5d6d916 51-52,76,79,81,84-90,195-200
+web/src/screens/captions.tsx
+  s_c4e8006bf0d88c::t_f72068d9a8a1ba 41-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa0739985f05dec1c577df3cc6bd82dc0bf961f1",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    },
+    "s_ec702dc6fe9761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d34f-c7c7-7d63-9ea3-a121cab76768",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
