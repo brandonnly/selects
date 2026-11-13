@@ -69,6 +69,9 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           # Only the version here: `latest` moves in the last job, once the pushed image is tested.
+          # The action would add `latest` to a release tag on its own, so that is switched off.
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
           labels: |
