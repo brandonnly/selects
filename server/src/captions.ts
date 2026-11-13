@@ -212,7 +212,10 @@ const ALT_TEXT_TOKENS: ReadonlySet<string> = new Set<Token>(FRAME_FIELDS);
 type Values = Record<Token, string | null>;
 
 /** A run of text, or a field: a token, or brackets holding one, which is null when it is missing. */
-type Part = { text: string } | { field: string | null; bracketed: boolean };
+type Part =
+  | { text: string }
+  /** `lead` is the separator a bracketed group opens with, before its first token. */
+  | { field: string | null; bracketed: boolean; lead: string };
 
 /** Brackets and quotes that close around a field and go with it when it is missing. */
 const PAIRS: Record<string, string> = { "(": ")", "“": "”", '"': '"', "‘": "’", "'": "'" };
@@ -264,7 +267,8 @@ function fillLine(line: string, values: Values, tokens: ReadonlySet<string>): st
   const first = printed.findIndex((text) => text.trim() !== "");
   const opener = parts[first];
   if (first > 0 && opener !== undefined && "field" in opener && opener.bracketed) {
-    printed[first] = (printed[first] ?? "").replace(/^[^\p{L}\p{N}]+/u, "");
+    // Only the separator written in the template goes, never the start of a field's own value.
+    printed[first] = (printed[first] ?? "").slice(opener.lead.length);
   }
   return printed
     .join("")
@@ -292,7 +296,8 @@ function parse(line: string, values: Values, tokens: ReadonlySet<string>): Part[
     const value = name === undefined ? group(whole, values, tokens) : token(name, values, tokens);
     if (value === undefined) continue;
     if (match.index > at) parts.push({ text: line.slice(at, match.index) });
-    parts.push({ field: value, bracketed: name === undefined });
+    const opening = name === undefined ? (/^\[([^{]*)/.exec(whole)?.[1] ?? "") : "";
+    parts.push({ field: value, bracketed: name === undefined, lead: isSeparator(opening) ? opening : "" });
     at = match.index + whole.length;
   }
   if (at < line.length) parts.push({ text: line.slice(at) });

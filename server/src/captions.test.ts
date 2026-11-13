@@ -107,6 +107,14 @@ describe("buildCaption", () => {
       coordinateFormat: "dms",
     });
     expect(built.caption).toBe("ISO 400");
+
+    // A value that itself opens with a sign or a bracket keeps it.
+    const south = buildCaption({
+      capture: { ...full, camera: null, latitude: -35.125, longitude: 165.75 },
+      templates: templates({ caption: "{camera}[ · {coordinates}]" }),
+      coordinateFormat: "decimal",
+    });
+    expect(south.caption).toBe("-35.1250, 165.7500");
   });
 
   test("hashtags can be in the caption once", () => {
