@@ -13,6 +13,8 @@ import { MAX_UPLOAD_BYTES } from "./upload";
 const INBOX_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 /** How often due retries run. */
 const RETRY_INTERVAL_MS = 30 * 1000;
+/** How often gallery output runs: retried writes, privacy changes and removals. */
+const GALLERY_INTERVAL_MS = 30 * 1000;
 /** How often the Instagram token is checked for a refresh. */
 const TOKEN_CHECK_INTERVAL_MS = HOUR;
 
@@ -91,13 +93,14 @@ void scanInbox();
 const inboxTimer = setInterval(scanInbox, INBOX_SCAN_INTERVAL_MS);
 
 const runDue = () =>
-  app.publisher
-    .runDue()
-    .catch((error) => console.error(`Publishing retries failed (${errorKind(error)}).`))
-    // Gallery output: retried writes, the manifest after a privacy change, and removals.
-    .then(() => app.gallery.runDue());
+  app.publisher.runDue().catch((error) => console.error(`Publishing retries failed (${errorKind(error)}).`));
 void runDue();
 const retryTimer = setInterval(runDue, RETRY_INTERVAL_MS);
+// Gallery output on a timer of its own, so a slow publish never holds up a privacy change:
+// retried writes, the manifest after a privacy change, and removals. It never throws.
+const runGallery = () => app.gallery.runDue();
+void runGallery();
+const galleryTimer = setInterval(runGallery, GALLERY_INTERVAL_MS);
 const refreshToken = () => app.instagramAccount.refreshIfDue().catch(() => {});
 void refreshToken();
 const tokenTimer = setInterval(refreshToken, TOKEN_CHECK_INTERVAL_MS);
@@ -105,6 +108,7 @@ const tokenTimer = setInterval(refreshToken, TOKEN_CHECK_INTERVAL_MS);
 const shutdown = () => {
   clearInterval(inboxTimer);
   clearInterval(retryTimer);
+  clearInterval(galleryTimer);
   clearInterval(tokenTimer);
   // Let requests in flight finish, the fakes they may be using still up, before the database closes.
   server
