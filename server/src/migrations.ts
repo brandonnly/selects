@@ -50,4 +50,11 @@ export const migrations: readonly Migration[] = [
     rejected_at TEXT NOT NULL
   );
   `,
+  // 2: settings set in the UI, one JSON value per key.
+  `
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  `,
 ];

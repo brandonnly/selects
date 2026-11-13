@@ -18,6 +18,8 @@ served by one process. The UI calls the API through Eden, typed by `App` in `ser
 - `bun run build`, then `bun run start` for the production path.
 - `bun run fixtures [dir]` writes the generated fixture photos (`server/src/fixtures.ts`). Tests,
   manual checks and screenshots use only these.
+- `bun run references` rewrites the frame's reference images in `server/references` after an
+  intended change to the frame. Look at every image before committing it.
 - The server reads environment variables only in `server/src/config.ts`; add each new one there
   and to `.env.example`. The dev tooling (`server/src/dev.ts`, `web/vite.config.ts`) reads the
   ports and data directory itself.

@@ -80,4 +80,18 @@ describe("generateFixtures", () => {
     expect((await sharp(files.webp).metadata()).format).toBe("webp");
     expect(readFileSync(files.text, "utf8")).not.toBe("");
   });
+
+  test("includes the landscape's scene stored in Display P3, tagged with its profile", async () => {
+    const { icc, width, height } = await sharp(files.wideGamut).metadata();
+    // Read without converting, the stored values are not the sRGB landscape's.
+    const stored = await sharp(files.wideGamut).keepIccProfile().raw().toBuffer();
+    const srgb = await sharp(files.landscape).raw().toBuffer();
+    let diff = 0;
+    for (let i = 0; i < srgb.length; i++) diff += Math.abs((stored[i] ?? 0) - (srgb[i] ?? 0));
+
+    expect({ width, height }).toEqual({ width: 1200, height: 800 });
+    // The profile names itself in big-endian UTF-16.
+    expect(icc?.includes(Buffer.from("P3", "utf16le").swap16())).toBe(true);
+    expect(diff / srgb.length).toBeGreaterThan(5);
+  });
 });

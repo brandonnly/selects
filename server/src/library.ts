@@ -416,6 +416,11 @@ export function createLibrary({
         .map((row) => row.id);
     },
 
+    get(id: string): Select | undefined {
+      const found = selectRow(id);
+      return found === null ? undefined : toSelect(found);
+    },
+
     original(id: string): { path: string; type: string } | undefined {
       const found = selectRow(id);
       return found === null ? undefined : { path: originalPath(found), type: MIME_TYPES[found.format] };

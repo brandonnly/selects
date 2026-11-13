@@ -5,12 +5,24 @@ import { Elysia, t } from "elysia";
 import rootPackage from "../../package.json";
 import type { Config } from "./config";
 import { databaseStatus } from "./db";
-import { createLibrary, duplicateMessage, type Library } from "./library";
+import {
+  createFrameRenderer,
+  FRAME_FIELDS,
+  FRAME_WIDTH,
+  type FrameField,
+  type FrameSettings,
+  MAX_BORDER,
+} from "./frame";
+import { createLibrary, duplicateMessage, errorKind, type Library } from "./library";
 import { passwordGate } from "./password";
+import { createSettings } from "./settings";
+import { TYPEFACE_IDS, TYPEFACES, type TypefaceId } from "./typefaces";
 import { serveUi } from "./ui";
 import { MAX_UPLOAD_BYTES, receiveUpload } from "./upload";
 
+export type { FrameField, FrameSettings } from "./frame";
 export type { Rejection, ScanResult, Select, UploadResult } from "./library";
+export type { FontOverride } from "./typefaces";
 
 export type AppOptions = {
   config: Config;
@@ -27,6 +39,54 @@ export type AppOptions = {
 
 const notFound = { error: "Not found" } as const;
 
+// Unions of literals, not `t.UnionEnum`: Elysia fills a UnionEnum left out of a query with its
+// first value.
+const frameColor = t.Union([t.Literal("light"), t.Literal("dark")]);
+// Typed as one literal of every ID: an array built by `map` would leave the union's type empty.
+const typeface = t.Union(
+  TYPEFACE_IDS.map((id) => t.Literal(id)) as [ReturnType<typeof t.Literal<TypefaceId>>],
+);
+const coordinateFormat = t.Union([t.Literal("dms"), t.Literal("decimal")]);
+
+const frameSettingsSchema = t.Object(
+  {
+    border: t.Integer({ minimum: 0, maximum: MAX_BORDER }),
+    color: frameColor,
+    typeface,
+    fields: t.Object(
+      {
+        camera: t.Boolean(),
+        lens: t.Boolean(),
+        focalLength: t.Boolean(),
+        shutter: t.Boolean(),
+        aperture: t.Boolean(),
+        iso: t.Boolean(),
+        coordinates: t.Boolean(),
+        date: t.Boolean(),
+      },
+      { additionalProperties: false },
+    ),
+    coordinateFormat,
+  },
+  { additionalProperties: false },
+);
+
+/** A comma-separated list of frame fields, possibly empty. */
+const FIELD_LIST = `^(?:(?:${FRAME_FIELDS.join("|")})(?:,(?:${FRAME_FIELDS.join("|")}))*)?$`;
+
+/** Settings to preview instead of the saved ones, and the preview's width. */
+const framePreviewQuery = t.Object({
+  width: t.Optional(t.Integer({ minimum: 120, maximum: FRAME_WIDTH })),
+  border: t.Optional(t.Integer({ minimum: 0, maximum: MAX_BORDER })),
+  color: t.Optional(frameColor),
+  typeface: t.Optional(typeface),
+  /** The fields to show, comma-separated. Empty shows none. */
+  fields: t.Optional(t.String({ pattern: FIELD_LIST })),
+  coordinateFormat: t.Optional(coordinateFormat),
+});
+
+export type FramePreviewQuery = (typeof framePreviewQuery)["static"];
+
 function createRoutes({
   config,
   db,
@@ -37,6 +97,8 @@ function createRoutes({
 }: AppOptions) {
   const lib = library ?? createLibrary({ db, dataDir: config.dataDir, inboxSettleMs });
   const uploadDir = join(config.dataDir, "uploads");
+  const settings = createSettings(db);
+  const renderer = createFrameRenderer({ dataDir: config.dataDir });
 
   return new Elysia()
     .get("/api/health", ({ status }) => {
@@ -60,6 +122,46 @@ function createRoutes({
         headers: { "content-type": "image/jpeg", "cache-control": "private, max-age=31536000, immutable" },
       });
     })
+    .get(
+      "/api/selects/:id/frame",
+      async ({ params, query, status, request }) => {
+        const select = lib.get(params.id);
+        const original = lib.original(params.id);
+        if (select === undefined || original === undefined) return status(404, notFound);
+        const { width, fields, ...preview } = query;
+        const saved = settings.frame();
+        // A setting left out of the query is sent as undefined: the saved one stands.
+        const given = Object.fromEntries(Object.entries(preview).filter(([, value]) => value !== undefined));
+        const frame: FrameSettings = {
+          ...saved,
+          ...given,
+          fields: fields === undefined ? saved.fields : fieldSwitches(fields),
+        };
+        let jpeg: Buffer;
+        try {
+          jpeg = await renderer.render({ path: original.path, capture: select }, frame, {
+            width,
+            signal: request.signal,
+          });
+        } catch (error) {
+          // The error's message can carry the photo's path, so only its kind is logged.
+          // A preview dropped for a newer one is no failure.
+          if (!request.signal.aborted) console.error(`A frame could not be rendered (${errorKind(error)}).`);
+          return status(404, notFound);
+        }
+        return new Response(new Uint8Array(jpeg), {
+          headers: { "content-type": "image/jpeg", "cache-control": "private, no-cache" },
+        });
+      },
+      { query: framePreviewQuery },
+    )
+    .get("/api/frame", () => ({
+      settings: settings.frame(),
+      typefaces: TYPEFACES.map(({ id, name }) => ({ id, name })),
+      fontOverride: renderer.fontOverride(),
+      maxBorder: MAX_BORDER,
+    }))
+    .put("/api/frame", ({ body }) => settings.setFrame(body), { body: frameSettingsSchema })
     .delete("/api/selects/:id", ({ params, status }) =>
       lib.remove(params.id) ? status(204) : status(404, notFound),
     )
@@ -144,6 +246,15 @@ function createRoutes({
 }
 
 const UPLOAD_TYPE = "application/octet-stream";
+
+/** `"lens,iso"` turns on those two fields and every other one off. */
+function fieldSwitches(list: string): Record<FrameField, boolean> {
+  const on = new Set(list.split(","));
+  return Object.fromEntries(FRAME_FIELDS.map((field) => [field, on.has(field)])) as Record<
+    FrameField,
+    boolean
+  >;
+}
 
 /**
  * A browser or tool may send a whole path as the name; only its last part is kept, without

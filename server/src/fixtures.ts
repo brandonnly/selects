@@ -37,12 +37,15 @@ export type PhotoOptions = {
   /** JPEG quality. Default 90. */
   quality?: number;
   exif?: Exif;
+  /** Converts the scene into this color space and embeds its profile. JPEG only. Default sRGB, untagged. */
+  profile?: "p3";
 };
 
 /** Renders a synthetic photo with the given EXIF and returns the file's bytes. */
-export async function makePhoto({ scene, width, height, format, quality = 90, exif }: PhotoOptions) {
+export async function makePhoto({ scene, width, height, format, quality = 90, exif, profile }: PhotoOptions) {
   const pixels = paintScene(scene, width, height);
-  const image = sharp(pixels, { raw: { width, height, channels: 3 } });
+  const raw = sharp(pixels, { raw: { width, height, channels: 3 } });
+  const image = profile === undefined ? raw : raw.withIccProfile(profile);
   const block = exif === undefined ? undefined : exifTiff(exif);
 
   switch (format) {
@@ -146,6 +149,11 @@ export const fixtures = {
         orientation: 6,
       },
     },
+  },
+  /** The landscape's scene as a JPEG in Display P3, with the profile embedded and no EXIF. */
+  wideGamut: {
+    file: "wide-gamut.jpg",
+    photo: { scene: 2, width: 1200, height: 800, format: "jpeg", profile: "p3" },
   },
   /** JPEG with no metadata at all. */
   noExif: { file: "no-exif.jpg", photo: { scene: 5, width: 700, height: 700, format: "jpeg" } },
