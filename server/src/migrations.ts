@@ -88,4 +88,55 @@ export const migrations: readonly Migration[] = [
     alt_text TEXT
   );
   `,
+  // 5: the connected Instagram account, and posts: what was sent, or is being sent, and of which selects.
+  `
+  CREATE TABLE instagram_account (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    -- Secret: never returned by the API and never logged.
+    token TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('connected', 'invalid')),
+    connected_at INTEGER NOT NULL,
+    -- When the token in use was issued or last refreshed, and when it expires. Milliseconds.
+    refreshed_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE posts (
+    id TEXT PRIMARY KEY,
+    state TEXT NOT NULL CHECK (state IN ('publishing', 'retrying', 'published', 'failed', 'dry-run')),
+    caption TEXT NOT NULL,
+    alt_text TEXT NOT NULL,
+    -- Chosen once for the post, so every attempt sends the same caption.
+    hashtag_set TEXT,
+    -- The published capture data the caption was built from, as JSON: a change means build again.
+    capture TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER,
+    -- The bucket object holding the frame, while it is there.
+    object_key TEXT,
+    -- The Instagram media container, and when publishing it was asked for. Instagram publishes a
+    -- container once, so a container that may have been published is checked, never replaced.
+    container_id TEXT,
+    publish_requested_at INTEGER,
+    media_id TEXT,
+    permalink TEXT,
+    error TEXT,
+    -- What a dry run did, as JSON.
+    report TEXT,
+    created_at INTEGER NOT NULL,
+    published_at INTEGER
+  );
+  CREATE INDEX posts_state ON posts (state);
+
+  -- The selects in a post, in order. One today; several when carousels come.
+  CREATE TABLE post_selects (
+    post_id TEXT NOT NULL REFERENCES posts (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    select_id TEXT REFERENCES selects (id) ON DELETE SET NULL,
+    PRIMARY KEY (post_id, position)
+  );
+  CREATE INDEX post_selects_select ON post_selects (select_id);
+  `,
 ];
