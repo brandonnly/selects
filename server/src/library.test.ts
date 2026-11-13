@@ -313,6 +313,8 @@ describe("requests from other sites", () => {
       { "sec-fetch-site": "cross-site" },
       { "sec-fetch-site": "same-site" },
       { origin: "http://elsewhere.test" },
+      { origin: "https://selects.test" },
+      { origin: "http://selects.test", "x-forwarded-proto": "https" },
     ];
     for (const headers of crossSite) {
       const scan = await request("/api/inbox/scan", { method: "POST", headers });
@@ -327,6 +329,7 @@ describe("requests from other sites", () => {
     const own: Record<string, string>[] = [
       { "sec-fetch-site": "same-origin" },
       { origin: "http://selects.test" },
+      { origin: "https://photos.test", "x-forwarded-proto": "https", "x-forwarded-host": "photos.test" },
       {},
     ];
     for (const headers of own) {

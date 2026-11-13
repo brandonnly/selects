@@ -33,6 +33,8 @@ const server = Bun.serve({
   fetch: createApp({ config, db, webDir, library }).fetch,
   // Room for the largest upload; the upload route enforces the limit itself.
   maxRequestBodySize: MAX_UPLOAD_BYTES + 1024 * 1024,
+  // The longest Bun allows, in seconds: a scan of a full inbox answers only when it is done.
+  idleTimeout: 255,
   // Never Bun's development error page: it prints the stack and source to the client.
   development: false,
   error: (error) => {

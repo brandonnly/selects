@@ -1,6 +1,15 @@
 import type { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  type Stats,
+  statSync,
+} from "node:fs";
 import { basename, extname, join } from "node:path";
 import {
   type CaptureData,
@@ -186,6 +195,7 @@ export function createLibrary({
    * worst a copy is left behind, and the file is seen again as a duplicate.
    */
   async function ingestNow(path: string, options: IngestOptions): Promise<IngestResult> {
+    const inspected = statSync(path);
     const photo = await inspectPhoto(path);
     if (photo === undefined) return { status: "unsupported" };
 
@@ -211,6 +221,10 @@ export function createLibrary({
     try {
       await writeThumbnail(path, thumbnailPath(id));
       copyFileSync(path, original);
+      // The copy must be the file that was inspected, not one that replaced it meanwhile.
+      if (!sameFile(inspected, statSync(path)) || statSync(original).size !== photo.bytes) {
+        throw new Error("The file changed while it was being read");
+      }
       db.transaction(() => {
         db.query(
           `INSERT INTO selects (id, file_name, source, format, bytes, width, height, camera, lens,
@@ -247,7 +261,8 @@ export function createLibrary({
       rmSync(thumbnailPath(id), { force: true });
       throw error;
     }
-    rmSync(path, { force: true });
+    // A file put in its place since then is a new file, left for the next scan.
+    if (sameFile(inspected, statSync(path, { throwIfNoEntry: false }))) rmSync(path, { force: true });
     const added = selectRow(id);
     if (added === null) throw new Error("The new select was not saved");
     return { status: "added", select: toSelect(added) };
@@ -366,12 +381,18 @@ export function createLibrary({
           mkdirSync(dirs.held, { recursive: true });
           const held = join(dirs.held, randomUUID());
           moveFile(path, held);
-          const rejection = recordRejection(
-            { ...options, source: "upload", storedPath: held },
-            "reexport",
-            result.match,
-          );
-          return { status: "reexport", rejection };
+          try {
+            const rejection = recordRejection(
+              { ...options, source: "upload", storedPath: held },
+              "reexport",
+              result.match,
+            );
+            return { status: "reexport", rejection };
+          } catch (error) {
+            // Unrecorded, a held file could never be reviewed.
+            rmSync(held, { force: true });
+            throw error;
+          }
         }
       }
     },
@@ -515,6 +536,17 @@ export function duplicateMessage(match: Match) {
 
 function reexportMessage(match: Match) {
   return `Looks like a re-export of ${matchName(match)}: the same picture, taken at the same moment.`;
+}
+
+/** True when `now` is still the file `then` described: not replaced, rewritten or touched. */
+function sameFile(then: Stats, now: Stats | undefined): boolean {
+  return (
+    now !== undefined &&
+    now.ino === then.ino &&
+    now.size === then.size &&
+    now.mtimeMs === then.mtimeMs &&
+    now.ctimeMs === then.ctimeMs
+  );
 }
 
 /** What went wrong, without the message: a filesystem error's message carries the photo's path. */

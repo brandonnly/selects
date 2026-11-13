@@ -158,7 +158,8 @@ function lastPathPart(name: string) {
 /**
  * True when a request that changes something was sent by a page on another origin. Browsers
  * say so in `Sec-Fetch-Site`, or in `Origin` where that header is not sent (plain HTTP on a
- * LAN). Tools that send neither are let through.
+ * LAN). Tools that send neither are let through. A proxy that ends TLS in front of the app
+ * names the outside scheme and host in the forwarded headers.
  */
 function isCrossOrigin(request: Request): boolean {
   if (request.method === "GET" || request.method === "HEAD") return false;
@@ -168,8 +169,11 @@ function isCrossOrigin(request: Request): boolean {
   if (origin === null) return false;
   const host =
     request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? new URL(request.url).host;
+  const scheme =
+    request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ??
+    new URL(request.url).protocol.slice(0, -1);
   try {
-    return new URL(origin).host !== host;
+    return new URL(origin).origin !== new URL(`${scheme}://${host}`).origin;
   } catch {
     return true;
   }

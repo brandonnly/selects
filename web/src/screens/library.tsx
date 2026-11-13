@@ -33,15 +33,19 @@ export function LibraryScreen() {
   const [open, setOpen] = useState<Select | undefined>();
   const fileInput = useRef<HTMLInputElement>(null);
   const uploading = useRef<Promise<void>>(Promise.resolve());
+  const refreshTurn = useRef(0);
 
   const refresh = useCallback(async () => {
+    // Only the newest answer is shown: an older one arriving late would drop what was added since.
+    const turn = ++refreshTurn.current;
     try {
       const [library, rejected] = await Promise.all([api.selects.get(), api.rejections.get()]);
+      if (turn !== refreshTurn.current) return;
       if (library.data) setSelects(library.data);
       if (rejected.data) setRejections(rejected.data);
       setLoadError(library.error !== null || rejected.error !== null);
     } catch {
-      setLoadError(true);
+      if (turn === refreshTurn.current) setLoadError(true);
     }
   }, []);
 
