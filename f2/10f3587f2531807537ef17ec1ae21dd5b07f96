@@ -1,0 +1,25 @@
+server/src/frame-references.ts
+  s_4006560c52cb12::t_e96da88e030654 1-68
+server/src/frame-references.test.ts
+  s_4006560c52cb12::t_edc6fbed45d406 13
+  s_4006560c52cb12::t_0ee09082676444 8-9,12,25-51,61-63
+  s_4006560c52cb12::t_7ab594bd1ff8d8 1-7,10-11,14-24,52-60,64-67
+package.json
+  s_4006560c52cb12::t_5ae1770bf22611 18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f210f3587f2531807537ef17ec1ae21dd5b07f96",
+  "prompts": {},
+  "sessions": {
+    "s_4006560c52cb12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da0f7775-eeec-4f85-8315-af9d873f806d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
