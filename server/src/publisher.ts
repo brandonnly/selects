@@ -1022,10 +1022,11 @@ export function createPublisher(options: PublisherOptions) {
         // A restored copy: what was under way when it was made has long since ended one way or
         // the other. Nothing is sent again; each waits for its owner to say what became of it.
         db.query(
-          `UPDATE posts SET state = 'unconfirmed', next_attempt_at = ?, error = ?
+          `UPDATE posts SET state = 'unconfirmed', next_attempt_at = NULL, error = ?
            WHERE state IN ('publishing', 'retrying')`,
         ).run(
-          clock.now() + UNCONFIRMED_CHECK_MS,
+          // No time for a check of its own: the container the copy knew may have been replaced
+          // since, so only its owner can say what became of it.
           "Selects started on a restored copy while this post was under way. Check Instagram, then say whether it was posted.",
         );
         return;

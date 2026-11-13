@@ -78,8 +78,13 @@ export function createBackups(options: BackupsOptions) {
       .sort()
       .reverse()
       .flatMap((name) => {
-        const stats = statSync(join(dir, name), { throwIfNoEntry: false });
-        return stats?.isFile() ? [{ name, at: stats.mtimeMs, bytes: stats.size }] : [];
+        // A folder that can be listed but not looked into leaves its copies unknown, not a crash.
+        try {
+          const stats = statSync(join(dir, name), { throwIfNoEntry: false });
+          return stats?.isFile() ? [{ name, at: stats.mtimeMs, bytes: stats.size }] : [];
+        } catch {
+          return [];
+        }
       });
   }
 

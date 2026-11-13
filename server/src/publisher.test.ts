@@ -864,8 +864,11 @@ describe("a publish interrupted part way", () => {
 
     const { publisher } = setup();
     publisher.recover({ hold: true });
-    clock.advance(5 * MINUTE);
-    await publisher.runDue();
+    // Well past the time an unconfirmed post is checked on its own: this one never is.
+    for (let i = 0; i < 6; i++) {
+      clock.advance(5 * MINUTE);
+      await publisher.runDue();
+    }
 
     expect(publisher.post(first.id)?.state).toBe("unconfirmed");
     expect(instagram.media).toHaveLength(0);
