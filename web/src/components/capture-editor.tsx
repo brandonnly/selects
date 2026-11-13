@@ -67,6 +67,9 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
   const lastSent = useRef<string | undefined>(undefined);
   /** Saves go one after another, so an earlier one can never land after a later one. */
   const saving = useRef<Promise<unknown>>(Promise.resolve());
+  /** The edits last sent, and what the server last confirmed holding, as JSON. */
+  const sentEdits = useRef<Payload["edits"] | undefined>(undefined);
+  const confirmed = useRef<string | undefined>(undefined);
   const saved = useRef(onSaved);
   saved.current = onSaved;
 
@@ -95,6 +98,7 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
         edits: editsFrom(initial, loaded.file, loaded.edits).edits,
         locationHidden: loaded.locationHidden,
       });
+      confirmed.current = lastSent.current;
     });
     return () => {
       live = false;
@@ -102,7 +106,12 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
   }, [load]);
 
   const result = useMemo(
-    () => (view === undefined || draft === undefined ? undefined : editsFrom(draft, view.file, view.edits)),
+    // A field that does not read falls back to the edit last sent, which a slow save may not
+    // have brought back into `view` yet.
+    () =>
+      view === undefined || draft === undefined
+        ? undefined
+        : editsFrom(draft, view.file, sentEdits.current ?? view.edits),
     [view, draft],
   );
   const payload = useMemo<Payload | undefined>(
@@ -114,19 +123,23 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
     (next: Payload) => {
       const json = JSON.stringify(next);
       const before = lastSent.current;
+      const editsBefore = sentEdits.current;
       lastSent.current = json;
+      sentEdits.current = next.edits;
       setSave("saving");
       // A save that failed is not what the server holds: it is sent again on the next change
       // and when the dialog closes.
       const failed = () => {
         if (lastSent.current !== json) return;
         lastSent.current = before;
+        sentEdits.current = editsBefore;
         setSave("failed");
       };
       const sent = saving.current.then(() => api.selects({ id: selectId }).capture.put(next));
       saving.current = sent.catch(() => {});
       return sent
         .then(({ data, error }) => {
+          if (data) confirmed.current = json;
           if (lastSent.current !== json) return;
           if (data) {
             setView(data);
@@ -160,6 +173,25 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
     },
     [send],
   );
+
+  // Closing or reloading the tab runs no cleanup, so a change the server has not confirmed,
+  // a hidden location above all, is sent as the page goes.
+  useEffect(() => {
+    const flush = () => {
+      const last = pending.current;
+      if (last === undefined || confirmed.current === undefined) return;
+      const json = JSON.stringify(last);
+      if (json === confirmed.current) return;
+      fetch(`/api/selects/${encodeURIComponent(selectId)}/capture`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: json,
+        keepalive: true,
+      }).catch(() => {});
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, [selectId]);
 
   if (loadError) return <p className="text-sm text-destructive">Couldn't load the capture data.</p>;
   if (view === undefined || draft === undefined || result === undefined) {
