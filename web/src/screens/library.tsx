@@ -35,10 +35,14 @@ export function LibraryScreen() {
   const uploading = useRef<Promise<void>>(Promise.resolve());
 
   const refresh = useCallback(async () => {
-    const [library, rejected] = await Promise.all([api.selects.get(), api.rejections.get()]);
-    if (library.data) setSelects(library.data);
-    if (rejected.data) setRejections(rejected.data);
-    setLoadError(library.error !== null || rejected.error !== null);
+    try {
+      const [library, rejected] = await Promise.all([api.selects.get(), api.rejections.get()]);
+      if (library.data) setSelects(library.data);
+      if (rejected.data) setRejections(rejected.data);
+      setLoadError(library.error !== null || rejected.error !== null);
+    } catch {
+      setLoadError(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -83,13 +87,14 @@ export function LibraryScreen() {
 
   const scanInbox = async () => {
     setScan({ state: "scanning" });
-    const { data } = await api.inbox.scan.post();
-    if (data) {
-      const parts = [`${data.added} added`, `${data.rejected} rejected`];
-      setScan({ state: "done", message: `Inbox scanned: ${parts.join(", ")}.` });
-    } else {
-      setScan({ state: "done", message: "Couldn't scan the inbox." });
+    let message = "Couldn't scan the inbox.";
+    try {
+      const { data } = await api.inbox.scan.post();
+      if (data) message = `Inbox scanned: ${data.added} added, ${data.rejected} rejected.`;
+    } catch {
+      // The message already says it failed.
     }
+    setScan({ state: "done", message });
     await refresh();
   };
 
@@ -288,11 +293,16 @@ function RejectionRow({ rejection, onChange }: { rejection: Rejection; onChange:
   const act = async (action: () => Promise<{ error: { status: unknown } | null }>) => {
     setBusy(true);
     setError(undefined);
-    const { error: failed } = await action();
-    // A 409 or 410 changes or removes this row on refresh, which says why by itself.
-    if (failed && failed.status !== 409 && failed.status !== 410) setError("That didn't work. Try again.");
-    await onChange();
-    setBusy(false);
+    try {
+      const { error: failed } = await action();
+      // A 409 or 410 changes or removes this row on refresh, which says why by itself.
+      if (failed && failed.status !== 409 && failed.status !== 410) setError("That didn't work. Try again.");
+      await onChange();
+    } catch {
+      setError("That didn't work. Try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

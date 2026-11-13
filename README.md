@@ -36,7 +36,8 @@ Selects takes JPEG, PNG and TIFF files, by either route:
 
 The original is kept byte for byte. A file identical to one added before is refused, even if
 that one was deleted. A likely re-export (the same picture, taken at the same moment) is held
-until you add it anyway or discard it.
+until you add it anyway or discard it. Dismissing a file refused from the inbox clears the notice
+and leaves the file in `inbox/rejected`.
 
 ## Development
 

@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { createApp } from "./app";
 import { ConfigError, loadConfig } from "./config";
 import { openDatabase } from "./db";
-import { createLibrary } from "./library";
+import { createLibrary, errorKind } from "./library";
 import { migrations } from "./migrations";
 import { MAX_UPLOAD_BYTES } from "./upload";
 
@@ -54,7 +54,7 @@ const scanInbox = () =>
     .then(({ added, rejected }) => {
       if (added + rejected > 0) console.log(`Inbox: ${added} added, ${rejected} rejected.`);
     })
-    .catch((error) => console.error("Inbox scan failed:", error));
+    .catch((error) => console.error(`Inbox scan failed (${errorKind(error)}).`));
 void scanInbox();
 const inboxTimer = setInterval(scanInbox, INBOX_SCAN_INTERVAL_MS);
 

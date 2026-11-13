@@ -301,14 +301,20 @@ export function createLibrary({
         }
         const target = freePath(dirs.rejected, entry.name);
         moveFile(path, target);
-        recordRejection(
-          { fileName: entry.name, source: "inbox", storedPath: target, alreadyPosted: false },
-          ingested.status,
-          "match" in ingested ? ingested.match : undefined,
-        );
+        try {
+          recordRejection(
+            { fileName: entry.name, source: "inbox", storedPath: target, alreadyPosted: false },
+            ingested.status,
+            "match" in ingested ? ingested.match : undefined,
+          );
+        } catch (error) {
+          // Unrecorded, the file goes back to be seen again by the next scan.
+          moveFile(target, path);
+          throw error;
+        }
         result.rejected++;
       } catch (error) {
-        console.error("An inbox file could not be processed and was left in place:", error);
+        console.error(`An inbox file could not be processed and was left in place (${errorKind(error)}).`);
       }
     }
     return result;
@@ -509,6 +515,12 @@ export function duplicateMessage(match: Match) {
 
 function reexportMessage(match: Match) {
   return `Looks like a re-export of ${matchName(match)}: the same picture, taken at the same moment.`;
+}
+
+/** What went wrong, without the message: a filesystem error's message carries the photo's path. */
+export function errorKind(error: unknown): string {
+  if (error instanceof Error) return (error as NodeJS.ErrnoException).code ?? error.name;
+  return "unknown error";
 }
 
 /** `dir/name`, or `dir/name (2)` and so on when that is taken. */
