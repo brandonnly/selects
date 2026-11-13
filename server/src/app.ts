@@ -145,7 +145,8 @@ function createRoutes({
           });
         } catch (error) {
           // The error's message can carry the photo's path, so only its kind is logged.
-          console.error(`A frame could not be rendered (${errorKind(error)}).`);
+          // A preview dropped for a newer one is no failure.
+          if (!request.signal.aborted) console.error(`A frame could not be rendered (${errorKind(error)}).`);
           return status(404, notFound);
         }
         return new Response(new Uint8Array(jpeg), {
