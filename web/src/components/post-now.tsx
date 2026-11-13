@@ -65,10 +65,15 @@ export function PostNow({ select, onPosted }: { select: Select; onPosted: () => 
     setState({ step: "sending", preview });
     const { data, error } = await api
       .selects({ id: select.id })
+      // Everything the owner was shown: the server refuses if any of it no longer holds.
       .publish.post({
         caption: preview.caption,
         altText: preview.altText,
         hashtagSet: preview.hashtagSet ?? undefined,
+        dryRun: preview.dryRun,
+        instagram: preview.instagram,
+        account: preview.account,
+        frame: preview.frame,
       })
       .catch(() => ({ data: null, error: { status: 0, value: null } }));
     if (!live.current) return;

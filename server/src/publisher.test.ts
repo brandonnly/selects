@@ -100,6 +100,7 @@ function setup(
       ? { missing: ["BUCKET_ENDPOINT", "BUCKET_NAME"] }
       : (options.wrapBucket?.(bucket) ?? bucket),
     clock,
+    mode: "fake",
     random: () => 0,
   });
   return { publisher, zones, captures, settings, captionStore, account, renderer };

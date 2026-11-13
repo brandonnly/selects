@@ -132,6 +132,7 @@ function createServices({ config, db, library, inboxSettleMs, instagram, clock =
     api,
     bucket: config.bucket.status === "configured" ? createBucket(config.bucket) : config.bucket,
     clock,
+    mode: config.instagram,
   });
   return { library: lib, settings, renderer, zones, captures, captionStore, account, publisher };
 }

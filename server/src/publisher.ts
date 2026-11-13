@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Bucket, BucketError } from "./bucket";
@@ -7,6 +7,7 @@ import type { CaptionStore } from "./caption-store";
 import { buildCaption, checkCaption, type LimitCheck } from "./captions";
 import type { Captures, PublishedCapture } from "./capture";
 import { type Clock, MINUTE } from "./clock";
+import type { InstagramMode } from "./config";
 import { FRAME_HEIGHT, FRAME_WIDTH, type FrameRenderer } from "./frame";
 import { type InstagramApi, InstagramError } from "./instagram";
 import type { InstagramAccount } from "./instagram-account";
@@ -54,6 +55,8 @@ export type Post = {
   permalink: string | null;
   /** Why the last attempt failed. */
   error: string | null;
+  /** Which Instagram made it: the fake server inside Selects, or the real one. Null if unknown. */
+  mode: InstagramMode | null;
   createdAt: number;
   publishedAt: number | null;
   report: DryRunReport | null;
@@ -65,8 +68,8 @@ export type PublishRequest = {
   dryRun?: boolean;
   /** The hashtag set, by name, in place of one chosen at random: the one the owner was shown. */
   hashtagSet?: string;
-  /** What the owner confirmed. When it no longer matches what would be sent, nothing is. */
-  expect?: { caption: string; altText: string };
+  /** What the owner was shown and confirmed. When any of it no longer holds, nothing is sent. */
+  expect?: Confirmation;
 };
 
 export type PublishResult =
@@ -77,8 +80,19 @@ export type PublishResult =
   | { status: "not-in-pool" }
   /** No bucket, or no account to publish to. Nothing was recorded. */
   | { status: "unavailable"; problems: string[] }
-  /** The caption or alt text is no longer what the owner confirmed. */
-  | { status: "changed"; caption: string; altText: string };
+  /** What would be sent is no longer what the owner confirmed: each change, in words. */
+  | { status: "changed"; changes: string[] };
+
+/** Everything the owner is shown before a post, which the post must still match. */
+export type Confirmation = {
+  caption: string;
+  altText: string;
+  dryRun: boolean;
+  instagram: InstagramMode;
+  account: string | null;
+  /** The preview's `frame`. */
+  frame: string;
+};
 
 /** What a post would send now, for the owner to confirm. */
 export type PostPreview = {
@@ -89,8 +103,12 @@ export type PostPreview = {
   /** What would stop it being published. */
   problems: string[];
   dryRun: boolean;
+  /** Which Instagram it would go to: the fake server inside Selects, or the real one. */
+  instagram: InstagramMode;
   account: string | null;
   url: "public" | "presigned" | null;
+  /** A short fingerprint of what the frame is rendered from: settings, typeface and capture data. */
+  frame: string;
 };
 
 export type PublisherOptions = {
@@ -98,7 +116,7 @@ export type PublisherOptions = {
   dataDir: string;
   library: Library;
   captures: Captures;
-  renderer: Pick<FrameRenderer, "render">;
+  renderer: Pick<FrameRenderer, "render"> & Partial<Pick<FrameRenderer, "fontOverride">>;
   settings: Settings;
   captionStore: CaptionStore;
   account: InstagramAccount;
@@ -106,6 +124,8 @@ export type PublisherOptions = {
   /** The bucket, or the variables it still needs. */
   bucket: Bucket | { missing: string[] };
   clock: Clock;
+  /** Which Instagram the API talks to; recorded on each post. */
+  mode: InstagramMode;
   /** Picks a hashtag set. Default: Math.random. */
   random?: () => number;
 };
@@ -151,6 +171,7 @@ type PostRow = {
   permalink: string | null;
   error: string | null;
   report: string | null;
+  mode: InstagramMode | null;
   created_at: number;
   published_at: number | null;
 };
@@ -221,6 +242,7 @@ export function createPublisher(options: PublisherOptions) {
     nextAttemptAt: found.next_attempt_at,
     permalink: found.permalink,
     error: found.error,
+    mode: found.mode,
     createdAt: found.created_at,
     publishedAt: found.published_at,
     report: found.report === null ? null : (JSON.parse(found.report) as DryRunReport),
@@ -287,6 +309,22 @@ export function createPublisher(options: PublisherOptions) {
     };
   }
 
+  /** A short fingerprint of everything the frame is rendered from. */
+  function frameFingerprint(content: Content): string {
+    const inputs = {
+      settings: settings.frame(),
+      font: renderer.fontOverride?.() ?? null,
+      sources: content.sources,
+    };
+    return createHash("sha256").update(JSON.stringify(inputs)).digest("hex").slice(0, 16);
+  }
+
+  /** The connected account's name, when it can be published to. */
+  const accountName = () => {
+    const view = account.view();
+    return view?.status === "connected" ? view.username : null;
+  };
+
   async function render(content: Content): Promise<Uint8Array> {
     const [source] = content.sources;
     if (source === undefined) throw new PostFailure("The post has no select.", false);
@@ -295,11 +333,12 @@ export function createPublisher(options: PublisherOptions) {
 
   function insertPost(id: string, selectIds: string[], content: Content, extra: Partial<PostRow>) {
     db.query(
-      `INSERT INTO posts (id, state, caption, alt_text, hashtag_set, capture, report, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO posts (id, state, mode, caption, alt_text, hashtag_set, capture, report, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       extra.state ?? "publishing",
+      options.mode,
       content.caption,
       content.altText,
       content.hashtagSet,
@@ -683,6 +722,21 @@ export function createPublisher(options: PublisherOptions) {
     for (const { key } of discarded) await serially(() => deleteObject(key));
   }
 
+  /** How what would be sent now differs from what the owner confirmed. */
+  function changesFrom(confirmed: Confirmation, content: Content, dry: boolean): string[] {
+    const changes: string[] = [];
+    if (confirmed.dryRun !== dry) {
+      changes.push(dry ? "Dry run was switched on." : "Dry run was switched off: this would be a real post.");
+    }
+    if (confirmed.instagram !== options.mode) changes.push("Selects now talks to a different Instagram.");
+    if (!dry && confirmed.account !== accountName()) changes.push("The connected Instagram account changed.");
+    if (confirmed.caption !== content.caption || confirmed.altText !== content.altText) {
+      changes.push("The caption or alt text changed.");
+    }
+    if (confirmed.frame !== frameFingerprint(content)) changes.push("The frame changed.");
+    return changes;
+  }
+
   const readiness = (): string[] =>
     [bucketProblem(), accountProblem()].filter((problem): problem is string => problem !== undefined);
 
@@ -696,11 +750,9 @@ export function createPublisher(options: PublisherOptions) {
       if (selects.some((select) => !select?.inPool)) return { status: "not-in-pool" };
       const content = build(request.selectIds, request.hashtagSet);
       if (content === undefined) return { status: "not-found" };
-      if (
-        request.expect !== undefined &&
-        (request.expect.caption !== content.caption || request.expect.altText !== content.altText)
-      ) {
-        return { status: "changed", caption: content.caption, altText: content.altText };
+      if (request.expect !== undefined) {
+        const changes = changesFrom(request.expect, content, dry);
+        if (changes.length > 0) return { status: "changed", changes };
       }
       if (dry) {
         const done = dryRun(request.selectIds, content);
@@ -728,7 +780,6 @@ export function createPublisher(options: PublisherOptions) {
     preview(selectIds: string[]): PostPreview | undefined {
       const content = build(selectIds, undefined);
       if (content === undefined) return undefined;
-      const view = account.view();
       return {
         caption: content.caption,
         altText: content.altText,
@@ -736,8 +787,10 @@ export function createPublisher(options: PublisherOptions) {
         check: content.check,
         problems: [...content.check.problems, ...readiness()],
         dryRun: settings.publishing().dryRun,
-        account: view?.status === "connected" ? view.username : null,
+        instagram: options.mode,
+        account: accountName(),
         url: "missing" in options.bucket ? null : options.bucket.urlKind,
+        frame: frameFingerprint(content),
       };
     },
 

@@ -98,14 +98,21 @@ async function connect() {
   return send("PUT", "/api/instagram/token", { token: TOKEN });
 }
 
+/** What the owner confirms: everything the preview showed. */
+const confirmed = (preview: Body) => ({
+  caption: preview.caption,
+  altText: preview.altText,
+  hashtagSet: preview.hashtagSet,
+  dryRun: preview.dryRun,
+  instagram: preview.instagram,
+  account: preview.account,
+  frame: preview.frame,
+});
+
 /** Asks for the post as shown, confirms it, and waits for its first attempt. */
 async function postNow(selectId: string) {
   const preview = await request(`/api/selects/${selectId}/publish`);
-  const posted = await send("POST", `/api/selects/${selectId}/publish`, {
-    caption: preview.body.caption,
-    altText: preview.body.altText,
-    hashtagSet: preview.body.hashtagSet ?? undefined,
-  });
+  const posted = await send("POST", `/api/selects/${selectId}/publish`, confirmed(preview.body));
   if (posted.status === 202) await app.publisher.settled();
   return posted;
 }
@@ -256,13 +263,62 @@ describe("post now", () => {
     await connect();
     const id = await addSelect("portrait");
 
+    const preview = (await request(`/api/selects/${id}/publish`)).body;
     const { status, body } = await send("POST", `/api/selects/${id}/publish`, {
+      ...confirmed(preview),
       caption: "Not the caption",
       altText: "Not the alt text",
     });
 
     expect(status).toBe(409);
     expect(body.status).toBe("changed");
+    expect(instagram.media).toHaveLength(0);
+  });
+
+  test("never turns a confirmed dry run into a real post", async () => {
+    await connect();
+    await send("PUT", "/api/publishing", { dryRun: true });
+    const id = await addSelect("portrait");
+    const preview = (await request(`/api/selects/${id}/publish`)).body;
+    expect(preview.dryRun).toBe(true);
+    // Dry run is switched off, in another tab, before the owner confirms.
+    await send("PUT", "/api/publishing", { dryRun: false });
+
+    const { status, body } = await send("POST", `/api/selects/${id}/publish`, confirmed(preview));
+    await app.publisher.settled();
+
+    expect(status).toBe(409);
+    expect(body.status).toBe("changed");
+    expect(body.problems.join(" ")).toContain("Dry run");
+    expect(instagram.media).toHaveLength(0);
+    expect(bucket.requests).toHaveLength(0);
+  });
+
+  test("refuses when the account it would go to is not the one shown", async () => {
+    await connect();
+    const id = await addSelect("portrait");
+    const preview = (await request(`/api/selects/${id}/publish`)).body;
+    instagram.addAccount("IGfake-other-token-0009", { userId: "1784140009", username: "someone_else" });
+    await send("PUT", "/api/instagram/token", { token: "IGfake-other-token-0009" });
+
+    const { status, body } = await send("POST", `/api/selects/${id}/publish`, confirmed(preview));
+
+    expect(status).toBe(409);
+    expect(body.problems.join(" ")).toContain("account");
+    expect(instagram.media).toHaveLength(0);
+  });
+
+  test("refuses when the frame changed since it was shown", async () => {
+    await connect();
+    const id = await addSelect("portrait");
+    const preview = (await request(`/api/selects/${id}/publish`)).body;
+    const frame = (await request("/api/frame")).body.settings;
+    await send("PUT", "/api/frame", { ...frame, border: frame.border + 10 });
+
+    const { status, body } = await send("POST", `/api/selects/${id}/publish`, confirmed(preview));
+
+    expect(status).toBe(409);
+    expect(body.problems.join(" ")).toContain("frame");
     expect(instagram.media).toHaveLength(0);
   });
 
