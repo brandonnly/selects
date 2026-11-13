@@ -547,6 +547,7 @@ describe("a publish interrupted part way", () => {
 
     // The app starts again on the same database.
     const { publisher } = setup();
+    publisher.recover();
     await publisher.runDue();
 
     expect(instagram.media).toHaveLength(1);
@@ -570,6 +571,7 @@ describe("a publish interrupted part way", () => {
     expect(library.pool()).toEqual([]);
 
     const { publisher } = setup();
+    publisher.recover();
     await publisher.runDue();
 
     expect(instagram.media).toHaveLength(1);

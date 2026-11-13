@@ -44,6 +44,8 @@ const app = createApp({
   library,
   instagram: fakeInstagram === undefined ? undefined : createInstagramApi({ baseUrl: fakeInstagram.url }),
 });
+// Posts a stop left mid-attempt are taken up again, before any request can start a new one.
+app.publisher.recover();
 
 const server = Bun.serve({
   port: config.port,
@@ -87,7 +89,6 @@ const scanInbox = () =>
 void scanInbox();
 const inboxTimer = setInterval(scanInbox, INBOX_SCAN_INTERVAL_MS);
 
-// Posts left mid-attempt by the last stop are taken up again at once.
 const runDue = () =>
   app.publisher.runDue().catch((error) => console.error(`Publishing retries failed (${errorKind(error)}).`));
 void runDue();

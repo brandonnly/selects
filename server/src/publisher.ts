@@ -226,11 +226,6 @@ export function createPublisher(options: PublisherOptions) {
     return run;
   };
 
-  /** Posts left mid-attempt by a stop are taken up again by the next `runDue`. */
-  db.query("UPDATE posts SET state = 'retrying', next_attempt_at = ? WHERE state = 'publishing'").run(
-    clock.now(),
-  );
-
   const bucketProblem = (): string | undefined => {
     if (!("missing" in options.bucket)) return undefined;
     const names = options.bucket.missing;
@@ -594,6 +589,16 @@ export function createPublisher(options: PublisherOptions) {
         account: view?.status === "connected" ? view.username : null,
         url: "missing" in options.bucket ? null : options.bucket.urlKind,
       };
+    },
+
+    /**
+     * Takes up posts a stop left mid-attempt: the next `runDue` resumes them. Called once at
+     * start, before anything is published.
+     */
+    recover(): void {
+      db.query("UPDATE posts SET state = 'retrying', next_attempt_at = ? WHERE state = 'publishing'").run(
+        clock.now(),
+      );
     },
 
     /** Runs the retries that are due, and deletes frames left in the bucket. Called on a timer. */
