@@ -1,0 +1,26 @@
+server/src/main.ts
+  s_eddee4d6e42c35::t_f2e2b151dee5f6 21-22,119-125,133
+server/src/app.ts
+  s_eddee4d6e42c35::t_0fb251cdee7cb1 6,28-29,41,48,167-174,190-193,197-210,223-224,260-261,339,496-497
+server/src/notify-routes.ts
+  s_eddee4d6e42c35::t_0fb251cdee7cb1 1-87
+server/src/notify-api.test.ts
+  s_eddee4d6e42c35::t_94464b2aa335d8 1-100,104-140
+  s_eddee4d6e42c35::t_9fd4b153b3a14f 101-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "58e142ea26e6fa46e710673f356d76045121499a",
+  "prompts": {},
+  "sessions": {
+    "s_eddee4d6e42c35": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b0d3f500-05ba-429c-87a0-663797fd627a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
