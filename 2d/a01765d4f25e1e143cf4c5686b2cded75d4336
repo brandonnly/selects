@@ -1,0 +1,19 @@
+server/src/app.ts
+  s_de7b56e5d7f66a::t_3c5ecb127c839c 148-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2da01765d4f25e1e143cf4c5686b2cded75d4336",
+  "prompts": {},
+  "sessions": {
+    "s_de7b56e5d7f66a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d32e-290d-7ec0-b9c2-0bb3f240b0c9",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
