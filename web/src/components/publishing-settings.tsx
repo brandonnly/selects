@@ -7,7 +7,7 @@ import { problemsIn } from "@/lib/autosave";
 type Publishing = {
   dryRun: boolean;
   instagram: { mode: "fake" | "live"; account: AccountView | null };
-  bucket: { configured: boolean; missing: string[]; url: "public" | "presigned" | null };
+  bucket: { configured: boolean; fake: boolean; missing: string[]; url: "public" | "presigned" | null };
 };
 
 /** Settings for publishing: the Instagram account, the bucket and the dry run switch. */
@@ -114,8 +114,8 @@ function InstagramAccount({
     <div className="flex flex-col gap-4 rounded-lg border bg-card p-4 text-sm text-card-foreground">
       {mode === "fake" && (
         <p className="text-muted-foreground">
-          Using the fake Instagram server inside Selects: nothing is posted for real. Set{" "}
-          <code>INSTAGRAM_API=live</code> to post to Instagram.
+          Fake mode: Selects talks to the fake Instagram server inside itself, and nothing is posted for real.
+          Any token connects a fake account. Set <code>INSTAGRAM_API=live</code> to post to Instagram.
         </p>
       )}
       {account !== null && (
@@ -197,6 +197,16 @@ function InstagramAccount({
 }
 
 function BucketStatus({ bucket }: { bucket: Publishing["bucket"] }) {
+  if (bucket.fake) {
+    return (
+      <div className="rounded-lg border bg-card p-4 text-sm text-card-foreground">
+        <p>
+          Fake mode: frames go to the fake bucket inside Selects, and the bucket in <code>BUCKET_*</code> is
+          not used. It is used once <code>INSTAGRAM_API=live</code> is set.
+        </p>
+      </div>
+    );
+  }
   if (!bucket.configured) {
     return (
       <div className="flex flex-col gap-2 rounded-lg border bg-card p-4 text-sm text-card-foreground">

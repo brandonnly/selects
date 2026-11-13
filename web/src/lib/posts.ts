@@ -1,7 +1,9 @@
 import type { Post } from "@selects/server";
 
 /** A post's state in words: a short label and, when there is more to say, a sentence. */
-export function describePost(post: Pick<Post, "state" | "error" | "nextAttemptAt" | "attempts">): {
+export function describePost(
+  post: Pick<Post, "state" | "error" | "nextAttemptAt" | "attempts"> & Partial<Pick<Post, "mode">>,
+): {
   label: string;
   detail: string | null;
 } {
@@ -21,6 +23,12 @@ export function describePost(post: Pick<Post, "state" | "error" | "nextAttemptAt
           "Instagram was asked to publish it and has not said whether it did. Check Instagram, then say whether it was posted.",
       };
     case "published":
+      if (post.mode === "fake") {
+        return {
+          label: "Fake post",
+          detail: "Sent to the fake Instagram inside Selects: nothing was posted for real.",
+        };
+      }
       return { label: "Posted", detail: post.error };
     case "failed":
       return {

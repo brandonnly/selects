@@ -101,7 +101,12 @@ function PostRow({ post, onChange }: { post: Post; onChange: () => Promise<void>
           >
             {label}
           </span>
-          <span className="text-xs text-muted-foreground">
+          <span className="flex items-baseline gap-2 text-xs text-muted-foreground">
+            {post.mode === "fake" && (
+              <span className="rounded-sm bg-secondary px-1.5 py-0.5 font-medium text-secondary-foreground">
+                Fake mode
+              </span>
+            )}
             {dateTime(post.publishedAt ?? post.createdAt)}
           </span>
         </div>
@@ -118,7 +123,7 @@ function PostRow({ post, onChange }: { post: Post; onChange: () => Promise<void>
             {detail}
           </p>
         )}
-        {post.permalink !== null && (
+        {post.permalink !== null && post.mode !== "fake" && (
           <a
             href={post.permalink}
             target="_blank"

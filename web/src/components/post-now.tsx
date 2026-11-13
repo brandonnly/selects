@@ -154,13 +154,26 @@ function Confirm({
   onCancel: () => void;
 }) {
   const blocked = !preview.dryRun && preview.problems.length > 0;
+  const fake = preview.instagram === "fake";
+  // Keyboard focus moves from the button that opened the confirmation to the confirmation.
+  const heading = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
   return (
-    <div className="flex flex-col gap-4 rounded-md border p-3">
-      <p className="text-sm font-medium">
+    <section aria-label="Confirm the post" className="flex flex-col gap-4 rounded-md border p-3">
+      <p ref={heading} tabIndex={-1} className="text-sm font-medium outline-none">
         {preview.dryRun
           ? "Dry run is on: this is rendered and recorded, and nothing is uploaded or posted."
-          : `This goes out to ${preview.account === null ? "Instagram" : `@${preview.account}`} and can only be removed in the Instagram app.`}
+          : fake
+            ? `Fake mode: this goes to the fake Instagram inside Selects${preview.account === null ? "" : ` as @${preview.account}`}. Nothing is posted for real.`
+            : `This goes out to ${preview.account === null ? "Instagram" : `@${preview.account}`} and can only be removed in the Instagram app.`}
       </p>
+      {fake && preview.dryRun && (
+        <p className="text-sm text-muted-foreground">
+          Fake mode is on too: even a real post would not leave Selects.
+        </p>
+      )}
       <img
         src={`/api/selects/${encodeURIComponent(selectId)}/frame?width=${FRAME_WIDTH}`}
         alt="The frame that will be posted"
@@ -197,13 +210,19 @@ function Confirm({
       )}
       <div className="flex flex-wrap gap-2">
         <Button onClick={onSend} disabled={blocked || sending}>
-          {sending ? "Sending…" : preview.dryRun ? "Dry run" : "Post to Instagram"}
+          {sending
+            ? "Sending…"
+            : preview.dryRun
+              ? "Dry run"
+              : fake
+                ? "Post to the fake Instagram"
+                : "Post to Instagram"}
         </Button>
         <Button variant="ghost" onClick={onCancel} disabled={sending}>
           Cancel
         </Button>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -223,7 +242,7 @@ function Sent({ post }: { post: Post }) {
           {detail}
         </p>
       )}
-      {post.permalink !== null && (
+      {post.permalink !== null && post.mode !== "fake" && (
         <a
           href={post.permalink}
           target="_blank"
