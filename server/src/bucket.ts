@@ -19,7 +19,11 @@ export type Bucket = {
   readonly urlKind: "public" | "presigned";
   /** A new random key for a frame. */
   newKey(): string;
-  put(key: string, jpeg: Uint8Array): Promise<void>;
+  /**
+   * Stores a frame. A write given up on can still land later: `landedLate` is then called so the
+   * caller can delete it for good; without it, one deletion is tried.
+   */
+  put(key: string, jpeg: Uint8Array, landedLate?: () => Promise<void>): Promise<void>;
   /** The URL Instagram fetches the object from. A presigned one is never logged or stored. */
   urlFor(key: string): string;
   delete(key: string): Promise<void>;
@@ -69,7 +73,7 @@ export function createBucket(
   return {
     urlKind: publicBaseUrl === undefined ? "presigned" : "public",
     newKey: () => `frames/${randomUUID()}.jpg`,
-    put: async (key, jpeg) => {
+    put: async (key, jpeg, landedLate) => {
       const write = client.write(key, jpeg, { type: "image/jpeg" });
       try {
         await attempt("store the frame", () => write);
@@ -78,7 +82,7 @@ export function createBucket(
         // settles, whatever it stored is deleted, so no frame is left that nothing knows about.
         if (error instanceof BucketError && error.timedOut) {
           void write.then(
-            () => client.delete(key).catch(() => {}),
+            () => (landedLate?.() ?? client.delete(key)).catch(() => {}),
             () => {},
           );
         } else {

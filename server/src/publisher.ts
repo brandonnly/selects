@@ -650,7 +650,16 @@ export function createPublisher(options: PublisherOptions) {
       await dropObject(post.id);
       const key = bucket.newKey();
       update({ object_key: key });
-      await bucket.put(key, jpeg);
+      await bucket.put(key, jpeg, async () => {
+        // An upload given up on that landed anyway: it goes on the cleanup record, so its
+        // deletion is tried again by the timer if it fails now.
+        db.query("INSERT OR IGNORE INTO bucket_cleanup (key, added_at, mode) VALUES (?, ?, ?)").run(
+          key,
+          clock.now(),
+          options.mode,
+        );
+        await deleteObject(key);
+      });
 
       const containerId = await api.createContainer(token, userId, {
         imageUrl: bucket.urlFor(key),
