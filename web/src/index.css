@@ -42,3 +42,58 @@
     @apply bg-background text-foreground;
   }
 }
+
+/*
+ * Leaflet maps, recolored with the tokens. Each map is its own stacking context, so its panes
+ * and controls never rise above the app's navigation.
+ */
+.selects-map {
+  isolation: isolate;
+  background: var(--muted);
+  font: inherit;
+}
+.selects-map .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--card) 85%, transparent);
+  color: var(--muted-foreground);
+}
+.selects-map .leaflet-control-attribution a {
+  color: var(--foreground);
+}
+.selects-map .leaflet-bar a {
+  background: var(--card);
+  color: var(--card-foreground);
+  border-color: var(--border);
+}
+.selects-map .leaflet-bar a:hover {
+  background: var(--accent);
+}
+.selects-zone {
+  stroke: var(--kraft);
+  fill: var(--kraft);
+  fill-opacity: 0.2;
+  stroke-width: 2;
+}
+.selects-zone-draft {
+  stroke: var(--foreground);
+  fill: var(--foreground);
+  fill-opacity: 0.1;
+  stroke-dasharray: 6 4;
+}
+.selects-map .leaflet-marker-pane .selects-pin img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 2px solid var(--card);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+.selects-zone-centre,
+.selects-zone-handle {
+  border-radius: 9999px;
+  border: 2px solid var(--card);
+  background: var(--foreground);
+}
+.selects-zone-handle {
+  background: var(--card);
+  border-color: var(--foreground);
+}

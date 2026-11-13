@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "@/api";
+import { PrivacyZones } from "@/components/privacy-zones";
 import { Screen } from "./screen";
 
 type About =
@@ -39,6 +40,12 @@ export function SettingsScreen() {
 
   return (
     <Screen title="Settings">
+      <section aria-labelledby="privacy-zones" className="flex flex-col gap-3">
+        <h2 id="privacy-zones" className="text-sm font-medium text-muted-foreground">
+          Privacy zones
+        </h2>
+        <PrivacyZones />
+      </section>
       <section aria-labelledby="about" className="flex flex-col gap-3">
         <h2 id="about" className="text-sm font-medium text-muted-foreground">
           About
