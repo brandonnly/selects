@@ -161,6 +161,8 @@ export function createGallery(options: GalleryOptions) {
     error: null as string | null,
     failures: 0,
     nextAt: 0,
+    /** The manifest whose write failed. Another one is tried at once: the wait is for this one. */
+    failedHash: undefined as string | undefined,
   };
 
   const rowOf = (postId: string) =>
@@ -394,6 +396,8 @@ export function createGallery(options: GalleryOptions) {
       .map((row) => ({ postId: row.post_id, key: row.frame_key }));
     const { body, hash } = build();
     if (hash !== manifest.hash) {
+      // A privacy change or a removal never waits behind the backoff of an earlier manifest.
+      if (hash !== manifest.failedHash) Object.assign(manifest, { failures: 0, nextAt: 0 });
       if (manifest.nextAt > clock.now()) return;
       try {
         await bucket.putObject(MANIFEST_KEY, new TextEncoder().encode(body), MANIFEST_HEADERS, async () => {
@@ -402,13 +406,14 @@ export function createGallery(options: GalleryOptions) {
           Object.assign(manifest, { hash: undefined, nextAt: 0 });
           void runDue();
         });
-        Object.assign(manifest, { hash, error: null, failures: 0, nextAt: 0 });
+        Object.assign(manifest, { hash, error: null, failures: 0, nextAt: 0, failedHash: undefined });
       } catch (error) {
         const delay = RETRY_DELAYS[Math.min(manifest.failures, RETRY_DELAYS.length - 1)] ?? MINUTE;
         Object.assign(manifest, {
           error: describe(error),
           failures: manifest.failures + 1,
           nextAt: clock.now() + delay,
+          failedHash: hash,
         });
         console.error(
           `Gallery: the manifest could not be written; trying again in ${delay / MINUTE} minutes (${manifest.error})`,

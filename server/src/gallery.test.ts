@@ -747,6 +747,28 @@ describe("manifest writes", () => {
     expect(manifest()?.posts[0]?.location).toEqual({ latitude: -20.5, longitude: -120.75 });
   });
 
+  test("wait behind no failure backoff once what the manifest should hold changes", async () => {
+    const failing = { on: true, match: (key: string) => key === "posts.json" };
+    const parts = setup({ wrapBucket: failingObjects(failing) });
+    await connect(parts.account);
+    const id = await addFile(large);
+    // Three failures put the manifest's next write fifteen minutes away.
+    await postNow(parts, id);
+    for (const wait of [1, 5]) {
+      clock.advance(wait * 60 * 1000);
+      await parts.gallery.runDue();
+    }
+    expect(manifest()).toBeUndefined();
+    // The bucket answers again, and the location is hidden.
+    failing.on = false;
+    parts.captures.save(id, { edits: {}, locationHidden: true });
+
+    await parts.gallery.runDue();
+
+    expect(manifest()?.posts[0]?.id).toBeDefined();
+    expect(manifest()?.posts[0]?.location).toBeNull();
+  });
+
   test("write nothing to a bucket whose gallery was never used", async () => {
     const parts = setup();
     await parts.gallery.runDue();
