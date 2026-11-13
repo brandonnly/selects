@@ -95,14 +95,15 @@ async function setup(options: Setup = {}) {
     instagram.addAccount(TOKEN, { userId: "1784140001", username: "selects_test" });
     await account.connect(TOKEN);
   }
-  const make = () =>
+  /** A scheduler as after a restart: the same database, and its own random source if given. */
+  const make = (random = options.random ?? (() => 0)) =>
     createScheduler({
       db,
       library,
       captures,
       publisher: options.wrapPublisher?.(publisher) ?? publisher,
       clock,
-      random: options.random ?? (() => 0),
+      random,
     });
   return { scheduler: make(), restart: make, publisher, settings, captures, zones, account };
 }
@@ -227,5 +228,124 @@ describe("the queue", () => {
     expect(postedSelects(publisher)).toEqual([portrait, sameDay]);
     await runUntil(scheduler, publisher, "2026-11-15T13:00:00Z");
     expect(postedSelects(publisher)).toEqual([portrait, sameDay, otherDay]);
+  });
+});
+
+describe("next up", () => {
+  /** Mondays at noon UTC; the clock starts on a Friday. */
+  const MONDAY_NOON: Slot = { id: "monday", days: [1], time: "12:00", spreadMinutes: 0 };
+
+  test("is chosen a day ahead and stored", async () => {
+    const { scheduler, publisher, restart } = await setup({ random: () => 0 });
+    const first = await addSelect("portrait");
+    await addSelect("landscape");
+    scheduler.setSchedule({ slots: [MONDAY_NOON], timeZone: "UTC", graceMinutes: 120 });
+    await runUntil(scheduler, publisher, "2026-11-15T11:00:00Z", HOUR);
+    // More than a day before: not chosen yet.
+    expect(scheduler.upcoming()).toEqual([]);
+    await runUntil(scheduler, publisher, "2026-11-15T13:00:00Z", HOUR);
+    const [run] = scheduler.upcoming();
+    expect(run).toMatchObject({
+      slotId: "monday",
+      date: "2026-11-16",
+      state: "planned",
+      selectId: first,
+      picked: "pool",
+    });
+    expect(run?.dueAt).toBe(at("2026-11-16T12:00:00Z"));
+
+    // After a restart whose random source would choose otherwise, the stored choice stands.
+    const restarted = restart(() => 0.99);
+    expect(restarted.upcoming()[0]?.selectId).toBe(first);
+    await runUntil(restarted, publisher, "2026-11-16T12:30:00Z");
+    expect(postedSelects(publisher)).toEqual([first]);
+  });
+
+  test("its frame and caption are built when it posts, not when it is chosen", async () => {
+    const { scheduler, publisher, captures } = await setup();
+    const id = await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    expect(scheduler.upcoming()[0]?.selectId).toBe(id);
+    expect(publisher.preview([id])?.caption).toContain("°");
+    // Its location is hidden after it was chosen: the post never carries it.
+    captures.save(id, { edits: {}, locationHidden: true });
+    await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");
+    const [post] = publisher.posts();
+    expect(post?.state).toBe("published");
+    expect(post?.caption).not.toContain("°");
+  });
+
+  test("swap chooses another, and comes round again once all have been passed", async () => {
+    const { scheduler, publisher } = await setup();
+    const a = await addSelect("portrait");
+    const b = await addSelect("landscape");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    expect(scheduler.upcoming()[0]?.selectId).toBe(a);
+    const swapped = scheduler.swap("daily", "2026-11-13");
+    expect(swapped).toMatchObject({ selectId: b, picked: "swap" });
+    expect(scheduler.swap("daily", "2026-11-13")).toMatchObject({ selectId: a });
+    await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");
+    expect(postedSelects(publisher)).toEqual([a]);
+  });
+
+  test("swap with nothing else to choose says so", async () => {
+    const { scheduler } = await setup();
+    await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    expect(scheduler.swap("daily", "2026-11-13")).toBe("none");
+    expect(scheduler.swap("daily", "2026-12-25")).toBe("not-found");
+  });
+
+  test("skip leaves that slot empty, and the select where it was", async () => {
+    const { scheduler, publisher } = await setup();
+    const id = await addSelect("portrait");
+    scheduler.setQueue([id]);
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    expect(scheduler.skip("daily", "2026-11-13")).toMatchObject({ state: "skipped" });
+    await runUntil(scheduler, publisher, "2026-11-13T13:00:00Z");
+    expect(publisher.posts()).toEqual([]);
+    expect(scheduler.queue()).toEqual([id]);
+    // The next day's slot posts it.
+    await runUntil(scheduler, publisher, "2026-11-14T12:30:00Z");
+    expect(postedSelects(publisher)).toEqual([id]);
+  });
+
+  test("a skip can be taken back while the slot is still to come", async () => {
+    const { scheduler, publisher } = await setup();
+    const id = await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    scheduler.skip("daily", "2026-11-13");
+    expect(scheduler.unskip("daily", "2026-11-13")).toMatchObject({ state: "planned", selectId: id });
+    await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");
+    expect(postedSelects(publisher)).toEqual([id]);
+  });
+
+  test("next up that left the pool is chosen again when its time comes", async () => {
+    const { scheduler, publisher } = await setup();
+    const deleted = await addSelect("portrait");
+    const byHand = await addSelect("landscape");
+    const left = await addSelect("square");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    expect(scheduler.upcoming()[0]?.selectId).toBe(deleted);
+    library.remove(deleted);
+    // Swapped to the landscape, which is then posted by hand.
+    expect(scheduler.swap("daily", "2026-11-13")).toMatchObject({ selectId: byHand });
+    const now = await publisher.publish({ selectIds: [byHand] });
+    if (now.status !== "started") throw new Error(now.status);
+    await now.done;
+    await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");
+    expect(postedSelects(publisher)).toEqual([byHand, left]);
+  });
+
+  test("two slots on a day get different selects", async () => {
+    const { scheduler } = await setup();
+    const a = await addSelect("portrait");
+    const b = await addSelect("landscape");
+    scheduler.setSchedule({
+      slots: [everyDay("12:00", "noon"), everyDay("18:00", "evening")],
+      timeZone: "UTC",
+      graceMinutes: 120,
+    });
+    expect(scheduler.upcoming().map((run) => run.selectId)).toEqual([a, b]);
   });
 });
