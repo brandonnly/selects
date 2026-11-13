@@ -247,6 +247,9 @@ export const migrations: readonly Migration[] = [
   -- left out, with the same templates and hashtag set. Empty for text written by hand.
   ALTER TABLE posts ADD COLUMN withheld_caption TEXT;
   ALTER TABLE posts ADD COLUMN withheld_alt_text TEXT;
+  -- 1 when the post was recorded as published with gallery output on, in that same update: the
+  -- gallery takes it in, frame and all, even after a stop, and the publisher leaves its frame.
+  ALTER TABLE posts ADD COLUMN to_gallery INTEGER NOT NULL DEFAULT 0;
   CREATE TABLE gallery_posts (
     post_id TEXT PRIMARY KEY REFERENCES posts (id),
     -- The mode of the post, and so the bucket its objects are in.

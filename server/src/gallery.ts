@@ -212,18 +212,24 @@ export function createGallery(options: GalleryOptions) {
     return tail;
   }
 
-  /** Takes a post into the gallery, with its frame. */
+  /**
+   * Takes a post into the gallery, with its frame: one published in this mode while gallery
+   * output was on, as the publisher records in the update that records it published.
+   */
   function adopt(postId: string): boolean {
-    if (bucket === undefined || !enabled()) return false;
+    if (bucket === undefined) return false;
     return db
       .transaction(() => {
         const post = db
-          .query<{ state: string; mode: InstagramMode | null; object_key: string | null }, [string]>(
-            "SELECT state, mode, object_key FROM posts WHERE id = ?",
-          )
+          .query<
+            { state: string; mode: InstagramMode | null; object_key: string | null; to_gallery: number },
+            [string]
+          >("SELECT state, mode, object_key, to_gallery FROM posts WHERE id = ?")
           .get(postId);
         // Only a post published in this mode, into this mode's bucket; and only once.
-        if (post === null || post.state !== "published" || post.mode !== mode) return false;
+        if (post === null || post.state !== "published" || post.mode !== mode || post.to_gallery !== 1) {
+          return false;
+        }
         if (rowOf(postId) !== null) return false;
         const frameKey = post.object_key;
         db.query(
@@ -237,8 +243,31 @@ export function createGallery(options: GalleryOptions) {
       .immediate();
   }
 
+  /**
+   * Takes in posts recorded for the gallery that it has not taken in: a stop came between, or
+   * taking one in failed. Their frames wait for it meanwhile.
+   */
+  function adoptPending(): void {
+    const pending = db
+      .query<{ id: string }, [InstagramMode]>(
+        `SELECT id FROM posts WHERE to_gallery = 1 AND state = 'published' AND mode = ?
+           AND id NOT IN (SELECT post_id FROM gallery_posts) ORDER BY published_at, id`,
+      )
+      .all(mode);
+    for (const { id } of pending) {
+      try {
+        adopt(id);
+      } catch (error) {
+        console.error(
+          `Gallery: post ${id} could not be taken into the gallery; it is tried again (${errorKind(error)}).`,
+        );
+      }
+    }
+  }
+
   async function runDueNow(): Promise<void> {
     if (bucket === undefined) return;
+    adoptPending();
     const due = db
       .query<Row, [InstagramMode, number]>(
         `SELECT * FROM gallery_posts WHERE mode = ? AND state = 'writing'
@@ -510,9 +539,22 @@ export function createGallery(options: GalleryOptions) {
       return { ok: true };
     },
 
+    /** Whether a post published now goes to the gallery: the switch is on and it is available. */
+    wanted: enabled,
+
+    /**
+     * Takes up what a stop left: posts recorded for the gallery and not yet taken in. Called once
+     * at start, before frame cleanup runs; `runDue` does the same on each run.
+     */
+    recover(): void {
+      if (bucket === undefined) return;
+      adoptPending();
+    },
+
     /**
      * Called by the publisher once a post is recorded as published. With the switch on, the post
-     * keeps its frame and its gallery output is written in the background. Never throws.
+     * keeps its frame and its gallery output is written in the background. Never throws: taking
+     * it in that fails is tried again on the next run.
      */
     published: (postId: string): void => {
       try {

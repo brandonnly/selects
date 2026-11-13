@@ -135,6 +135,11 @@ export type PublisherOptions = {
    * output takes the frame from here. It must not throw, and nothing it does touches the post.
    */
   onPublished?: (postId: string) => void;
+  /**
+   * Whether gallery output is on: asked as a post is recorded as published, and recorded in that
+   * same update. Such a post's frame is left for the gallery to take, even across a stop.
+   */
+  galleryWanted?: () => boolean;
 };
 
 /** The wait before each retry: three retries over fifteen minutes. */
@@ -189,6 +194,8 @@ type PostRow = {
   account_id: string | null;
   /** A fingerprint of what the post was confirmed with, location aside. Null before version 7. */
   confirmed: string | null;
+  /** 1 when it was recorded as published with gallery output on: its frame is the gallery's. */
+  to_gallery: number;
   created_at: number;
   published_at: number | null;
 };
@@ -281,6 +288,8 @@ export function createPublisher(options: PublisherOptions) {
     queue = run.catch(() => {});
     return run;
   };
+
+  const toGallery = () => (options.galleryWanted?.() ? 1 : 0);
 
   const bucketProblem = (): string | undefined => {
     if (!("missing" in options.bucket)) return undefined;
@@ -607,6 +616,7 @@ export function createPublisher(options: PublisherOptions) {
         published_at: clock.now(),
         error: permalink === null ? "Published; its link could not be found." : null,
         next_attempt_at: null,
+        to_gallery: toGallery(),
       });
       console.log(`Post ${post.id} published.`);
       options.onPublished?.(post.id);
@@ -758,7 +768,10 @@ export function createPublisher(options: PublisherOptions) {
     if (mode !== null && mode !== options.mode) return;
     const key = db
       .transaction(() => {
-        const found = row(id)?.object_key;
+        const post = row(id);
+        // A post published with gallery output on keeps its frame: the gallery takes it.
+        if (post?.state === "published" && post.to_gallery === 1) return undefined;
+        const found = post?.object_key;
         if (found === null || found === undefined) return undefined;
         db.query("INSERT OR IGNORE INTO bucket_cleanup (key, added_at, mode) VALUES (?, ?, ?)").run(
           found,
@@ -844,12 +857,13 @@ export function createPublisher(options: PublisherOptions) {
       const media = await findPublished(credentials.token, credentials.userId, found);
       db.query(
         `UPDATE posts SET state = 'published', media_id = ?, permalink = ?, published_at = ?, error = ?,
-           next_attempt_at = NULL WHERE id = ? AND state = 'unconfirmed'`,
+           next_attempt_at = NULL, to_gallery = ? WHERE id = ? AND state = 'unconfirmed'`,
       ).run(
         media?.id ?? null,
         media?.permalink ?? null,
         clock.now(),
         media?.permalink ? null : "Published; its link could not be found.",
+        toGallery(),
         id,
       );
       console.log(`Post ${id} was published, Instagram says.`);
@@ -882,7 +896,8 @@ export function createPublisher(options: PublisherOptions) {
     for (const { id } of unconfirmed) await serially(() => checkUnconfirmed(id));
     const left = db
       .query<{ id: string }, []>(
-        "SELECT id FROM posts WHERE object_key IS NOT NULL AND state IN ('published', 'failed')",
+        `SELECT id FROM posts WHERE object_key IS NOT NULL AND state IN ('published', 'failed')
+           AND NOT (state = 'published' AND to_gallery = 1)`,
       )
       .all();
     for (const { id } of left) await serially(() => dropObject(id));
@@ -1020,8 +1035,8 @@ export function createPublisher(options: PublisherOptions) {
         if (resolution.posted) {
           db.query(
             `UPDATE posts SET state = 'published', permalink = ?, published_at = ?, next_attempt_at = NULL,
-               error = 'Marked as posted by hand.' WHERE id = ? AND state = 'unconfirmed'`,
-          ).run(resolution.permalink ?? null, clock.now(), id);
+               error = 'Marked as posted by hand.', to_gallery = ? WHERE id = ? AND state = 'unconfirmed'`,
+          ).run(resolution.permalink ?? null, clock.now(), toGallery(), id);
           options.onPublished?.(id);
         } else {
           db.query(

@@ -49,6 +49,8 @@ const app = createApp({
 });
 // Posts a stop left mid-attempt are taken up again, before any request can start a new one.
 app.publisher.recover();
+// Posts a stop left recorded for the gallery and not yet taken in, before any frame is cleaned up.
+app.gallery.recover();
 
 const server = Bun.serve({
   port: config.port,

@@ -167,6 +167,7 @@ function createServices({
     bucket: publishBucket,
     clock,
     mode: config.instagram,
+    galleryWanted: gallery.wanted,
     onPublished: gallery.published,
     // The fake finishes a container at once; only the real API is polled as Meta advises.
     containerPolling: config.instagram === "fake" ? { intervalMs: 1000, limitMs: MINUTE } : undefined,

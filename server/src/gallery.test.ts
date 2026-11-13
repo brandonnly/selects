@@ -89,6 +89,8 @@ function setup(
     wrapBucket?: (bucket: Bucket) => Bucket;
     /** How long one bucket request may take. */
     timeoutMs?: number;
+    /** Whether the gallery hears of posts as they are published: not when Selects stops first. */
+    told?: boolean;
   } = {},
 ) {
   const mode = options.mode ?? "fake";
@@ -121,7 +123,8 @@ function setup(
     clock,
     mode,
     random: () => 0,
-    onPublished: gallery.published,
+    galleryWanted: gallery.wanted,
+    onPublished: options.told === false ? () => {} : gallery.published,
   });
   if (options.gallery !== false && gallery.availability().available) gallery.setEnabled(true);
   return { publisher, gallery, captures, zones, settings, account, captionStore };
@@ -684,6 +687,42 @@ describe("a stop part way", () => {
     const [entry] = manifest()?.posts ?? [];
     expect(entry?.id).toBe(post.id);
     expect(fakeBucket.objects.has(keyOf(entry?.images.clean.url ?? ""))).toBe(true);
+  });
+
+  test("after a post is recorded as published and before the gallery takes it in, takes it in after the restart", async () => {
+    const before = setup({ told: false });
+    await connect(before.account);
+    const post = await postNow(before, await addSelect("portrait"));
+    await before.publisher.runDue();
+
+    // Restarted: frame cleanup runs, then the gallery.
+    const after = setup();
+    await after.publisher.runDue();
+    after.gallery.recover();
+    await after.gallery.runDue();
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry?.id).toBe(post.id);
+    expect(fakeBucket.objects.has(keyOf(entry?.images.framed?.url ?? ""))).toBe(true);
+    expect(fakeBucket.objects.has(keyOf(entry?.images.clean.url ?? ""))).toBe(true);
+  });
+
+  test("a post the gallery failed to take in is taken in on a later run, its frame kept meanwhile", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    db.run(
+      "CREATE TEMP TRIGGER refuse_gallery BEFORE INSERT ON gallery_posts BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+    );
+    const post = await postNow(parts, await addSelect("portrait"));
+    await parts.publisher.runDue();
+    expect(objectKeys().filter((key) => key.startsWith("frames/"))).toHaveLength(1);
+
+    db.run("DROP TRIGGER refuse_gallery");
+    await parts.gallery.runDue();
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry?.id).toBe(post.id);
+    expect(fakeBucket.objects.has(keyOf(entry?.images.framed?.url ?? ""))).toBe(true);
   });
 
   test("after storing the clean image but before recording it stores it again under the same key", async () => {
