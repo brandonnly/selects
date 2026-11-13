@@ -203,15 +203,15 @@ const ALT_TEXT_TOKENS: ReadonlySet<string> = new Set<Token>(FRAME_FIELDS);
 type Values = Record<Token, string | null>;
 
 /** A run of text, or a field: a token, or brackets holding one, which is null when it is missing. */
-type Part = { text: string } | { field: string | null };
+type Part = { text: string } | { field: string | null; bracketed: boolean };
 
 /** Brackets and quotes that close around a field and go with it when it is missing. */
 const PAIRS: Record<string, string> = { "(": ")", "“": "”", '"': '"', "‘": "’", "'": "'" };
 
 /**
  * Fills a template. A missing field leaves nothing behind: the separator beside it goes with
- * it, a line whose every field is missing is left out, and text in square brackets around a
- * field is left out with it. Blank lines never stack or end the text.
+ * it, a line whose every field outside brackets is missing is left out, and text in square
+ * brackets around a field is left out with it. Blank lines never stack or end the text.
  */
 function fill(template: string, values: Values, tokens: ReadonlySet<string>): string {
   const lines: string[] = [];
@@ -225,11 +225,13 @@ function fill(template: string, values: Values, tokens: ReadonlySet<string>): st
   return lines.join("\n");
 }
 
-/** The line filled in, or undefined when it holds fields and every one is missing. */
+/** The line filled in, or undefined when it holds fields outside brackets and every one is missing. */
 function fillLine(line: string, values: Values, tokens: ReadonlySet<string>): string | undefined {
   const parts = parse(line, values, tokens);
   const present = (part: Part | undefined) => part !== undefined && "field" in part && part.field !== null;
-  if (parts.some((part) => "field" in part) && !parts.some(present)) return undefined;
+  // Brackets already take their own words with them, so only fields outside them decide the line.
+  const bare = parts.filter((part) => "field" in part && !part.bracketed);
+  if (bare.length > 0 && !bare.some(present)) return undefined;
 
   for (const [i, part] of parts.entries()) {
     if (!("field" in part) || part.field !== null) continue;
@@ -272,7 +274,7 @@ function parse(line: string, values: Values, tokens: ReadonlySet<string>): Part[
     const value = name === undefined ? group(whole, values, tokens) : token(name, values, tokens);
     if (value === undefined) continue;
     if (match.index > at) parts.push({ text: line.slice(at, match.index) });
-    parts.push({ field: value });
+    parts.push({ field: value, bracketed: name === undefined });
     at = match.index + whole.length;
   }
   if (at < line.length) parts.push({ text: line.slice(at) });

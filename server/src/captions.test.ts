@@ -97,7 +97,7 @@ describe("buildCaption", () => {
 
     expect(build({ ...full, capturedAt: null })).toBe("Photograph taken with Fixture Optics FX-1");
     expect(build({ ...full, camera: null })).toBe("Photograph taken on 2024-05-01");
-    expect(build(none)).toBe("");
+    expect(build(none)).toBe("Photograph taken");
   });
 
   test("brackets without a field in them print as written", () => {
