@@ -107,7 +107,7 @@ async function setup(options: Setup = {}) {
       random,
       notify: options.notify,
     });
-  return { scheduler: make(), restart: make, publisher, settings, captures, zones, account };
+  return { scheduler: make(), restart: make, publisher, settings, captures, zones, account, captionStore };
 }
 
 async function addSelect(name: FixtureName, alreadyPosted = false): Promise<string> {
@@ -835,6 +835,93 @@ describe("publishing", () => {
     expect(scheduler.problems()).toEqual([]);
     await runUntil(scheduler, publisher, "2026-11-16T13:00:00Z");
     expect(postedSelects(publisher)).toEqual([a]);
+  });
+
+  describe("a select that cannot be posted as it stands", () => {
+    const TOO_LONG = "x".repeat(2300);
+
+    test("is passed over, stays queued, and is shown as needing attention", async () => {
+      const { scheduler, publisher, captionStore } = await setup();
+      const bad = await addSelect("portrait");
+      const good = await addSelect("landscape");
+      captionStore.setOverride(bad, { caption: TOO_LONG, altText: null });
+      scheduler.setQueue([bad, good]);
+      scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+      expect(scheduler.upcoming()[0]?.selectId).toBe(good);
+      await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");
+      expect(postedSelects(publisher)).toEqual([good]);
+      expect(publisher.posts().map((post) => post.state)).toEqual(["published"]);
+      expect(scheduler.queue()).toEqual([bad]);
+      const [attention] = scheduler.attention();
+      expect(attention?.selectId).toBe(bad);
+      expect(attention?.problems.join(" ")).toContain("2,200");
+    });
+
+    test("is passed over in the pool for the next candidate", async () => {
+      const { scheduler, publisher, captionStore } = await setup();
+      const bad = await addSelect("portrait");
+      const good = await addSelect("landscape");
+      captionStore.setOverride(bad, { caption: null, altText: "y".repeat(1100) });
+      scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+      await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");
+      expect(postedSelects(publisher)).toEqual([good]);
+      expect(library.get(bad)?.inPool).toBe(true);
+    });
+
+    test("leaves a slot with nothing else empty, and says why", async () => {
+      const { scheduler, publisher, captionStore } = await setup();
+      const bad = await addSelect("portrait");
+      captionStore.setOverride(bad, { caption: TOO_LONG, altText: null });
+      scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+      await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");
+      expect(publisher.posts()).toEqual([]);
+      expect(scheduler.history()[0]).toMatchObject({ state: "empty" });
+      expect(scheduler.history()[0]?.note).toContain("need attention");
+    });
+  });
+
+  test("a slot's history follows its post to the end", async () => {
+    const { scheduler, publisher } = await setup({
+      wrapApi: (api) => ({
+        ...api,
+        createContainer: () => Promise.reject(new InstagramError("refused", "The image was refused.")),
+      }),
+    });
+    await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    await runUntil(scheduler, publisher, "2026-11-13T13:00:00Z");
+    expect(scheduler.history()[0]).toMatchObject({ state: "posted", post: { state: "failed" } });
+    expect(scheduler.history()[0]?.post?.error).toContain("refused");
+  });
+
+  test("a queued select whose post fails for good goes back to the head of the queue", async () => {
+    let refuse = true;
+    const { scheduler, publisher } = await setup({
+      wrapApi: (api) => ({
+        ...api,
+        createContainer: (...args) =>
+          refuse
+            ? Promise.reject(new InstagramError("transient", "Instagram did not answer."))
+            : api.createContainer(...args),
+      }),
+    });
+    const a = await addSelect("portrait");
+    const b = await addSelect("landscape");
+    scheduler.setQueue([a, b]);
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    await runUntil(scheduler, publisher, "2026-11-13T12:00:00Z");
+    expect(scheduler.queue()).toEqual([b]);
+    // Reordered while a is out: the queue the owner sees does not hold it.
+    scheduler.setQueue([b]);
+    for (const delay of RETRY_DELAYS) {
+      clock.advance(delay);
+      await publisher.runDue();
+    }
+    expect(publisher.posts().map((post) => post.state)).toEqual(["failed"]);
+    expect(scheduler.queue()).toEqual([a, b]);
+    refuse = false;
+    await runUntil(scheduler, publisher, "2026-11-14T12:30:00Z");
+    expect(postedSelects(publisher)).toEqual([a, a]);
   });
 
   test("a post that fails for good returns its select to the pool, and the schedule keeps running", async () => {

@@ -3,7 +3,7 @@ import type { Captures } from "./capture";
 import { type Clock, DAY, MINUTE } from "./clock";
 import { errorKind, type Library } from "./library";
 import { type Candidate, choose, DEFAULT_PICK_RULES, eligible, type PickRules } from "./pick";
-import type { Publisher } from "./publisher";
+import type { PostState, Publisher } from "./publisher";
 import { isTimeZone, occurrenceOn, occurrences, type Slot } from "./slots";
 
 /** The schedule as the owner sets it. */
@@ -71,8 +71,13 @@ export type Run = {
   /** Where next up came from: the head of the queue, the pool, or a swap. */
   picked: "queue" | "pool" | "swap" | null;
   postId: string | null;
+  /** What became of the post it made, followed to the end: published, failed, waiting to be checked. */
+  post: { state: PostState; error: string | null } | null;
   note: string | null;
 };
+
+/** A select that cannot be posted as it stands: slots pass it over until it is fixed. */
+export type Attention = { selectId: string; fileName: string; problems: string[] };
 
 /** What the scheduler did, for notifications (issue #10). */
 export type ScheduleEvent = { kind: Exclude<RunState, "planned" | "posting" | "skipped">; run: Run };
@@ -119,19 +124,6 @@ const LOOKAHEAD = DAY;
 /** Slots that came round are kept this long. */
 const KEEP_RUNS = 30 * DAY;
 
-const toRun = (row: RunRow): Run => ({
-  id: `${row.slot_id}_${row.date}`,
-  slotId: row.slot_id,
-  date: row.date,
-  slotAt: row.slot_at,
-  dueAt: row.due_at,
-  state: row.state,
-  selectId: row.select_id,
-  picked: row.picked,
-  postId: row.post_id,
-  note: row.note,
-});
-
 /**
  * Posts on the schedule (docs/PRODUCT.md, "Picking" and "Schedule"; ADR 0007). `tick` is called
  * on a timer: it records each slot coming round in the next day with its random spread drawn
@@ -145,6 +137,29 @@ export function createScheduler(options: SchedulerOptions) {
   const { db, library, captures, publisher, clock } = options;
   const random = options.random ?? Math.random;
   const notify = options.notify ?? (() => {});
+
+  const postOf = (id: string | null) =>
+    id === null
+      ? null
+      : db
+          .query<{ state: PostState; error: string | null }, [string]>(
+            "SELECT state, error FROM posts WHERE id = ?",
+          )
+          .get(id);
+
+  const toRun = (row: RunRow): Run => ({
+    id: `${row.slot_id}_${row.date}`,
+    slotId: row.slot_id,
+    date: row.date,
+    slotAt: row.slot_at,
+    dueAt: row.due_at,
+    state: row.state,
+    selectId: row.select_id,
+    picked: row.picked,
+    postId: row.post_id,
+    post: postOf(row.post_id),
+    note: row.note,
+  });
   const tolerance = toleranceFor(options.intervalMs ?? SCHEDULE_INTERVAL_MS);
 
   const readSetting = <T>(key: string): T | undefined => {
@@ -212,6 +227,26 @@ export function createScheduler(options: SchedulerOptions) {
       .map((row) => candidate(row.select_id))
       .filter((found) => found !== undefined);
 
+  /**
+   * What stops a select being posted as it stands: the caption or alt text over a limit, or the
+   * select gone. Not the account or the bucket, which stop every select alike.
+   */
+  const problemsOf = (id: string): string[] => {
+    const preview = publisher.preview([id]);
+    return preview === undefined ? ["The select is gone."] : preview.check.problems;
+  };
+  /** Selects the last plan passed over, with why. */
+  let passedOver = new Map<string, string[]>();
+
+  /** Queued selects whose post was published, or that were marked as posted, leave the queue. */
+  function pruneQueue() {
+    const remove = db.query("DELETE FROM queue WHERE select_id = ?");
+    for (const { select_id } of db.query<{ select_id: string }, []>("SELECT select_id FROM queue").all()) {
+      const select = library.get(select_id);
+      if (select === undefined || select.alreadyPosted || select.post === "published") remove.run(select_id);
+    }
+  }
+
   /** Drawn once and stored with the row: a whole minute from 0 to the spread, never drawn again. */
   const drawSpread = (slot: Slot) => Math.floor(random() * (slot.spreadMinutes + 1)) * MINUTE;
 
@@ -248,10 +283,24 @@ export function createScheduler(options: SchedulerOptions) {
    * free, and whenever next up is shown. Returns false when the swapped slot found nothing.
    */
   function replan(swapping?: { slotId: string; date: string }): boolean {
+    pruneQueue();
     const rows = db
       .query<RunRow, []>("SELECT * FROM slot_runs WHERE state = 'planned' ORDER BY due_at, slot_id")
       .all();
+    passedOver = new Map();
     if (rows.length === 0) return false;
+    const checked = new Map<string, boolean>();
+    /** True when the select can be posted as it stands; the problems of one that cannot are kept. */
+    const postable = (id: string) => {
+      let ok = checked.get(id);
+      if (ok === undefined) {
+        const problems = problemsOf(id);
+        ok = problems.length === 0;
+        checked.set(id, ok);
+        if (!ok) passedOver.set(id, problems);
+      }
+      return ok;
+    };
     const current = rules();
     const pool = library
       .pool()
@@ -261,7 +310,11 @@ export function createScheduler(options: SchedulerOptions) {
     const queue = queued();
     const isSwapping = (row: RunRow) => row.slot_id === swapping?.slotId && row.date === swapping.date;
     const swapStands = (row: RunRow) =>
-      row.picked === "swap" && !isSwapping(row) && row.select_id !== null && free.has(row.select_id);
+      row.picked === "swap" &&
+      !isSwapping(row) &&
+      row.select_id !== null &&
+      free.has(row.select_id) &&
+      postable(row.select_id);
     // Swaps are the owner's: they hold their selects before anything is planned around them.
     const taken = new Set(rows.filter(swapStands).map((row) => row.select_id as string));
     const real = recent(Math.max(current.captureDay.posts, current.place.posts));
@@ -270,6 +323,20 @@ export function createScheduler(options: SchedulerOptions) {
     const update = db.query(
       "UPDATE slot_runs SET select_id = ?, picked = ? WHERE slot_id = ? AND date = ? AND state = 'planned'",
     );
+    /** A pool pick under the rules: the one planned while the rules still allow it, or another. */
+    const pickFromPool = (row: RunRow, excluded: Set<string>): string | null => {
+      for (;;) {
+        const found = eligible({ pool, recent: [...ahead, ...real], rules: current, exclude: excluded });
+        if (found === undefined) return null;
+        const keep =
+          row.picked === "pool" &&
+          !isSwapping(row) &&
+          found.candidates.some((candidate) => candidate.id === row.select_id);
+        const id = keep ? (row.select_id as string) : choose(found.candidates, current.order, random).id;
+        if (postable(id)) return id;
+        excluded.add(id);
+      }
+    };
     let swapped = false;
     for (const row of rows) {
       let selectId: string | null = null;
@@ -284,19 +351,14 @@ export function createScheduler(options: SchedulerOptions) {
           ? [[...taken, ...passed]]
           : [[...taken, ...passed], [...taken]]) {
           const excluded = new Set(exclude);
-          const head = queue.find((id) => !excluded.has(id));
+          const head = queue.find((id) => !excluded.has(id) && postable(id));
           if (head !== undefined) {
             selectId = head;
             picked = "queue";
             break;
           }
-          const found = eligible({ pool, recent: [...ahead, ...real], rules: current, exclude: excluded });
-          if (found !== undefined) {
-            const keep =
-              row.picked === "pool" &&
-              !isSwapping(row) &&
-              found.candidates.some((candidate) => candidate.id === row.select_id);
-            selectId = keep ? row.select_id : choose(found.candidates, current.order, random).id;
+          selectId = pickFromPool(row, excluded);
+          if (selectId !== null) {
             picked = "pool";
             break;
           }
@@ -382,7 +444,11 @@ export function createScheduler(options: SchedulerOptions) {
   async function post(row: RunRow) {
     const selectId = row.select_id;
     if (selectId === null || !inPool(selectId)) {
-      finish(row, "empty", { note: "Nothing to post: the queue and the pool are empty.", selectId: null });
+      const note =
+        passedOver.size > 0
+          ? "Nothing left could be posted as it stands: the selects that need attention are on the Queue screen."
+          : "Nothing left to post.";
+      finish(row, "empty", { note, selectId: null });
       return;
     }
     // Claimed before the publisher is called: from here a restart finds it and never posts it twice.
@@ -426,13 +492,12 @@ export function createScheduler(options: SchedulerOptions) {
     }
   }
 
-  /** Records the post a claimed slot made. A real post leaves the queue; a dry run leaves it be. */
+  /**
+   * Records the post a claimed slot made. A queued select stays in the queue until its post is
+   * published, so one whose post fails for good is back at the head.
+   */
   function settle(row: RunRow, postId: string, dryRun: boolean) {
-    db.transaction(() => {
-      if (!dryRun && row.select_id !== null)
-        db.query("DELETE FROM queue WHERE select_id = ?").run(row.select_id);
-      finish(row, dryRun ? "dry-run" : "posted", { postId });
-    })();
+    finish(row, dryRun ? "dry-run" : "posted", { postId });
   }
 
   function prune(now: number) {
@@ -588,9 +653,15 @@ export function createScheduler(options: SchedulerOptions) {
     /** Replaces the queue with these selects, in this order. Any not in the pool are left out. */
     setQueue(ids: string[]): string[] {
       const keep = [...new Set(ids)].filter((id) => library.get(id)?.inPool === true);
+      // A queued select out in a post the owner cannot see stays at the head, to come back if it fails.
+      const out = db
+        .query<{ select_id: string }, []>("SELECT select_id FROM queue ORDER BY position")
+        .all()
+        .map((row) => row.select_id)
+        .filter((id) => !keep.includes(id) && library.get(id)?.inPool === false);
       db.transaction(() => {
         db.query("DELETE FROM queue").run();
-        for (const [position, id] of keep.entries()) {
+        for (const [position, id] of [...out, ...keep].entries()) {
           db.query("INSERT INTO queue (select_id, position) VALUES (?, ?)").run(id, position);
         }
       })();
@@ -631,17 +702,29 @@ export function createScheduler(options: SchedulerOptions) {
       return found?.at ?? null;
     },
 
-    /** What would stop next up posting now: no account, no bucket, a caption over a limit. */
+    /** What would stop any slot posting now: no account, no bucket. Empty in dry run. */
     problems(): string[] {
-      const next = db
-        .query<{ select_id: string }, []>(
-          "SELECT select_id FROM slot_runs WHERE state = 'planned' AND select_id IS NOT NULL ORDER BY due_at LIMIT 1",
-        )
-        .get();
-      if (next === null) return [];
-      const preview = publisher.preview([next.select_id]);
+      const any = queued()[0] ?? library.pool()[0];
+      if (any === undefined) return [];
+      const preview = publisher.preview([any]);
       if (preview === undefined || preview.dryRun) return [];
-      return preview.problems;
+      // The preview lists the select's own problems first, then those that stop every post.
+      return preview.problems.slice(preview.check.problems.length);
+    },
+
+    /** Selects that cannot be posted as they stand: queued ones, and those the plan passed over. */
+    attention(): Attention[] {
+      const found = new Map(passedOver);
+      for (const id of queued()) {
+        if (found.has(id)) continue;
+        const problems = problemsOf(id);
+        if (problems.length > 0) found.set(id, problems);
+      }
+      return [...found].map(([selectId, problems]) => ({
+        selectId,
+        fileName: library.get(selectId)?.fileName ?? "A deleted select",
+        problems,
+      }));
     },
 
     /**
