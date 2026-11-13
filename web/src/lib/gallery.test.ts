@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { describeGallery, gallerySwitch } from "./gallery";
+import { describeGallery, galleryPolling, gallerySwitch } from "./gallery";
 
 describe("a post's gallery state in words", () => {
   test("says when it is listed, and offers removal", () => {
@@ -60,5 +60,28 @@ describe("the gallery switch", () => {
       checked: false,
       disabled: true,
     });
+  });
+});
+
+describe("how soon the Posted screen checks the gallery again", () => {
+  test("soon while a write or a removal is under way, as it finishes in seconds", () => {
+    expect(galleryPolling([{ state: "removing", error: null }])).toBe("soon");
+    expect(
+      galleryPolling([
+        { state: "listed", error: null },
+        { state: "writing", error: null },
+      ]),
+    ).toBe("soon");
+  });
+
+  test("later while one is being retried, and not at all once everything is settled", () => {
+    expect(galleryPolling([{ state: "removing", error: "The bucket refused." }])).toBe("later");
+    expect(
+      galleryPolling([
+        { state: "listed", error: null },
+        { state: "removed", error: null },
+      ]),
+    ).toBeUndefined();
+    expect(galleryPolling([])).toBeUndefined();
   });
 });

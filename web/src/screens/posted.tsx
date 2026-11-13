@@ -1,10 +1,10 @@
 import type { GalleryPost, GalleryView, Post } from "@selects/server";
 import { ExternalLink } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api";
 import { Button } from "@/components/ui/button";
 import { problemsIn } from "@/lib/autosave";
-import { describeGallery } from "@/lib/gallery";
+import { describeGallery, galleryPolling } from "@/lib/gallery";
 import { dateTime, describePost } from "@/lib/posts";
 import { cn } from "@/lib/utils";
 import { Screen } from "./screen";
@@ -19,6 +19,7 @@ type Loaded = { posts: Post[]; dryRuns: Post[]; gallery: GalleryView | undefined
 export function PostedScreen() {
   const [loaded, setLoaded] = useState<Loaded | undefined>();
   const [loadError, setLoadError] = useState(false);
+  const [galleryError, setGalleryError] = useState(false);
 
   // Only the newest load asked for is shown, so a slow poll never undoes what came after it.
   const turn = useRef(0);
@@ -27,8 +28,11 @@ export function PostedScreen() {
     try {
       const [posts, gallery] = await Promise.all([api.posts.get(), api.gallery.get()]);
       if (mine !== turn.current) return;
-      if (posts.data) setLoaded({ ...posts.data, gallery: gallery.data ?? undefined });
+      // Gallery states that could not be loaded keep the last ones known, and say so.
+      if (posts.data)
+        setLoaded((before) => ({ ...posts.data, gallery: gallery.data ?? before?.gallery ?? undefined }));
       setLoadError(posts.error !== null);
+      setGalleryError(gallery.error !== null || !gallery.data);
     } catch {
       if (mine === turn.current) setLoadError(true);
     }
@@ -42,9 +46,17 @@ export function PostedScreen() {
     loaded?.posts.some((post) => post.state === "publishing" || post.state === "retrying") ?? false;
   const unconfirmed = loaded?.posts.some((post) => post.state === "unconfirmed") ?? false;
   // Gallery writes and removals finish in the background, and are retried while they fail.
-  const galleryBusy =
-    loaded?.gallery?.posts.some((entry) => entry.state === "writing" || entry.state === "removing") ?? false;
-  const pollMs = pending ? POLL_MS : unconfirmed || galleryBusy ? UNCONFIRMED_POLL_MS : undefined;
+  const gallery = galleryPolling(loaded?.gallery?.posts ?? []);
+  const pollMs =
+    pending || gallery === "soon"
+      ? POLL_MS
+      : unconfirmed || gallery === "later"
+        ? UNCONFIRMED_POLL_MS
+        : undefined;
+  const galleryById = useMemo(
+    () => new Map(loaded?.gallery?.posts.map((entry) => [entry.postId, entry])),
+    [loaded?.gallery],
+  );
   useEffect(() => {
     if (pollMs === undefined) return;
     const timer = setInterval(() => void load(), pollMs);
@@ -54,6 +66,9 @@ export function PostedScreen() {
   return (
     <Screen title="Posted">
       {loadError && <p className="text-sm text-destructive">Can't reach the server.</p>}
+      {!loadError && galleryError && (
+        <p className="text-sm text-destructive">Couldn't load where posts stand in the gallery.</p>
+      )}
       <section aria-labelledby="posts" className="flex flex-col gap-3">
         <h2 id="posts" className="text-sm font-medium text-muted-foreground">
           {loaded === undefined
@@ -70,7 +85,7 @@ export function PostedScreen() {
             <PostRow
               key={post.id}
               post={post}
-              gallery={loaded.gallery?.posts.find((entry) => entry.postId === post.id)}
+              gallery={galleryById.get(post.id)}
               mode={loaded.gallery?.mode}
               onChange={load}
             />
@@ -160,7 +175,12 @@ function PostRow({
         )}
         {post.state === "unconfirmed" && <Resolve post={post} onResolved={onChange} />}
         {gallery !== undefined && mode !== undefined && (
-          <GalleryState entry={gallery} mode={mode} onChange={onChange} />
+          <GalleryState
+            entry={gallery}
+            mode={mode}
+            name={`post of ${dateTime(post.publishedAt ?? post.createdAt)}`}
+            onChange={onChange}
+          />
         )}
       </div>
     </li>
@@ -171,16 +191,33 @@ function PostRow({
 function GalleryState({
   entry,
   mode,
+  name,
   onChange,
 }: {
   entry: GalleryPost;
   mode: GalleryPost["mode"];
+  /** Which post this is, for a screen reader: "post of 13 Nov, 09:00". */
+  name: string;
   onChange: () => Promise<void>;
 }) {
   const { label, detail, removable } = describeGallery(entry, mode);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problems, setProblems] = useState<string[] | undefined>();
+  const confirmation = useRef<HTMLFieldSetElement>(null);
+  const ask = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+
+  // Focus follows the confirmation that replaces the button, and back again when it is kept.
+  useEffect(() => {
+    if (confirming) confirmation.current?.focus();
+    else if (returnFocus.current) ask.current?.focus();
+    returnFocus.current = false;
+  }, [confirming]);
+  const keep = () => {
+    returnFocus.current = true;
+    setConfirming(false);
+  };
 
   const remove = async () => {
     setBusy(true);
@@ -192,6 +229,7 @@ function GalleryState({
         return;
       }
       setConfirming(false);
+      // At once: the removal finishes in the background, and the screen checks again soon after.
       await onChange();
     } catch {
       setProblems([]);
@@ -208,7 +246,13 @@ function GalleryState({
           <span data-testid="gallery-state">{label}</span>
         </span>
         {removable && !confirming && (
-          <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
+          <Button
+            ref={ask}
+            size="sm"
+            variant="outline"
+            aria-label={`Remove from gallery… ${name}`}
+            onClick={() => setConfirming(true)}
+          >
             Remove from gallery…
           </Button>
         )}
@@ -217,7 +261,12 @@ function GalleryState({
         <p className={cn("text-xs", entry.error ? "text-destructive" : "text-muted-foreground")}>{detail}</p>
       )}
       {confirming && (
-        <div className="flex flex-col gap-2">
+        <fieldset
+          ref={confirmation}
+          tabIndex={-1}
+          className="m-0 flex min-w-0 flex-col gap-2 rounded-sm border-0 p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <legend className="sr-only">Remove the {name} from the gallery</legend>
           <p className="text-xs text-muted-foreground">
             Deletes its images and its entry in posts.json from the bucket. It stays on Instagram, and the
             select stays posted.
@@ -226,11 +275,11 @@ function GalleryState({
             <Button size="sm" variant="destructive" onClick={() => void remove()} disabled={busy}>
               Remove from gallery
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>
+            <Button size="sm" variant="ghost" onClick={keep} disabled={busy}>
               Keep
             </Button>
           </div>
-        </div>
+        </fieldset>
       )}
       {problems !== undefined && (
         <p className="text-xs text-destructive">

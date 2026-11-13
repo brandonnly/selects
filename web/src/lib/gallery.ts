@@ -33,3 +33,13 @@ export function gallerySwitch(view: Pick<GalleryView, "enabled" | "availability"
 } {
   return { checked: view.enabled, disabled: !view.enabled && !view.availability.available };
 }
+
+/**
+ * How soon the Posted screen checks again: soon while a write or removal is under way, since it
+ * finishes in seconds; later while one is retried after a failure; not at all once all settled.
+ */
+export function galleryPolling(posts: Pick<GalleryPost, "state" | "error">[]): "soon" | "later" | undefined {
+  const busy = posts.filter((post) => post.state === "writing" || post.state === "removing");
+  if (busy.some((post) => post.error === null)) return "soon";
+  return busy.length > 0 ? "later" : undefined;
+}
