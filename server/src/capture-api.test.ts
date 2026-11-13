@@ -344,6 +344,21 @@ describe("a select's location", () => {
     expect(await frame(id)).toEqual(await frame(id, withoutCoordinates));
   });
 
+  test("stays withheld when an edit moves a select taken inside a zone out of it", async () => {
+    const id = await addSelect("portrait");
+    // The portrait fixture's own location.
+    await addZone({ latitude: 10.5, longitude: -40.25, radiusMetres: 1_000 });
+
+    await putCapture(id, {
+      edits: { coordinates: { latitude: -12.5, longitude: -25.75 } },
+      locationHidden: false,
+    });
+
+    const body = await capture(id);
+    expect(body.withheld).toBe("privacy-zone");
+    expect(body.published).toMatchObject({ latitude: null, longitude: null });
+  });
+
   test("is withheld when the select has no GPS data", async () => {
     const id = await addSelect("square");
 

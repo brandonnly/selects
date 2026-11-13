@@ -67,12 +67,24 @@ export function applyEdits(file: CaptureData, edits: CaptureEdits): CaptureData 
   return edited;
 }
 
-/** Why the coordinates of capture data (edits applied) may not be published, or null when they may. */
-export function locationWithheld(capture: CaptureData, rules: PrivacyRules): Withheld | null {
+/**
+ * Why the coordinates of capture data (edits applied) may not be published, or null when they
+ * may. A zone withholds a select whether the file's own location or its edited one is inside:
+ * moving the coordinates by an edit never takes a photo taken in a zone out of it.
+ */
+export function locationWithheld(
+  capture: CaptureData,
+  rules: PrivacyRules,
+  file: CaptureData = capture,
+): Withheld | null {
   const { latitude, longitude } = capture;
   if (latitude === null || longitude === null) return "no-coordinates";
   if (rules.locationHidden) return "hidden";
-  if (rules.zones.some((zone) => insideZone({ latitude, longitude }, zone))) return "privacy-zone";
+  const places = [{ latitude, longitude }];
+  if (file.latitude !== null && file.longitude !== null) {
+    places.push({ latitude: file.latitude, longitude: file.longitude });
+  }
+  if (rules.zones.some((zone) => places.some((place) => insideZone(place, zone)))) return "privacy-zone";
   return null;
 }
 
@@ -83,7 +95,7 @@ export function publishCapture(
   rules: PrivacyRules,
 ): PublishedCapture {
   const edited = applyEdits(file, edits);
-  const withheld = locationWithheld(edited, rules);
+  const withheld = locationWithheld(edited, rules, file);
   return (withheld === null ? edited : { ...edited, latitude: null, longitude: null }) as PublishedCapture;
 }
 
@@ -137,7 +149,7 @@ export function createCaptures({ db, library, zones }: { db: Database; library: 
       edited,
       locationHidden: rules.locationHidden,
       published: publishCapture(file, edits, rules),
-      withheld: locationWithheld(edited, rules),
+      withheld: locationWithheld(edited, rules, file),
     };
   }
 
