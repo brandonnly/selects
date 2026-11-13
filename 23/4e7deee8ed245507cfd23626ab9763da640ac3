@@ -1,0 +1,21 @@
+docs/PRODUCT.md
+  s_bf104c96fca8ce::t_062bbc5bc0374b 70-72
+docs/adr/0007-scheduling.md
+  s_bf104c96fca8ce::t_fd311dd67ae62c 13,28-32,55-72,75-89,99-101,114-115,129-137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "234e7deee8ed245507cfd23626ab9763da640ac3",
+  "prompts": {},
+  "sessions": {
+    "s_bf104c96fca8ce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d026298d-4322-4643-83f2-8666dd34f3f5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
