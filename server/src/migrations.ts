@@ -139,4 +139,81 @@ export const migrations: readonly Migration[] = [
   );
   CREATE INDEX post_selects_select ON post_selects (select_id);
   `,
+  // 6: posts gain `unconfirmed` (Instagram was asked to publish and its answer is not known) and
+  // the Instagram mode that made them; an account's expiry may be unknown until a refresh works;
+  // frames whose deletion from the bucket failed are kept to be deleted again. SQLite changes a
+  // CHECK only by building the table again; post_selects is built again with posts so that
+  // dropping the old posts table never cascades to it.
+  `
+  CREATE TABLE posts_v6 (
+    id TEXT PRIMARY KEY,
+    state TEXT NOT NULL
+      CHECK (state IN ('publishing', 'retrying', 'unconfirmed', 'published', 'failed', 'dry-run')),
+    -- Which Instagram made the post: the fake server or the real one. Null before version 6.
+    mode TEXT CHECK (mode IN ('fake', 'live')),
+    caption TEXT NOT NULL,
+    alt_text TEXT NOT NULL,
+    hashtag_set TEXT,
+    capture TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    -- The next attempt, or for an unconfirmed post the next check on its container.
+    next_attempt_at INTEGER,
+    object_key TEXT,
+    container_id TEXT,
+    publish_requested_at INTEGER,
+    media_id TEXT,
+    permalink TEXT,
+    error TEXT,
+    report TEXT,
+    created_at INTEGER NOT NULL,
+    published_at INTEGER
+  );
+  INSERT INTO posts_v6 (id, state, caption, alt_text, hashtag_set, capture, attempts, next_attempt_at,
+    object_key, container_id, publish_requested_at, media_id, permalink, error, report, created_at, published_at)
+  SELECT id, state, caption, alt_text, hashtag_set, capture, attempts, next_attempt_at,
+    object_key, container_id, publish_requested_at, media_id, permalink, error, report, created_at, published_at
+  FROM posts ORDER BY rowid;
+
+  CREATE TABLE post_selects_v6 (
+    post_id TEXT NOT NULL REFERENCES posts_v6 (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    select_id TEXT REFERENCES selects (id) ON DELETE SET NULL,
+    PRIMARY KEY (post_id, position)
+  );
+  INSERT INTO post_selects_v6 (post_id, position, select_id)
+  SELECT post_id, position, select_id FROM post_selects;
+
+  DROP TABLE post_selects;
+  DROP TABLE posts;
+  ALTER TABLE posts_v6 RENAME TO posts;
+  ALTER TABLE post_selects_v6 RENAME TO post_selects;
+  CREATE INDEX posts_state ON posts (state);
+  CREATE INDEX post_selects_select ON post_selects (select_id);
+
+  CREATE TABLE instagram_account_v6 (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    -- Secret: never returned by the API and never logged.
+    token TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('connected', 'invalid')),
+    connected_at INTEGER NOT NULL,
+    refreshed_at INTEGER NOT NULL,
+    -- Null until a refresh has told the token's real expiry.
+    expires_at INTEGER,
+    -- How the last refresh went: 'too-new' when the token was too new to refresh when pasted,
+    -- 'failed' when it could not be refreshed for another reason.
+    refresh TEXT NOT NULL DEFAULT 'refreshed' CHECK (refresh IN ('refreshed', 'too-new', 'failed'))
+  );
+  INSERT INTO instagram_account_v6 (id, token, user_id, username, status, connected_at, refreshed_at, expires_at)
+  SELECT id, token, user_id, username, status, connected_at, refreshed_at, expires_at FROM instagram_account;
+  DROP TABLE instagram_account;
+  ALTER TABLE instagram_account_v6 RENAME TO instagram_account;
+
+  -- Bucket objects to delete: a frame whose deletion failed is kept here and tried again.
+  CREATE TABLE bucket_cleanup (
+    key TEXT PRIMARY KEY,
+    added_at INTEGER NOT NULL
+  );
+  `,
 ];
