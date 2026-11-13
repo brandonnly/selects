@@ -17,8 +17,8 @@ post cannot be taken back from Selects, so each of these leans towards sending n
   to `live`; the fake runs inside the server, and tests run the same fake over real HTTP. With
   no bucket set, `bun run dev` also runs a fake bucket. Bucket variables are optional: without
   them Selects runs and publishing is unavailable.
-- **The token is checked against `/me` when pasted and refreshed once a day**, and once at once
-  when Meta allows it, to learn its real expiry. It lives in its own table, is sent in the
+- **The token is checked against `/me` when pasted and refreshed once a day.** It is also
+  refreshed when pasted, if Meta allows it, to learn its real expiry. It lives in its own table, is sent in the
   Authorization header (in the query only for refresh, as Meta documents), and no route,
   log line or stored error carries it. A presigned link is never stored or shown either.
 - **Retries wait 2, 5 and 8 minutes**, three retries over fifteen minutes. A caption over a
