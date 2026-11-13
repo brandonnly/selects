@@ -27,6 +27,7 @@ export type { CaptureEdits, CaptureView, Withheld } from "./capture";
 export type { FrameField, FrameSettings } from "./frame";
 export type { Rejection, ScanResult, Select, UploadResult } from "./library";
 export type { FontOverride } from "./typefaces";
+export type { PrivacyZone } from "./zones";
 
 export type AppOptions = {
   config: Config;
@@ -162,7 +163,7 @@ function createRoutes({
       },
       { query: framePreviewQuery },
     )
-    .use(captureRoutes({ captures }))
+    .use(captureRoutes({ captures, zones }))
     .get("/api/frame", () => ({
       settings: settings.frame(),
       typefaces: TYPEFACES.map(({ id, name }) => ({ id, name })),

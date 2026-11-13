@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { type CaptureEdits, type Captures, isCaptureTime } from "./capture";
+import type { Zones } from "./zones";
 
 const notFound = { error: "Not found" } as const;
 
@@ -29,8 +30,16 @@ const editsSchema = t.Object(
   { additionalProperties: false },
 );
 
-/** Editing a select's capture data and hiding its location. */
-export function captureRoutes({ captures }: { captures: Captures }) {
+const radiusMetres = t.Number({ exclusiveMinimum: 0 });
+
+/** A zone at typed coordinates, or around where a select was taken. */
+const newZoneSchema = t.Union([
+  t.Object({ latitude, longitude, radiusMetres }, { additionalProperties: false }),
+  t.Object({ selectId: t.String(), radiusMetres }, { additionalProperties: false }),
+]);
+
+/** Editing a select's capture data, hiding its location, and privacy zones. */
+export function captureRoutes({ captures, zones }: { captures: Captures; zones: Zones }) {
   return new Elysia()
     .get(
       "/api/selects/:id/capture",
@@ -53,5 +62,20 @@ export function captureRoutes({ captures }: { captures: Captures }) {
       {
         body: t.Object({ edits: editsSchema, locationHidden: t.Boolean() }, { additionalProperties: false }),
       },
+    )
+    .get("/api/zones", () => zones.list())
+    .post(
+      "/api/zones",
+      ({ body, status }) => {
+        if (!("selectId" in body)) return status(201, zones.add(body));
+        const location = captures.location(body.selectId);
+        if (location === undefined) return status(404, notFound);
+        if (location === null) return status(409, { error: "The select has no location." });
+        return status(201, zones.add({ ...location, radiusMetres: body.radiusMetres }));
+      },
+      { body: newZoneSchema },
+    )
+    .delete("/api/zones/:id", ({ params, status }) =>
+      zones.remove(params.id) ? status(204) : status(404, notFound),
     );
 }

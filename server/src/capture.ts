@@ -181,6 +181,17 @@ export function createCaptures({ db, library, zones }: { db: Database; library: 
       return view(select);
     },
 
+    /**
+     * Where a select was taken as its owner sees it, edits applied: null when it has no
+     * coordinates, undefined when there is no such select. Never for publishing.
+     */
+    location(id: string): Point | null | undefined {
+      const select = library.get(id);
+      if (select === undefined) return undefined;
+      const { latitude, longitude } = applyEdits(captureData(select), editsOf(id));
+      return latitude === null || longitude === null ? null : { latitude, longitude };
+    },
+
     /** The select as its owner sees it in the Library: edits applied, coordinates kept. */
     withEdits(select: Select): Select {
       return { ...select, ...applyEdits(captureData(select), editsOf(select.id)) };
