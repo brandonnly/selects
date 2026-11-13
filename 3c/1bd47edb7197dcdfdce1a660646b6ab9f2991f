@@ -1,0 +1,21 @@
+server/src/bucket.ts
+  s_c4e8006bf0d88c::t_018a7c87bb3971 22-26,76,85
+server/src/publisher.ts
+  s_c4e8006bf0d88c::t_cb968fde78a59a 653-662
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c1bd47edb7197dcdfdce1a660646b6ab9f2991f",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
