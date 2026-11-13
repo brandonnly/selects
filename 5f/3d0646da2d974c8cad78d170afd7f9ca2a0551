@@ -1,0 +1,31 @@
+web/src/app.tsx
+  s_966d394503842b::t_36a777e89052a0 4,54
+web/src/components/fake-mode-banner.tsx
+  s_966d394503842b::t_aece3a261bd7d0 1-39
+web/src/components/post-now.tsx
+  s_966d394503842b::t_ec399a0f4e858b 157-162,164-165,168-170,172-176,213-219,225,245
+web/src/components/publishing-settings.tsx
+  s_966d394503842b::t_ea2c597df733e3 10,117-118,200-209
+web/src/lib/posts.test.ts
+  s_966d394503842b::t_de6ca46f5cb030 1-14
+web/src/lib/posts.ts
+  s_966d394503842b::t_701ed114e05549 4-6,26-31
+web/src/screens/posted.tsx
+  s_966d394503842b::t_681707afb12728 104-109,126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f3d0646da2d974c8cad78d170afd7f9ca2a0551",
+  "prompts": {},
+  "sessions": {
+    "s_966d394503842b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "251f9d0d-2080-4854-a237-295adb8fa666",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
