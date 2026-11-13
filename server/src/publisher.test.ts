@@ -878,6 +878,30 @@ describe("a publish interrupted part way", () => {
     expect(library.pool()).toEqual([]);
   });
 
+  test("on a start that holds, a post with a container is never checked on its own", async () => {
+    const before = setup();
+    await connect(before.account);
+    const id = await addSelect("portrait");
+    // The container is made, then checking on it fails: the copy knows a container.
+    instagram.fail("status", "transient");
+    const first = await postNow(before.publisher, id);
+    expect(first.state).toBe("retrying");
+
+    const { publisher } = setup();
+    publisher.recover({ hold: true });
+    const statusChecks = () => instagram.requests.filter((r) => r.operation === "status").length;
+    const checked = statusChecks();
+    for (let i = 0; i < 6; i++) {
+      clock.advance(5 * MINUTE);
+      await publisher.runDue();
+    }
+
+    expect(statusChecks()).toBe(checked);
+    expect(publisher.post(first.id)?.state).toBe("unconfirmed");
+    expect(instagram.media).toHaveLength(0);
+    expect(library.pool()).toEqual([]);
+  });
+
   test("by a restart is finished after it, and published once", async () => {
     const before = setup();
     await connect(before.account);
