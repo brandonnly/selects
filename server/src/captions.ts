@@ -55,16 +55,141 @@ export function buildCaption({
   };
   const ownCaption = override?.caption ?? null;
   return {
-    caption: ownCaption ?? fill(templates.caption, values),
-    altText: override?.altText ?? fill(templates.altText, values),
+    caption: ownCaption ?? fill(templates.caption, values, CAPTION_TOKENS),
+    altText: override?.altText ?? fill(templates.altText, values, ALT_TEXT_TOKENS),
     hashtagSet: ownCaption === null && templates.caption.includes("{hashtags}") ? (set?.name ?? null) : null,
   };
 }
 
+/** Instagram's limits on a caption and on alt text. */
+export const CAPTION_LIMITS = { characters: 2200, hashtags: 30, mentions: 20, altTextCharacters: 1000 };
+
+/** A warning shows from this share of a limit. */
+const NEAR = 0.9;
+
+/**
+ * How a caption and alt text measure against Instagram's limits. Characters are UTF-16 code
+ * units, as JavaScript counts them: Meta does not say how it counts, and no other way counts
+ * more, so text within this count is within Instagram's. Every `#` or `@` followed by a letter,
+ * digit or underscore counts as a hashtag or an @ tag.
+ */
+export type LimitCheck = {
+  captionCharacters: number;
+  hashtags: number;
+  mentions: number;
+  altTextCharacters: number;
+  /** Near a limit: allowed. */
+  warnings: string[];
+  /** Over a limit: refused. */
+  problems: string[];
+};
+
+type Counts = Omit<LimitCheck, "warnings" | "problems">;
+
+/** Measures one caption and alt text against Instagram's limits. */
+export function checkCaption({ caption, altText }: { caption: string; altText: string }): LimitCheck {
+  return judge(count(caption, altText), "is");
+}
+
+/** A template's syntax problems, and how its longest caption measures against Instagram's limits. */
+export function checkTemplates(templates: CaptionTemplates): Pick<LimitCheck, "warnings" | "problems"> {
+  const problems = [
+    ...unknownTokens(templates.caption, CAPTION_TOKENS, "caption"),
+    ...unknownTokens(templates.altText, ALT_TEXT_TOKENS, "alt text"),
+    ...setProblems(templates.hashtagSets),
+  ];
+  // The longest caption: every field at its longest, with each set in turn.
+  const longest = (["dms", "decimal"] as const)
+    .flatMap((coordinateFormat) =>
+      (templates.hashtagSets.length === 0 ? [undefined] : templates.hashtagSets).map((set) =>
+        buildCaption({ capture: LONGEST, templates, coordinateFormat, hashtagSet: set?.name }),
+      ),
+    )
+    .map((built) => count(built.caption, built.altText))
+    .reduce((most, counts) => ({
+      captionCharacters: Math.max(most.captionCharacters, counts.captionCharacters),
+      hashtags: Math.max(most.hashtags, counts.hashtags),
+      mentions: Math.max(most.mentions, counts.mentions),
+      altTextCharacters: Math.max(most.altTextCharacters, counts.altTextCharacters),
+    }));
+  const limits = judge(longest, "can be");
+  return { problems: [...problems, ...limits.problems], warnings: limits.warnings };
+}
+
+function count(caption: string, altText: string): Counts {
+  return {
+    captionCharacters: caption.length,
+    hashtags: caption.match(/#[\p{L}\p{N}_]/gu)?.length ?? 0,
+    mentions: caption.match(/@[\p{L}\p{N}_]/gu)?.length ?? 0,
+    altTextCharacters: altText.length,
+  };
+}
+
+function judge(counts: Counts, verb: "is" | "can be"): LimitCheck {
+  const warnings: string[] = [];
+  const problems: string[] = [];
+  const has = verb === "is" ? "has" : "can have up to";
+  const is = verb === "is" ? "is" : "can be up to";
+  const measure = (value: number, limit: number, what: (n: string) => string) => {
+    const said = `${what(value.toLocaleString("en-US"))}, `;
+    if (value > limit) problems.push(`${said}over Instagram's limit of ${limit.toLocaleString("en-US")}.`);
+    else if (value >= limit * NEAR)
+      warnings.push(`${said}near Instagram's limit of ${limit.toLocaleString("en-US")}.`);
+  };
+  measure(counts.captionCharacters, CAPTION_LIMITS.characters, (n) => `The caption ${is} ${n} characters`);
+  measure(counts.hashtags, CAPTION_LIMITS.hashtags, (n) => `The caption ${has} ${n} hashtags`);
+  measure(counts.mentions, CAPTION_LIMITS.mentions, (n) => `The caption ${has} ${n} @ tags`);
+  measure(
+    counts.altTextCharacters,
+    CAPTION_LIMITS.altTextCharacters,
+    (n) => `The alt text ${is} ${n} characters`,
+  );
+  return { ...counts, warnings, problems };
+}
+
+/** Every field at its longest: names as long as a frame prints them, numbers at their widest. */
+const LONGEST: CaptureData = {
+  camera: "W".repeat(48),
+  lens: "W".repeat(48),
+  focalLength: 1234.5,
+  exposureTime: 1 / 32000,
+  fNumber: 22.5,
+  iso: 409600,
+  latitude: -89.5,
+  longitude: -179.5,
+  capturedAt: "2024-12-31T23:59:59",
+};
+
+function unknownTokens(template: string, tokens: ReadonlySet<string>, where: string): string[] {
+  return [...template.matchAll(TOKEN)]
+    .filter(([, name]) => !tokens.has(name ?? ""))
+    .map(([whole]) => `${whole} in the ${where} isn't a token.`);
+}
+
+/** A hashtag Instagram links: # and then letters, digits and underscores only. */
+const HASHTAG = /^#[\p{L}\p{N}_]+$/u;
+
+function setProblems(sets: HashtagSet[]): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const set of sets) {
+    const name = set.name.trim();
+    if (name === "") problems.push("A hashtag set needs a name.");
+    else if (seen.has(name)) problems.push(`There are two hashtag sets named ${name}.`);
+    seen.add(name);
+    for (const tag of set.tags) {
+      if (!HASHTAG.test(tag)) problems.push(`${tag} in ${name || "a set"} isn't a hashtag.`);
+    }
+  }
+  return problems;
+}
+
+/** The tokens a template can use. Hashtags go in the caption only. */
+export const CAPTION_TOKENS: ReadonlySet<string> = new Set<Token>([...FRAME_FIELDS, "hashtags"]);
+const ALT_TEXT_TOKENS: ReadonlySet<string> = new Set<Token>(FRAME_FIELDS);
+
 type Token = FrameField | "hashtags";
 type Values = Record<Token, string | null>;
-
-const TOKENS: ReadonlySet<string> = new Set<Token>([...FRAME_FIELDS, "hashtags"]);
 
 /** A run of text, or a field: a token, or brackets holding one, which is null when it is missing. */
 type Part = { text: string } | { field: string | null };
@@ -77,10 +202,10 @@ const PAIRS: Record<string, string> = { "(": ")", "“": "”", '"': '"', "‘":
  * it, a line whose every field is missing is left out, and text in square brackets around a
  * field is left out with it. Blank lines never stack or end the text.
  */
-function fill(template: string, values: Values): string {
+function fill(template: string, values: Values, tokens: ReadonlySet<string>): string {
   const lines: string[] = [];
   for (const line of template.split(/\r?\n/)) {
-    const filled = fillLine(line, values);
+    const filled = fillLine(line, values, tokens);
     if (filled === undefined) continue;
     if (filled === "" && (lines.length === 0 || lines.at(-1) === "")) continue;
     lines.push(filled);
@@ -90,8 +215,8 @@ function fill(template: string, values: Values): string {
 }
 
 /** The line filled in, or undefined when it holds fields and every one is missing. */
-function fillLine(line: string, values: Values): string | undefined {
-  const parts = parse(line, values);
+function fillLine(line: string, values: Values, tokens: ReadonlySet<string>): string | undefined {
+  const parts = parse(line, values, tokens);
   const present = (part: Part | undefined) => part !== undefined && "field" in part && part.field !== null;
   if (parts.some((part) => "field" in part) && !parts.some(present)) return undefined;
 
@@ -128,12 +253,12 @@ function isSeparator(text: string): boolean {
 
 const TOKEN = /\{(\w+)\}/g;
 
-function parse(line: string, values: Values): Part[] {
+function parse(line: string, values: Values, tokens: ReadonlySet<string>): Part[] {
   const parts: Part[] = [];
   let at = 0;
   for (const match of line.matchAll(/\[[^[\]]*\]|\{(\w+)\}/g)) {
     const [whole, name] = match;
-    const value = name === undefined ? group(whole, values) : token(name, values);
+    const value = name === undefined ? group(whole, values, tokens) : token(name, values, tokens);
     if (value === undefined) continue;
     if (match.index > at) parts.push({ text: line.slice(at, match.index) });
     parts.push({ field: value });
@@ -144,8 +269,8 @@ function parse(line: string, values: Values): Part[] {
 }
 
 /** A token's value, null when the select lacks it, or undefined when it is no token. */
-function token(name: string, values: Values): string | null | undefined {
-  if (!TOKENS.has(name)) return undefined;
+function token(name: string, values: Values, tokens: ReadonlySet<string>): string | null | undefined {
+  if (!tokens.has(name)) return undefined;
   const value = values[name as Token];
   return value === null || value === "" ? null : value;
 }
@@ -154,12 +279,12 @@ function token(name: string, values: Values): string | null | undefined {
  * Bracketed text with its tokens filled, null when one of them is missing, or undefined when it
  * holds no token and so prints as written.
  */
-function group(bracketed: string, values: Values): string | null | undefined {
+function group(bracketed: string, values: Values, tokens: ReadonlySet<string>): string | null | undefined {
   const inner = bracketed.slice(1, -1);
   let holdsToken = false;
   let missing = false;
   const filled = inner.replace(TOKEN, (whole, name: string) => {
-    const value = token(name, values);
+    const value = token(name, values, tokens);
     if (value === undefined) return whole;
     holdsToken = true;
     if (value === null) missing = true;

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { buildCaption, type CaptionTemplates, DEFAULT_CAPTION_TEMPLATES } from "./captions";
+import {
+  buildCaption,
+  type CaptionTemplates,
+  checkCaption,
+  checkTemplates,
+  DEFAULT_CAPTION_TEMPLATES,
+} from "./captions";
 import type { CaptureData } from "./photo";
 
 const full: CaptureData = {
@@ -192,5 +198,98 @@ describe("buildCaption", () => {
     });
 
     expect(built).toMatchObject({ caption: "Fixture Optics FX-1", hashtagSet: null });
+  });
+});
+
+const tags = (count: number) => Array.from({ length: count }, (_, i) => `#tag${i}`);
+
+describe("checkCaption", () => {
+  test("counts characters, hashtags and @ tags, and finds nothing wrong well within the limits", () => {
+    expect(checkCaption({ caption: "Dawn. #film #35mm @fixture", altText: "A pier." })).toEqual({
+      captionCharacters: 26,
+      hashtags: 2,
+      mentions: 1,
+      altTextCharacters: 7,
+      warnings: [],
+      problems: [],
+    });
+  });
+
+  test("counts characters as UTF-16 units, so an emoji counts twice and Instagram never counts more", () => {
+    expect(checkCaption({ caption: "🌊é", altText: "" }).captionCharacters).toBe(3);
+  });
+
+  test("warns from 90% of a limit and refuses past it", () => {
+    const at = (caption: string, altText = "") => checkCaption({ caption, altText });
+
+    expect(at("a".repeat(1979)).warnings).toEqual([]);
+    expect(at("a".repeat(1980)).warnings).toEqual([
+      "The caption is 1,980 characters, near Instagram's limit of 2,200.",
+    ]);
+    expect(at("a".repeat(2200)).problems).toEqual([]);
+    expect(at("a".repeat(2201)).problems).toEqual([
+      "The caption is 2,201 characters, over Instagram's limit of 2,200.",
+    ]);
+
+    expect(at(tags(26).join(" ")).warnings).toEqual([]);
+    expect(at(tags(27).join(" ")).warnings).toEqual([
+      "The caption has 27 hashtags, near Instagram's limit of 30.",
+    ]);
+    expect(at(tags(30).join(" ")).problems).toEqual([]);
+    expect(at(tags(31).join(" ")).problems).toEqual([
+      "The caption has 31 hashtags, over Instagram's limit of 30.",
+    ]);
+
+    expect(at("@a ".repeat(21)).problems).toEqual([
+      "The caption has 21 @ tags, over Instagram's limit of 20.",
+    ]);
+    expect(at("", "a".repeat(1001)).problems).toEqual([
+      "The alt text is 1,001 characters, over Instagram's limit of 1,000.",
+    ]);
+  });
+});
+
+describe("checkTemplates", () => {
+  test("the defaults are fine", () => {
+    expect(checkTemplates(DEFAULT_CAPTION_TEMPLATES)).toEqual({ problems: [], warnings: [] });
+  });
+
+  test("measures the longest caption the templates can make: the longest values and the biggest set", () => {
+    const big = { name: "Big", tags: tags(28) };
+    const check = checkTemplates(templates({ hashtagSets: [film, big] }));
+
+    expect(check.warnings).toEqual(["The caption can have up to 28 hashtags, near Instagram's limit of 30."]);
+    const over = checkTemplates(
+      templates({ caption: `${"a".repeat(2110)} {camera} {lens}`, hashtagSets: [] }),
+    );
+    expect(over.problems).toEqual([
+      "The caption can be up to 2,208 characters, over Instagram's limit of 2,200.",
+    ]);
+  });
+
+  test("refuses a token that does not exist, and hashtags in alt text", () => {
+    expect(
+      checkTemplates(templates({ caption: "{camera} {flash}", altText: "{hashtags}" })).problems,
+    ).toEqual(["{flash} in the caption isn't a token.", "{hashtags} in the alt text isn't a token."]);
+  });
+
+  test("refuses a hashtag set without a name, with a name used twice, or with a tag Instagram won't link", () => {
+    const check = checkTemplates(
+      templates({
+        hashtagSets: [
+          { name: " ", tags: ["#a"] },
+          { name: "Film", tags: ["#a"] },
+          { name: "Film", tags: ["#b"] },
+          { name: "Bad", tags: ["#two words", "nohash", "#ok_1", "#é"] },
+        ],
+      }),
+    );
+
+    expect(check.problems).toEqual([
+      "A hashtag set needs a name.",
+      "There are two hashtag sets named Film.",
+      "#two words in Bad isn't a hashtag.",
+      "nohash in Bad isn't a hashtag.",
+    ]);
   });
 });
