@@ -1,0 +1,21 @@
+server/src/migrations.test.ts
+  s_966d394503842b::t_d8d8335e94089d 1-49
+server/src/migrations.ts
+  s_966d394503842b::t_c1a4c71a5ed7f4 142-218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23ff783f39bf0304f97f9b80b874b300de469db0",
+  "prompts": {},
+  "sessions": {
+    "s_966d394503842b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "251f9d0d-2080-4854-a237-295adb8fa666",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
