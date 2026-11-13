@@ -1,0 +1,19 @@
+web/src/components/capture-editor.tsx
+  s_c4e8006bf0d88c::t_070c38692b7b30 70-72,101,109-114,126,128,135,142,177-195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1dada7eb1d63fef72492f65fafe89afb1563a82e",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
