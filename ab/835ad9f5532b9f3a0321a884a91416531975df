@@ -1,0 +1,45 @@
+docs/adr/0004-location-privacy-rules.md
+  s_ec702dc6fe9761::t_9d0fccd9e070ec 1-39
+server/src/app.ts
+  s_c4e8006bf0d88c::t_8386d943b8e81a 180,184-185
+server/src/capture-api.test.ts
+  s_c4e8006bf0d88c::t_5714eb236f529c 400-414
+server/src/capture-routes.ts
+  s_c4e8006bf0d88c::t_5e60320d0cf495 33-34
+server/src/capture.ts
+  s_c4e8006bf0d88c::t_63ba89789496a5 134-143,222-231
+server/src/frame-text.test.ts
+  s_c4e8006bf0d88c::t_3a8c0fc559da6c 2,5-6,16,18,28
+server/src/frame.ts
+  s_ec702dc6fe9761::t_470c6677f8dcbc 48
+server/src/library.ts
+  s_c4e8006bf0d88c::t_f53346b43465bc 451-455
+server/src/zones.ts
+  s_c4e8006bf0d88c::t_4127ba014cb7c7 31-32
+web/src/components/capture-editor.tsx
+  s_c4e8006bf0d88c::t_71c7ea0edab52c 116,119-125,135-136,138,141,318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab835ad9f5532b9f3a0321a884a91416531975df",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    },
+    "s_ec702dc6fe9761": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d34f-c7c7-7d63-9ea3-a121cab76768",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
