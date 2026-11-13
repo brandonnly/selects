@@ -378,23 +378,19 @@ function NtfyChannel({
             </Button>
           </div>
         </form>
+      ) : channel === null ? (
+        <div>
+          <Button variant="outline" onClick={() => setEditing(true)}>
+            Set up…
+          </Button>
+        </div>
       ) : (
-        <>
-          {channel === null ? (
-            <div>
-              <Button variant="outline" onClick={() => setEditing(true)}>
-                Set up…
-              </Button>
-            </div>
-          ) : (
-            <ChannelFooter channel="ntfy" status={channel} onChange={onChange}>
-              <Button variant="outline" onClick={() => setEditing(true)}>
-                Change…
-              </Button>
-              <RemoveChannel channel="ntfy" onChange={onChange} />
-            </ChannelFooter>
-          )}
-        </>
+        <ChannelFooter channel="ntfy" status={channel} onChange={onChange}>
+          <Button variant="outline" onClick={() => setEditing(true)}>
+            Change…
+          </Button>
+          <RemoveChannel channel="ntfy" onChange={onChange} />
+        </ChannelFooter>
       )}
     </div>
   );
@@ -481,23 +477,19 @@ function WebhookChannel({
             </Button>
           </div>
         </form>
+      ) : channel === null ? (
+        <div>
+          <Button variant="outline" onClick={() => setEditing(true)}>
+            Set up…
+          </Button>
+        </div>
       ) : (
-        <>
-          {channel === null ? (
-            <div>
-              <Button variant="outline" onClick={() => setEditing(true)}>
-                Set up…
-              </Button>
-            </div>
-          ) : (
-            <ChannelFooter channel="webhook" status={channel} onChange={onChange}>
-              <Button variant="outline" onClick={() => setEditing(true)}>
-                Change…
-              </Button>
-              <RemoveChannel channel="webhook" onChange={onChange} />
-            </ChannelFooter>
-          )}
-        </>
+        <ChannelFooter channel="webhook" status={channel} onChange={onChange}>
+          <Button variant="outline" onClick={() => setEditing(true)}>
+            Change…
+          </Button>
+          <RemoveChannel channel="webhook" onChange={onChange} />
+        </ChannelFooter>
       )}
     </div>
   );
