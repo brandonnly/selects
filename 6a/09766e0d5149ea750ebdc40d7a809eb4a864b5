@@ -1,0 +1,29 @@
+server/src/gallery.test.ts
+  s_93b04a8ae900e7::t_dd547cafe3e7f4 374-376,385-388,395,402-432
+server/src/gallery.ts
+  s_72f39d106bdcce::t_ea953227f38b88 318-323,325-326,329-339,341-342,353-355,386-394,415-437,465-469
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a09766e0d5149ea750ebdc40d7a809eb4a864b5",
+  "prompts": {},
+  "sessions": {
+    "s_72f39d106bdcce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "96cce2c7-2c1c-4db6-ac89-108f23da68f7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    },
+    "s_93b04a8ae900e7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d410-1d6d-7933-9864-dc57f4aa6123",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
