@@ -545,13 +545,34 @@ export function createPublisher(options: PublisherOptions) {
     });
   }
 
-  /** Deletes a post's frame from the bucket. One that fails is tried again by `runDue`. */
+  /**
+   * Deletes a post's frame from the bucket. Its key moves from the post to the cleanup record
+   * first, so a deletion that fails is never lost when the post is given a new frame: `runDue`
+   * tries it again.
+   */
   async function dropObject(id: string): Promise<void> {
-    const key = row(id)?.object_key;
-    if (key === null || key === undefined || "missing" in options.bucket) return;
+    if ("missing" in options.bucket) return;
+    const key = db
+      .transaction(() => {
+        const found = row(id)?.object_key;
+        if (found === null || found === undefined) return undefined;
+        db.query("INSERT OR IGNORE INTO bucket_cleanup (key, added_at) VALUES (?, ?)").run(
+          found,
+          clock.now(),
+        );
+        db.query("UPDATE posts SET object_key = NULL WHERE id = ? AND object_key = ?").run(id, found);
+        return found;
+      })
+      .immediate();
+    if (key !== undefined) await deleteObject(key);
+  }
+
+  /** Deletes an object in the cleanup record, and takes it off the record once it is gone. */
+  async function deleteObject(key: string): Promise<void> {
+    if ("missing" in options.bucket) return;
     try {
       await options.bucket.delete(key);
-      db.query("UPDATE posts SET object_key = NULL WHERE id = ? AND object_key = ?").run(id, key);
+      db.query("DELETE FROM bucket_cleanup WHERE key = ?").run(key);
     } catch (error) {
       console.error(
         `A frame could not be deleted from the bucket; it will be tried again (${errorKind(error)}).`,
@@ -656,6 +677,10 @@ export function createPublisher(options: PublisherOptions) {
       )
       .all();
     for (const { id } of left) await serially(() => dropObject(id));
+    const discarded = db
+      .query<{ key: string }, []>("SELECT key FROM bucket_cleanup ORDER BY added_at, key")
+      .all();
+    for (const { key } of discarded) await serially(() => deleteObject(key));
   }
 
   const readiness = (): string[] =>

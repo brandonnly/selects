@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import sharp from "sharp";
-import { type Bucket, createBucket } from "./bucket";
+import { type Bucket, BucketError, createBucket } from "./bucket";
 import { createCaptionStore } from "./caption-store";
 import { createCaptures } from "./capture";
 import { createFakeClock, type FakeClock, MINUTE } from "./clock";
@@ -616,6 +616,45 @@ describe("location privacy while publishing", () => {
     expect(new Uint8Array(media?.image ?? [])).toEqual(new Uint8Array(withheld));
     // The container made under the old rules was never published, and its frame is gone.
     expect(instagram.containers().filter((c) => c.status === "PUBLISHED")).toHaveLength(1);
+    expect(fakeBucket.objects.size).toBe(0);
+  });
+
+  test("a frame discarded after a privacy change is deleted later when deleting it fails", async () => {
+    let zones: ReturnType<typeof setup>["zones"] | undefined;
+    let zoned = false;
+    // Deleting fails from when the frame made under the old rules is discarded until it is posted.
+    let deletesFail = false;
+    const parts = setup({
+      wrapApi: (api) => ({
+        ...api,
+        async containerStatus(...args) {
+          const status = await api.containerStatus(...args);
+          if (status === "FINISHED" && !zoned) {
+            zoned = true;
+            zones?.add(zoneAroundPortrait);
+            deletesFail = true;
+          }
+          return status;
+        },
+      }),
+      wrapBucket: (bucket) => ({
+        ...bucket,
+        delete: async (key) => {
+          if (deletesFail) throw new BucketError("The bucket refused to delete the frame.");
+          return bucket.delete(key);
+        },
+      }),
+    });
+    zones = parts.zones;
+    await connect(parts.account);
+    const id = await addSelect("portrait");
+
+    const post = await postNow(parts.publisher, id);
+    expect(post.state).toBe("published");
+    expect(fakeBucket.objects.size).toBe(2);
+
+    deletesFail = false;
+    await parts.publisher.runDue();
     expect(fakeBucket.objects.size).toBe(0);
   });
 
