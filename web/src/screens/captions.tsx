@@ -40,7 +40,7 @@ const toTemplates = (draft: Draft): CaptionTemplates => ({
   altText: draft.altText,
   // A set just added, with nothing in it yet, is not sent: it would hold back every other edit.
   hashtagSets: draft.sets
-    .filter((set) => set.name.trim() !== "" || set.tagsText.trim() !== "")
+    .filter((set) => set.name.trim() !== "" || parseTags(set.tagsText).length > 0)
     .map((set) => ({ name: set.name.trim(), tags: parseTags(set.tagsText) })),
 });
 

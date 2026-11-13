@@ -258,8 +258,14 @@ function fillLine(line: string, values: Values, tokens: ReadonlySet<string>): st
     // A mark that opens the line before its first field, such as a pin before coordinates, goes too.
     if (i === 1 && before !== undefined && isSeparator(before.text)) before.text = "";
   }
-  return parts
-    .map((part) => ("field" in part ? (part.field ?? "") : part.text))
+  const printed = parts.map((part) => ("field" in part ? (part.field ?? "") : part.text));
+  // Brackets that now open the line drop the separator they began with, as in `[ · {iso}]`.
+  const first = printed.findIndex((text) => text.trim() !== "");
+  const opener = parts[first];
+  if (first > 0 && opener !== undefined && "field" in opener && opener.bracketed) {
+    printed[first] = (printed[first] ?? "").replace(/^[^\p{L}\p{N}]+/u, "");
+  }
+  return printed
     .join("")
     .replace(/[ \t]{2,}/g, " ")
     .trim();

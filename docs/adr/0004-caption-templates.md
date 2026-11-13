@@ -23,8 +23,8 @@ behaves around a missing field.
 - **A line whose fields are all missing is left out**, with any words on it. Blank lines never
   stack or end the text.
 - **Words in square brackets go with a missing field inside them.** `[ on {date}]` prints
-  nothing when the select has no date. Fields in brackets do not decide whether their line
-  stays.
+  nothing when the select has no date. A line made only of brackets always stays, and a
+  present field in brackets keeps a line whose other fields are missing.
 - **The default alt text** is `Photograph taken[ on {date}][ with {camera}]`. With both fields
   it reads as the brief has it; with neither it reads "Photograph taken".
 - **The default caption** is `{coordinates}`, then `{camera} · {lens}`, then a blank line and

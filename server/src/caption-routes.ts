@@ -63,12 +63,14 @@ export function captionRoutes({ store, coordinateFormat, capture }: CaptionRoute
       templates: store.templates(),
       coordinateFormat: coordinateFormat(),
     });
-    // What is written for the select replaces the template's text, as written.
-    const caption = {
-      caption: own.caption ?? fromTemplate.caption,
-      altText: own.altText ?? fromTemplate.altText,
-      hashtagSet: own.caption === null ? fromTemplate.hashtagSet : null,
-    };
+    // The same build with what is written for the select, and the same hashtag set.
+    const caption = buildCaption({
+      capture: data,
+      templates: store.templates(),
+      coordinateFormat: coordinateFormat(),
+      override: own,
+      hashtagSet: fromTemplate.hashtagSet ?? undefined,
+    });
     return { own, caption, fromTemplate, limits: CAPTION_LIMITS, check: checkCaption(caption) };
   };
 

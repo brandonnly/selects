@@ -100,6 +100,15 @@ describe("buildCaption", () => {
     expect(built.caption).toBe("shot on Fixture Optics FX-1");
   });
 
+  test("brackets left to open a line drop the separator they began with", () => {
+    const built = buildCaption({
+      capture: { ...full, camera: null },
+      templates: templates({ caption: "{camera}[ · {iso}]" }),
+      coordinateFormat: "dms",
+    });
+    expect(built.caption).toBe("ISO 400");
+  });
+
   test("hashtags can be in the caption once", () => {
     expect(checkTemplates(templates({ caption: "{hashtags} {hashtags}" })).problems).toEqual([
       "The caption can have {hashtags} once.",
