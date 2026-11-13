@@ -16,7 +16,7 @@ import {
 import { createLibrary, duplicateMessage, type Library } from "./library";
 import { passwordGate } from "./password";
 import { createSettings } from "./settings";
-import { TYPEFACE_IDS, TYPEFACES } from "./typefaces";
+import { TYPEFACE_IDS, TYPEFACES, type TypefaceId } from "./typefaces";
 import { serveUi } from "./ui";
 import { MAX_UPLOAD_BYTES, receiveUpload } from "./upload";
 
@@ -42,7 +42,10 @@ const notFound = { error: "Not found" } as const;
 // Unions of literals, not `t.UnionEnum`: Elysia fills a UnionEnum left out of a query with its
 // first value.
 const frameColor = t.Union([t.Literal("light"), t.Literal("dark")]);
-const typeface = t.Union(TYPEFACE_IDS.map((id) => t.Literal(id)));
+// Typed as one literal of every ID: an array built by `map` would leave the union's type empty.
+const typeface = t.Union(
+  TYPEFACE_IDS.map((id) => t.Literal(id)) as [ReturnType<typeof t.Literal<TypefaceId>>],
+);
 const coordinateFormat = t.Union([t.Literal("dms"), t.Literal("decimal")]);
 
 const frameSettingsSchema = t.Object(
