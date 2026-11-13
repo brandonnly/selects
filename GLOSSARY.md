@@ -20,3 +20,5 @@
 | **Gallery output** | The clean image and manifest entry written to the bucket for a public gallery. |
 | **Manifest** | `posts.json` in the bucket: one entry per post, read by the gallery and other sites. |
 | **Dry run** | A mode that renders and logs everything a post would do without publishing. |
+| **Fake mode** | The default: Instagram and the bucket are fakes inside Selects, and nothing leaves the install. `INSTAGRAM_API=live` turns it off. |
+| **Unconfirmed post** | A post Instagram was asked to publish without confirming whether it did. Its select stays out of the pool until Instagram or the owner says. |
