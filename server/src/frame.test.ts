@@ -123,3 +123,72 @@ describe("the rendered frame", () => {
     expect(text.right).toBeGreaterThan(1440 - 64 - 8);
   });
 });
+
+describe("placement on the frame", () => {
+  const border = 64;
+  const noText = settings({
+    border,
+    fields: Object.fromEntries(
+      Object.keys(DEFAULT_FRAME_SETTINGS.fields).map((field) => [field, false]),
+    ) as FrameSettings["fields"],
+  });
+
+  async function photoBox(name: FixtureName) {
+    const image = await pixels(await renderer().render(await source(name), noText));
+    expect([image.width, image.height]).toEqual([1440, 1800]);
+    const box = inkBox(image, LIGHT);
+    return { ...box, width: box.right - box.left + 1, height: box.bottom - box.top + 1, image };
+  }
+
+  /** How much a column of the photo varies down: little for sky, a lot across sky and hills. */
+  function columnSpread(image: Pixels, x: number, top: number, bottom: number) {
+    const values: number[] = [];
+    for (let y = top; y <= bottom; y++) {
+      const at = (y * image.width + x) * 3;
+      values.push((image.data[at] ?? 0) + (image.data[at + 1] ?? 0) + (image.data[at + 2] ?? 0));
+    }
+    return Math.max(...values) - Math.min(...values);
+  }
+
+  test("a portrait photo fills the height inside the border, centred across", async () => {
+    const box = await photoBox("portrait"); // 800 × 1000
+
+    expect(box.top).toBe(border);
+    expect(Math.abs(box.left - (1440 - 1 - box.right))).toBeLessThanOrEqual(1);
+    expect(box.left).toBeGreaterThanOrEqual(border);
+    expect(box.width / box.height).toBeCloseTo(0.8, 2);
+    // Room is left under it for the line of metadata.
+    expect(1800 - 1 - box.bottom).toBeGreaterThan(border + 40);
+  });
+
+  test("an orientation tag is applied before the photo is placed", async () => {
+    const box = await photoBox("rotated"); // stored 1000 × 800, shown 800 × 1000
+
+    expect(box.width / box.height).toBeCloseTo(0.8, 2);
+    expect(box.top).toBe(border);
+    // The scene is painted as stored, sky along the top; orientation 6 turns that edge to the
+    // right. Unturned and stretched to fit, the right edge would run from sky into hills.
+    expect(columnSpread(box.image, box.right - 4, box.top + 2, box.bottom - 2)).toBeLessThan(30);
+  });
+
+  test("a square photo fills the width inside the border", async () => {
+    const box = await photoBox("square"); // 900 × 900
+
+    expect(box.left).toBe(border);
+    expect(box.right).toBe(1440 - 1 - border);
+    expect(box.width / box.height).toBeCloseTo(1, 2);
+  });
+
+  test("a landscape photo fills the width and sits slightly above centre", async () => {
+    const box = await photoBox("landscape"); // 1200 × 800
+
+    expect(box.left).toBe(border);
+    expect(box.right).toBe(1440 - 1 - border);
+    expect(box.width / box.height).toBeCloseTo(1.5, 2);
+    const centre = (box.top + box.bottom) / 2;
+    expect(centre).toBeLessThan(900 - 20);
+    expect(centre).toBeGreaterThan(900 - 1800 * 0.1);
+    // The metadata goes in the larger bottom margin.
+    expect(1800 - 1 - box.bottom).toBeGreaterThan(box.top);
+  });
+});
