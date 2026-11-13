@@ -1,0 +1,22 @@
+docs/manifest.md
+  s_9b83d13739745a::t_69079d1fcde2bb 1-108
+server/src/gallery.test.ts
+  s_9b83d13739745a::t_8553d7106525a3 3,293-403
+  s_9b83d13739745a::t_9cf4cd3ef17f55 404-407
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0621f5d4232dba81b955df146fb0128bdcfe2cd8",
+  "prompts": {},
+  "sessions": {
+    "s_9b83d13739745a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4cdfe570-6dba-494f-89b1-2f0cea7e0536",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
