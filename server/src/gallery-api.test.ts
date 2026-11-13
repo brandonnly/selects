@@ -163,6 +163,19 @@ describe("Remove from gallery", () => {
     expect([...bucket.objects.keys()]).toEqual(["posts.json"]);
   });
 
+  test("answers with the post's real state when it was already removed", async () => {
+    await connect();
+    await send("PUT", "/api/gallery", { enabled: true });
+    const { postId } = await posted("portrait");
+    await send("DELETE", `/api/gallery/posts/${postId}`);
+    await app.gallery.settled();
+
+    const again = await send("DELETE", `/api/gallery/posts/${postId}`);
+
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual({ state: "removed" });
+  });
+
   test("answers 404 for a post not in the gallery", async () => {
     expect((await send("DELETE", "/api/gallery/posts/no-such-post")).status).toBe(404);
   });

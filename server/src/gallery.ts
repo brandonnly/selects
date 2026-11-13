@@ -96,7 +96,8 @@ export type GalleryView = {
   posts: GalleryPost[];
 };
 
-export type RemoveResult = "removing" | "not-found" | "other-mode";
+/** Where a removal leaves the post: being removed, or already gone. */
+export type RemoveResult = "removing" | "removed" | "not-found" | "other-mode";
 
 export type GalleryOptions = {
   db: Database;
@@ -575,6 +576,7 @@ export function createGallery(options: GalleryOptions) {
       db.query(
         "UPDATE gallery_posts SET state = 'removing', error = NULL WHERE post_id = ? AND state IN ('writing', 'written')",
       ).run(postId);
+      if (row.state === "removed") return "removed";
       void runDue();
       return "removing";
     },

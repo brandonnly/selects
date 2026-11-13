@@ -20,6 +20,8 @@ export function galleryRoutes({ gallery }: { gallery: Gallery }) {
       switch (gallery.remove(params.id)) {
         case "removing":
           return status(202, { state: "removing" as const });
+        case "removed":
+          return status(200, { state: "removed" as const });
         case "not-found":
           return status(404, notFound);
         case "other-mode":
