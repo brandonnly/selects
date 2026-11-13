@@ -1,4 +1,5 @@
 import sharp, { type OverlayOptions } from "sharp";
+import type { PublishedCapture } from "./capture";
 import type { CaptureData } from "./photo";
 import { createFontSource, type PathCommand, type Typeface, type TypefaceId } from "./typefaces";
 
@@ -125,8 +126,11 @@ const COLORS = {
   dark: { background: "#121212", text: "#c8c8c8" },
 } as const;
 
-/** The select to frame: its original and the capture data to print. */
-export type FrameSource = { path: string; capture: CaptureData };
+/**
+ * The select to frame: its original and the capture data to print, as it may be published, so a
+ * frame can never print a withheld location.
+ */
+export type FrameSource = { path: string; capture: PublishedCapture };
 
 export type RenderOptions = {
   /** Scales the finished frame down to this width, for a preview. Default: full size. */

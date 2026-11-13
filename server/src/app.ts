@@ -3,6 +3,8 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { Elysia, t } from "elysia";
 import rootPackage from "../../package.json";
+import { createCaptures } from "./capture";
+import { captureRoutes } from "./capture-routes";
 import type { Config } from "./config";
 import { databaseStatus } from "./db";
 import {
@@ -19,7 +21,9 @@ import { createSettings } from "./settings";
 import { TYPEFACE_IDS, TYPEFACES, type TypefaceId } from "./typefaces";
 import { serveUi } from "./ui";
 import { MAX_UPLOAD_BYTES, receiveUpload } from "./upload";
+import { createZones } from "./zones";
 
+export type { CaptureEdits, CaptureView, Withheld } from "./capture";
 export type { FrameField, FrameSettings } from "./frame";
 export type { Rejection, ScanResult, Select, UploadResult } from "./library";
 export type { FontOverride } from "./typefaces";
@@ -99,6 +103,8 @@ function createRoutes({
   const uploadDir = join(config.dataDir, "uploads");
   const settings = createSettings(db);
   const renderer = createFrameRenderer({ dataDir: config.dataDir });
+  const zones = createZones(db);
+  const captures = createCaptures({ db, library: lib, zones });
 
   return new Elysia()
     .get("/api/health", ({ status }) => {
@@ -106,7 +112,7 @@ function createRoutes({
       if (database.status === "ok") return { version: rootPackage.version, database };
       return status(503, { version: rootPackage.version, database });
     })
-    .get("/api/selects", () => lib.list())
+    .get("/api/selects", () => lib.list().map(captures.withEdits))
     .get("/api/pool", () => lib.pool())
     .get("/api/selects/:id/original", ({ params, status }) => {
       const original = lib.original(params.id);
@@ -125,9 +131,10 @@ function createRoutes({
     .get(
       "/api/selects/:id/frame",
       async ({ params, query, status, request }) => {
-        const select = lib.get(params.id);
+        // Through `published`, so edits and location privacy apply to every frame.
+        const capture = captures.published(params.id);
         const original = lib.original(params.id);
-        if (select === undefined || original === undefined) return status(404, notFound);
+        if (capture === undefined || original === undefined) return status(404, notFound);
         const { width, fields, ...preview } = query;
         const saved = settings.frame();
         // A setting left out of the query is sent as undefined: the saved one stands.
@@ -139,7 +146,7 @@ function createRoutes({
         };
         let jpeg: Buffer;
         try {
-          jpeg = await renderer.render({ path: original.path, capture: select }, frame, {
+          jpeg = await renderer.render({ path: original.path, capture }, frame, {
             width,
             signal: request.signal,
           });
@@ -155,6 +162,7 @@ function createRoutes({
       },
       { query: framePreviewQuery },
     )
+    .use(captureRoutes({ captures }))
     .get("/api/frame", () => ({
       settings: settings.frame(),
       typefaces: TYPEFACES.map(({ id, name }) => ({ id, name })),

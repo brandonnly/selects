@@ -57,4 +57,27 @@ export const migrations: readonly Migration[] = [
     value TEXT NOT NULL
   );
   `,
+  // 3: edits to a select's capture data, selects whose location is hidden, and privacy zones.
+  `
+  CREATE TABLE capture_edits (
+    select_id TEXT NOT NULL REFERENCES selects (id) ON DELETE CASCADE,
+    field TEXT NOT NULL CHECK (field IN ('camera', 'lens', 'focalLength', 'exposureTime', 'fNumber', 'iso',
+      'coordinates', 'capturedAt')),
+    -- The edited value as JSON. JSON null clears the field.
+    value TEXT NOT NULL,
+    PRIMARY KEY (select_id, field)
+  );
+
+  CREATE TABLE hidden_locations (
+    select_id TEXT PRIMARY KEY REFERENCES selects (id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE privacy_zones (
+    id TEXT PRIMARY KEY,
+    latitude REAL NOT NULL CHECK (latitude BETWEEN -90 AND 90),
+    longitude REAL NOT NULL CHECK (longitude BETWEEN -180 AND 180),
+    radius_metres REAL NOT NULL CHECK (radius_metres > 0),
+    created_at TEXT NOT NULL
+  );
+  `,
 ];
