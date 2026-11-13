@@ -1,0 +1,33 @@
+web/src/lib/capture-edits.test.ts
+  s_05ed5efd81d47f::t_b7364dcc153b88 1-128
+web/src/components/select-details.tsx
+  s_05ed5efd81d47f::t_e5b6cd5eec9b8f 3,6-7,9-15,20,25-26,32-33,65-68,75,87-95,97-100
+  s_05ed5efd81d47f::t_b7d2be2d76f647 101-127,136-200
+  s_05ed5efd81d47f::t_b7bd6bc2a9ef66 201
+web/src/screens/library.tsx
+  s_05ed5efd81d47f::t_5c9dca938fa7ec 261-262,278
+  s_05ed5efd81d47f::t_d8ad7f823749ce 1-2,5,35-36,45-49,53-54,191-198,205-210,242,248-260,263-277
+  s_05ed5efd81d47f::t_d8cad171eb481f 279-281
+web/src/lib/capture-edits.ts
+  s_05ed5efd81d47f::t_671bdd41a509ca 1-84,89-91,94-105,108-147
+  s_05ed5efd81d47f::t_b7d2be2d76f647 85-88,92-93,106-107
+web/src/components/capture-editor.tsx
+  s_05ed5efd81d47f::t_4cc53b5f4fe0d3 1-23,31-35,43-161,164-179,184-256,260-309
+  s_05ed5efd81d47f::t_b7d2be2d76f647 24-30,36-42,162-163,180-183,257-259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fc584d18fc94d04a9099d88989dd5b4b5843b5b5",
+  "prompts": {},
+  "sessions": {
+    "s_05ed5efd81d47f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3c4924a8-afdf-4308-afe2-4dfc73eb2c54",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
