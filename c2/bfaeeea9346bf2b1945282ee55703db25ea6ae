@@ -1,0 +1,31 @@
+server/src/capture-api.test.ts
+  s_c4e8006bf0d88c::t_f46609df8d653b 248,257-268
+server/src/capture.ts
+  s_c4e8006bf0d88c::t_7bf024f48db57f 200-202,207-209
+server/src/zones.test.ts
+  s_c4e8006bf0d88c::t_a1a6a20d51edf1 52-53
+web/src/components/capture-editor.tsx
+  s_c4e8006bf0d88c::t_c9035cff82a068 196-200,255-264,282-284,316
+web/src/components/library-map.tsx
+  s_c4e8006bf0d88c::t_7253fa73b50cda 51-54
+web/src/components/privacy-zones.tsx
+  s_c4e8006bf0d88c::t_f7816b37100937 25-26,31-32,168,200-205,314-316
+web/src/lib/capture-edits.ts
+  s_c4e8006bf0d88c::t_70470c1b84ca9f 53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c2bfaeeea9346bf2b1945282ee55703db25ea6ae",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
