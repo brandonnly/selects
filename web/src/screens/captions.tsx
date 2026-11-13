@@ -51,7 +51,8 @@ export function CaptionsScreen() {
   const [limits, setLimits] = useState<{ characters: number; hashtags: number } | undefined>();
   const [selects, setSelects] = useState<Select[] | undefined>();
   const [previewId, setPreviewId] = useState<string | undefined>();
-  const [shownSet, setShownSet] = useState<string | undefined>();
+  /** The place in the list of the hashtag set the preview shows, so a rename keeps it shown. */
+  const [shownSet, setShownSet] = useState(0);
   const [preview, setPreview] = useState<Preview | undefined>();
   const [loadError, setLoadError] = useState(false);
 
@@ -100,7 +101,8 @@ export function CaptionsScreen() {
 
   const settled = useSettled(templates, SETTLE_MS);
   const setNames = templates?.hashtagSets.map((set) => set.name) ?? [];
-  const showing = shownSet !== undefined && setNames.includes(shownSet) ? shownSet : setNames[0];
+  const showingAt = shownSet < setNames.length ? shownSet : 0;
+  const showing = setNames[showingAt];
 
   // Builds the preview from the settled templates; only the newest answer is shown.
   const previewTurn = useRef(0);
@@ -264,8 +266,8 @@ export function CaptionsScreen() {
                         type="radio"
                         name="shown-set"
                         className="sr-only"
-                        checked={name === showing}
-                        onChange={() => setShownSet(name)}
+                        checked={index === showingAt}
+                        onChange={() => setShownSet(index)}
                       />
                       {name || "Unnamed"}
                     </label>
@@ -292,8 +294,9 @@ function Notes({ check }: { check: Preview["check"] | undefined }) {
   if (check === undefined || (check.problems.length === 0 && check.warnings.length === 0)) return null;
   return (
     <ul className="flex flex-col gap-1 text-sm">
-      {check.problems.map((problem) => (
-        <li key={problem} className="text-destructive">
+      {check.problems.map((problem, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: two problems can read the same.
+        <li key={`${index}-${problem}`} className="text-destructive">
           {problem}
         </li>
       ))}

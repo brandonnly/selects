@@ -88,6 +88,8 @@ describe("caption templates", () => {
 
     expect(saved.status).toBe(200);
     expect((await json(saved)).templates).toEqual(custom);
+    db.close();
+    db = openDatabase(dataDir, migrations);
     app = appFor();
     expect((await json(await request("/api/captions"))).templates).toEqual(custom);
   });
@@ -243,6 +245,8 @@ describe("a select's own caption", () => {
   test("goes with its select when the select is deleted", async () => {
     const id = await addSelect("portrait");
     await send("PUT", `/api/selects/${id}/caption`, { caption: "Mine.", altText: null });
+
+    expect(db.query("SELECT count(*) AS n FROM select_captions").get()).toEqual({ n: 1 });
 
     expect((await request(`/api/selects/${id}`, { method: "DELETE" })).status).toBe(204);
     expect(db.query("SELECT count(*) AS n FROM select_captions").get()).toEqual({ n: 0 });

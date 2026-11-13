@@ -7,9 +7,13 @@ import { problemsIn, useSettled } from "@/lib/autosave";
 /** How long writing must pause before it is measured against Instagram's limits. */
 const SETTLE_MS = 300;
 
+type Built = { caption: string; altText: string; hashtagSet: string | null };
 type Loaded = {
   own: CaptionOverride;
-  caption: { caption: string; altText: string; hashtagSet: string | null };
+  caption: Built;
+  /** What the templates make, whether or not something is written for the select. */
+  fromTemplate: Built;
+  limits: { characters: number; hashtags: number };
 };
 
 type Draft = { caption: string | null; altText: string | null };
@@ -58,8 +62,9 @@ export function SelectCaption({ selectId }: { selectId: string }) {
     const turn = ++checkTurn.current;
     api.captions.check
       .post({
-        caption: settled.caption ?? loaded.caption.caption,
-        altText: settled.altText ?? loaded.caption.altText,
+        // Measured as it would be saved.
+        caption: normal(settled).caption ?? loaded.fromTemplate.caption,
+        altText: normal(settled).altText ?? loaded.fromTemplate.altText,
       })
       .then(({ data }) => {
         if (turn === checkTurn.current && data) setCheck(data);
@@ -103,11 +108,11 @@ export function SelectCaption({ selectId }: { selectId: string }) {
       </h3>
       <OwnText
         label="Caption"
-        fromTemplate={loaded.caption.caption}
+        fromTemplate={loaded.fromTemplate.caption}
         own={draft.caption}
         rows={5}
         note={
-          loaded.own.caption === null && loaded.caption.hashtagSet !== null
+          draft.caption === null && loaded.fromTemplate.hashtagSet !== null
             ? "Hashtag set chosen at random per post."
             : undefined
         }
@@ -118,7 +123,7 @@ export function SelectCaption({ selectId }: { selectId: string }) {
       />
       <OwnText
         label="Alt text"
-        fromTemplate={loaded.caption.altText}
+        fromTemplate={loaded.fromTemplate.altText}
         own={draft.altText}
         rows={3}
         onChange={(altText) => {
@@ -128,8 +133,9 @@ export function SelectCaption({ selectId }: { selectId: string }) {
       />
       {check && (check.problems.length > 0 || check.warnings.length > 0) && (
         <ul className="flex flex-col gap-1 text-sm">
-          {check.problems.map((problem) => (
-            <li key={problem} className="text-destructive">
+          {check.problems.map((problem, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: two problems can read the same.
+            <li key={`${index}-${problem}`} className="text-destructive">
               {problem}
             </li>
           ))}
@@ -140,7 +146,8 @@ export function SelectCaption({ selectId }: { selectId: string }) {
       )}
       {check && (
         <p className="text-xs tabular-nums text-muted-foreground">
-          {check.captionCharacters.toLocaleString()} of 2,200 characters · {check.hashtags} of 30 hashtags
+          {check.captionCharacters.toLocaleString()} of {loaded.limits.characters.toLocaleString()} characters
+          · {check.hashtags} of {loaded.limits.hashtags} hashtags
         </p>
       )}
       <div className="flex flex-wrap items-center gap-3">

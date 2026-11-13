@@ -70,6 +70,16 @@ export function useAutosave<T>({
 
   const settled = useSettled(value, ms);
 
+  // A change not yet sent is not "Saved.".
+  const shown = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const json = value === undefined ? undefined : JSON.stringify(value);
+    if (shown.current !== undefined && json !== shown.current) {
+      setState((current) => (current.state === "saved" ? { state: "idle" } : current));
+    }
+    shown.current = json;
+  }, [value]);
+
   useEffect(() => {
     if (settled === undefined || lastSaved.current === undefined) return;
     const json = JSON.stringify(settled);
@@ -91,7 +101,8 @@ export function useAutosave<T>({
     () => () => {
       const pending = latest.current;
       if (pending === undefined || lastSaved.current === undefined) return;
-      if (JSON.stringify(pending) === lastSaved.current) return;
+      // Compared with what the server confirmed, so a save that failed is tried once more.
+      if (JSON.stringify(pending) === confirmed.current && unanswered.current === 0) return;
       send(pending).catch(() => {});
     },
     [send],
@@ -103,6 +114,8 @@ export function useAutosave<T>({
       const pending = latest.current;
       if (pending === undefined || confirmed.current === undefined) return;
       const json = JSON.stringify(pending);
+      // Sent unless the server is known to hold exactly this: a save still on its way or waiting
+      // its turn may leave it holding something else.
       if (json === confirmed.current && unanswered.current === 0) return;
       fetch(url, {
         method: "PUT",

@@ -99,10 +99,12 @@ export function checkCaption({ caption, altText }: { caption: string; altText: s
  */
 export function checkTemplates(templates: CaptionTemplates): Pick<LimitCheck, "warnings" | "problems"> {
   const problems = [
+    ...(templates.caption.split("{hashtags}").length > 2 ? ["The caption can have {hashtags} once."] : []),
     ...unknownTokens(templates.caption, CAPTION_TOKENS, "caption"),
     ...unknownTokens(templates.altText, ALT_TEXT_TOKENS, "alt text"),
     ...setProblems(templates.hashtagSets),
   ];
+  if (problems.length > 0) return { problems, warnings: [] };
   // The longest caption: every field at its longest, with each set in turn.
   const longest = (["dms", "decimal"] as const)
     .flatMap((coordinateFormat) =>
@@ -235,9 +237,10 @@ function fill(template: string, values: Values, tokens: ReadonlySet<string>): st
 function fillLine(line: string, values: Values, tokens: ReadonlySet<string>): string | undefined {
   const parts = parse(line, values, tokens);
   const present = (part: Part | undefined) => part !== undefined && "field" in part && part.field !== null;
-  // Brackets already take their own words with them, so only fields outside them decide the line.
+  // Brackets already take their own words with them, so a line of nothing but brackets stays.
+  // A line with fields outside brackets goes when no field on it, in brackets or out, is present.
   const bare = parts.filter((part) => "field" in part && !part.bracketed);
-  if (bare.length > 0 && !bare.some(present)) return undefined;
+  if (bare.length > 0 && !parts.some(present)) return undefined;
 
   for (const [i, part] of parts.entries()) {
     if (!("field" in part) || part.field !== null) continue;

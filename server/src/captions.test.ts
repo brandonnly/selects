@@ -91,6 +91,21 @@ describe("buildCaption", () => {
     expect(built.caption).toBe("Shot on Fixture Optics FX-1\n\n#film #35mm");
   });
 
+  test("a field in brackets that is present keeps its line when the fields outside are missing", () => {
+    const built = buildCaption({
+      capture: { ...full, latitude: null, longitude: null },
+      templates: templates({ caption: "{coordinates} [shot on {camera}]" }),
+      coordinateFormat: "dms",
+    });
+    expect(built.caption).toBe("shot on Fixture Optics FX-1");
+  });
+
+  test("hashtags can be in the caption once", () => {
+    expect(checkTemplates(templates({ caption: "{hashtags} {hashtags}" })).problems).toEqual([
+      "The caption can have {hashtags} once.",
+    ]);
+  });
+
   test("a mark that opens a line goes with a missing first field", () => {
     const caption = (capture: CaptureData) =>
       buildCaption({
@@ -227,7 +242,7 @@ describe("checkCaption", () => {
     });
   });
 
-  test("counts characters as UTF-16 units, so an emoji counts twice and Instagram never counts more", () => {
+  test("counts characters as UTF-16 units, as JavaScript does, so an emoji counts twice", () => {
     expect(checkCaption({ caption: "🌊é", altText: "" }).captionCharacters).toBe(3);
   });
 

@@ -1,7 +1,8 @@
 import type { FontOverride, FrameField, FrameSettings, Select } from "@selects/server";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { api } from "@/api";
-import { debounce, previewUrl } from "@/lib/frame";
+import { useAutosave, useSettled } from "@/lib/autosave";
+import { previewUrl } from "@/lib/frame";
 import { cn } from "@/lib/utils";
 import { Screen } from "./screen";
 
@@ -27,48 +28,13 @@ type Options = {
   maxBorder: number;
 };
 
-type SaveState = "idle" | "saving" | "saved" | "failed";
-
-/** `value`, once it has stopped changing for `ms`. */
-function useSettled<T>(value: T, ms: number): T {
-  const [settled, setSettled] = useState(value);
-  const update = useMemo(() => debounce(setSettled, ms), [ms]);
-  useEffect(() => update(value), [value, update]);
-  useEffect(() => update.cancel, [update]);
-  return settled;
-}
-
 export function FrameScreen() {
   const [settings, setSettings] = useState<FrameSettings | undefined>();
   const [options, setOptions] = useState<Options | undefined>();
   const [selects, setSelects] = useState<Select[] | undefined>();
   const [previewId, setPreviewId] = useState<string | undefined>();
   const [loadError, setLoadError] = useState(false);
-  const [save, setSave] = useState<SaveState>("idle");
-  /** The settings the server holds, as JSON: what was loaded or last sent. */
-  const lastSaved = useRef<string | undefined>(undefined);
-  const latest = useRef<FrameSettings | undefined>(undefined);
-  latest.current = settings;
-  /** Saves go one after another, so an earlier one can never land after a later one. */
-  const saving = useRef<Promise<unknown>>(Promise.resolve());
-  /** The settings the server has confirmed holding, as JSON. */
-  const confirmed = useRef<string | undefined>(undefined);
-  /** Saves sent or waiting their turn whose answer has not come back. */
-  const unanswered = useRef(0);
-  const send = useCallback((next: FrameSettings) => {
-    unanswered.current++;
-    const sent = saving.current
-      .then(() => api.frame.put(next))
-      .then((result) => {
-        if (!result.error) confirmed.current = JSON.stringify(next);
-        return result;
-      })
-      .finally(() => {
-        unanswered.current--;
-      });
-    saving.current = sent.catch(() => {});
-    return sent;
-  }, []);
+  const [loaded, setLoaded] = useState<FrameSettings | undefined>();
 
   useEffect(() => {
     let live = true;
@@ -77,8 +43,7 @@ export function FrameScreen() {
         if (!live) return;
         if (frame.data) {
           const { settings: saved, ...rest } = frame.data;
-          lastSaved.current = JSON.stringify(saved);
-          confirmed.current = lastSaved.current;
+          setLoaded(saved);
           setSettings(saved);
           setOptions(rest);
         }
@@ -97,60 +62,13 @@ export function FrameScreen() {
   }, []);
 
   const settled = useSettled(settings, SETTLE_MS);
-
-  // Saves settled settings that differ from what the server holds.
-  useEffect(() => {
-    if (settled === undefined || lastSaved.current === undefined) return;
-    const json = JSON.stringify(settled);
-    if (json === lastSaved.current) return;
-    lastSaved.current = json;
-    setSave("saving");
-    send(settled)
-      .then(({ error }) => {
-        if (lastSaved.current === json) setSave(error ? "failed" : "saved");
-      })
-      .catch(() => {
-        if (lastSaved.current === json) setSave("failed");
-      });
-  }, [settled, send]);
-
-  // Leaving the screen before a change has settled still saves it.
-  useEffect(
-    () => () => {
-      const pending = latest.current;
-      if (pending === undefined || lastSaved.current === undefined) return;
-      if (JSON.stringify(pending) === lastSaved.current) return;
-      send(pending).catch(() => {});
-    },
-    [send],
-  );
-
-  // Closing or reloading the tab runs no cleanup, so an unsaved change is sent as the page goes.
-  useEffect(() => {
-    const flush = () => {
-      const pending = latest.current;
-      if (pending === undefined || confirmed.current === undefined) return;
-      const json = JSON.stringify(pending);
-      // Sent unless the server is known to hold exactly this: a save still on its way or waiting
-      // its turn may leave it holding something else.
-      if (json === confirmed.current && unanswered.current === 0) return;
-      fetch("/api/frame", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: json,
-        keepalive: true,
-      })
-        .then((response) => {
-          // Only reached when the page lived on, as it does in the back-forward cache.
-          if (!response.ok) return;
-          lastSaved.current = json;
-          confirmed.current = json;
-        })
-        .catch(() => {});
-    };
-    window.addEventListener("pagehide", flush);
-    return () => window.removeEventListener("pagehide", flush);
-  }, []);
+  const save = useAutosave({
+    value: settings,
+    loaded,
+    save: (next) => api.frame.put(next),
+    url: "/api/frame",
+    ms: SETTLE_MS,
+  }).state;
 
   const change = (update: Partial<FrameSettings>) =>
     setSettings((current) => (current === undefined ? current : { ...current, ...update }));
