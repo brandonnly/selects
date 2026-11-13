@@ -1,0 +1,23 @@
+docs/adr/0006-publishing-safety.md
+  s_966d394503842b::t_a53ef08185066d 16-32,35-43,48-56,61-62,65-69
+.env.example
+  s_966d394503842b::t_6b8cf7e3fa283c 16-18,21-23
+README.md
+  s_966d394503842b::t_70af755fd90804 73-78,101-105,107-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d322449c636bbb661009913d1710496b444bbf9a",
+  "prompts": {},
+  "sessions": {
+    "s_966d394503842b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "251f9d0d-2080-4854-a237-295adb8fa666",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
