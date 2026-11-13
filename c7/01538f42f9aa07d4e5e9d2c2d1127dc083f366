@@ -1,0 +1,27 @@
+server/src/app.ts
+  s_c4e8006bf0d88c::t_f0a583b21bf572 142
+server/src/instagram-account.test.ts
+  s_c4e8006bf0d88c::t_c72d51b5ec8dba 198-217
+server/src/instagram-account.ts
+  s_c4e8006bf0d88c::t_3a44c458a08164 3,49,54-58,60-61,65,98,101,103,172,184
+server/src/migrations.ts
+  s_c4e8006bf0d88c::t_f51d9ec4a3d5fd 221-222,227-240
+server/src/publisher.test.ts
+  s_c4e8006bf0d88c::t_a56431499adb4e 85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c701538f42f9aa07d4e5e9d2c2d1127dc083f366",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
