@@ -136,7 +136,8 @@ posted or whose post fails for good, and how a restart is kept from posting a sl
   retry, an edit made while it retried, a post marked as not posted by hand) holds nothing: the
   next slot tries that select again.
 - An edit to a slot's days or spread after its time has passed, while it waits on its spread,
-  leaves that day's post as drawn. Only moving its time to one already past drops that day.
+  leaves that day's post as drawn, as long as that day is still one of its days. Moving its
+  time to one already past, or taking that day off its days, drops that day.
 - With thousands of selects, a plan stays quick: at most 50 checks, and one pass of the pick
   rules per step. A select fixed after it was listed as needing attention may wait a few plans
   before it is checked again and picked.

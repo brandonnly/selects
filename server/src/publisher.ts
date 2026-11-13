@@ -748,7 +748,7 @@ export function createPublisher(options: PublisherOptions) {
       const status = await api.containerStatus(token, containerId);
       if (status === "FINISHED") return;
       if (status !== "IN_PROGRESS")
-        throw new PostFailure(`Instagram could not process the image (${status}).`, true, false, true);
+        throw new PostFailure(`Instagram could not process the image (${status}).`, true);
       if (clock.now() - started + intervalMs > limitMs) break;
       await clock.sleep(intervalMs);
     }
