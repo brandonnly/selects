@@ -315,21 +315,31 @@ export function createGallery(options: GalleryOptions) {
     return { body, hash: createHash("sha256").update(body).digest("hex") };
   }
 
+  /**
+   * Whether a post was published with coordinates that may no longer be shown: the select is
+   * gone, its location is withheld now, or the place it was published with is in a privacy zone
+   * added since. Its entry then lists no location and no framed image, which prints them.
+   */
+  function withheld(row: Row, currentZones = zones.list()): boolean {
+    const published = JSON.parse(row.capture) as PublishedCapture;
+    const { latitude, longitude } = published;
+    if (latitude === null || longitude === null) return false;
+    const selectId = selectOf(row.post_id);
+    const now = selectId === undefined ? undefined : captures.published(selectId);
+    return (
+      now === undefined ||
+      now.latitude === null ||
+      now.longitude === null ||
+      currentZones.some((zone) => insideZone({ latitude, longitude }, zone))
+    );
+  }
+
   function entry(row: Listed, currentZones: ReturnType<Zones["list"]>): ManifestEntry {
     // As `published(id)` gave it when the post was published.
     const published = JSON.parse(row.capture) as PublishedCapture;
-    const selectId = selectOf(row.post_id);
-    const now = selectId === undefined ? undefined : captures.published(selectId);
     const { latitude, longitude } = published;
-    // Shown only while it still may be: the select is there, its location is not withheld now,
-    // and the place it was published with is in no privacy zone added since.
-    const shown =
-      latitude !== null &&
-      longitude !== null &&
-      now !== undefined &&
-      now.latitude !== null &&
-      now.longitude !== null &&
-      !currentZones.some((zone) => insideZone({ latitude, longitude }, zone));
+    const shown = latitude !== null && longitude !== null && !withheld(row, currentZones);
+    const hidden = latitude !== null && longitude !== null && !shown;
     const text = (value: string) => (shown ? value : withoutCoordinates(value, published));
     return {
       id: row.post_id,
@@ -340,7 +350,9 @@ export function createGallery(options: GalleryOptions) {
       images: {
         clean: { url: row.image_url ?? "", width: row.image_width ?? 0, height: row.image_height ?? 0 },
         framed:
-          row.frame_url === null ? null : { url: row.frame_url, width: FRAME_WIDTH, height: FRAME_HEIGHT },
+          row.frame_url === null || hidden
+            ? null
+            : { url: row.frame_url, width: FRAME_WIDTH, height: FRAME_HEIGHT },
       },
       capture: {
         camera: published.camera,
@@ -371,6 +383,15 @@ export function createGallery(options: GalleryOptions) {
       )
       .all(mode)
       .map((row) => row.post_id);
+    // And framed images that print coordinates withheld since: out of it, so they can go too.
+    const currentZones = zones.list();
+    const framesWithheld = db
+      .query<Row, [InstagramMode]>(
+        "SELECT * FROM gallery_posts WHERE mode = ? AND state = 'written' AND frame_key IS NOT NULL",
+      )
+      .all(mode)
+      .filter((row) => withheld(row, currentZones))
+      .map((row) => ({ postId: row.post_id, key: row.frame_key }));
     const { body, hash } = build();
     if (hash !== manifest.hash) {
       if (manifest.nextAt > clock.now()) return;
@@ -391,6 +412,29 @@ export function createGallery(options: GalleryOptions) {
       }
     }
     for (const postId of removing) await finishRemoving(bucket, postId);
+    for (const { postId, key } of framesWithheld) await dropFrame(bucket, postId, key);
+  }
+
+  /** Deletes a framed image that left the manifest, through the cleanup record. Never re-rendered. */
+  async function dropFrame(bucket: Bucket, postId: string, key: string | null): Promise<void> {
+    if (key === null) return;
+    const dropped = db
+      .transaction(() => {
+        const changed = db
+          .query(
+            "UPDATE gallery_posts SET frame_key = NULL, frame_url = NULL WHERE post_id = ? AND frame_key = ?",
+          )
+          .run(postId, key).changes;
+        if (changed === 0) return false;
+        db.query("INSERT OR IGNORE INTO bucket_cleanup (key, added_at, mode) VALUES (?, ?, ?)").run(
+          key,
+          clock.now(),
+          mode,
+        );
+        return true;
+      })
+      .immediate();
+    if (dropped) await deleteKeys(bucket, [key]);
   }
 
   /** Moves a removed post's images to the cleanup record, and deletes them. */
@@ -418,6 +462,11 @@ export function createGallery(options: GalleryOptions) {
         mode,
       );
     }
+    await deleteKeys(bucket, keys);
+  }
+
+  /** Deletes objects already in the cleanup record, and takes each off it once it is gone. */
+  async function deleteKeys(bucket: Bucket, keys: string[]): Promise<void> {
     for (const key of keys) {
       try {
         await bucket.delete(key);

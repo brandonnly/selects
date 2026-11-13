@@ -371,6 +371,9 @@ describe("the manifest", () => {
     const id = await addFile(large);
     await postNow(parts, id);
 
+    const frame = keyOf(manifest()?.posts[0]?.images.framed?.url ?? "");
+    expect(fakeBucket.objects.has(frame)).toBe(true);
+
     parts.captures.save(id, { edits: {}, locationHidden: true });
     await parts.gallery.runDue();
 
@@ -379,18 +382,54 @@ describe("the manifest", () => {
     expect(entry?.caption).toBe("Fixture Optics FX-3 · Fixture 85mm F1.8\n\n#film");
     const text = new TextDecoder().decode(fakeBucket.objects.get("posts.json")?.bytes);
     for (const printed of ["20.5", "120.75", "20°30'"]) expect(text).not.toContain(printed);
+    // The framed image prints the coordinates: it leaves the manifest, then the bucket.
+    expect(entry?.images.framed).toBeNull();
+    expect(fakeBucket.objects.has(frame)).toBe(false);
+    expect(fakeBucket.objects.has(keyOf(entry?.images.clean.url ?? ""))).toBe(true);
   });
 
   test("is rewritten without a location inside a privacy zone added after the post", async () => {
     const parts = setup();
     await connect(parts.account);
     await postNow(parts, await addFile(large));
+    const frame = keyOf(manifest()?.posts[0]?.images.framed?.url ?? "");
 
     parts.zones.add(zoneAroundLarge);
     await parts.gallery.runDue();
 
     expect(manifest()?.posts[0]?.location).toBeNull();
     expect(manifest()?.posts[0]?.caption).not.toContain("20°30'");
+    expect(manifest()?.posts[0]?.images.framed).toBeNull();
+    expect(fakeBucket.objects.has(frame)).toBe(false);
+  });
+
+  test("is rewritten without a location, or the framed image, once the select is deleted", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const id = await addFile(large);
+    await postNow(parts, id);
+    const frame = keyOf(manifest()?.posts[0]?.images.framed?.url ?? "");
+
+    library.remove(id);
+    await parts.gallery.runDue();
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry?.location).toBeNull();
+    expect(entry?.caption).not.toContain("20°30'");
+    expect(entry?.images.framed).toBeNull();
+    expect(fakeBucket.objects.has(frame)).toBe(false);
+  });
+
+  test("keeps the framed image of a post that had no coordinates to withhold", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    await postNow(parts, await addSelect("noExif"));
+
+    await parts.gallery.runDue();
+
+    const framed = manifest()?.posts[0]?.images.framed;
+    expect(framed).not.toBeNull();
+    expect(fakeBucket.objects.has(keyOf(framed?.url ?? ""))).toBe(true);
   });
 
   test("keeps the capture data a post was published with, whatever is edited later", async () => {
