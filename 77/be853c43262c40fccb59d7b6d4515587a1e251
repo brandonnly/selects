@@ -1,0 +1,23 @@
+server/src/backup.ts
+  s_c4e8006bf0d88c::t_c874716d5e5a56 81-87
+server/src/publisher.test.ts
+  s_c4e8006bf0d88c::t_b9947d30e1562c 867-871
+server/src/publisher.ts
+  s_c4e8006bf0d88c::t_ecab4fb250e764 1025,1028-1029
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77be853c43262c40fccb59d7b6d4515587a1e251",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
