@@ -219,6 +219,7 @@ type Part =
 
 /** Brackets and quotes that close around a field and go with it when it is missing. */
 const PAIRS: Record<string, string> = { "(": ")", "“": "”", '"': '"', "‘": "’", "'": "'" };
+const CLOSERS = new Set(Object.values(PAIRS));
 
 /**
  * Fills a template. A missing field leaves nothing behind: the separator beside it goes with
@@ -255,9 +256,13 @@ function fillLine(line: string, values: Values, tokens: ReadonlySet<string>): st
       before.text = before.text.slice(0, -1);
       after.text = after.text.slice(close.length);
     }
-    if (after !== undefined && isSeparator(after.text) && parts.slice(i + 1).some(present)) after.text = "";
-    else if (before !== undefined && isSeparator(before.text) && parts.slice(0, i).some(present)) {
-      before.text = "";
+    // The separator goes, but a bracket or quote that wraps the present field beside it stays.
+    if (after !== undefined && isSeparator(after.text) && parts.slice(i + 1).some(present)) {
+      const opens = after.text.at(-1) ?? "";
+      after.text = opens in PAIRS ? opens : "";
+    } else if (before !== undefined && isSeparator(before.text) && parts.slice(0, i).some(present)) {
+      const closes = before.text.at(0) ?? "";
+      before.text = CLOSERS.has(closes) ? closes : "";
     }
     // A mark that opens the line before its first field, such as a pin before coordinates, goes too.
     if (i === 1 && before !== undefined && isSeparator(before.text)) before.text = "";

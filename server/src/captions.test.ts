@@ -117,6 +117,17 @@ describe("buildCaption", () => {
     expect(south.caption).toBe("-35.1250, 165.7500");
   });
 
+  test("a bracket or quote around a present field stays when the field beside it is missing", () => {
+    const caption = (template: string, capture: PublishedCapture) =>
+      buildCaption({ capture, templates: templates({ caption: template }), coordinateFormat: "dms" }).caption;
+
+    expect(caption("Shot on {camera} ({lens})", { ...full, camera: null })).toBe(
+      "Shot on (Fixture 35mm F1.4)",
+    );
+    expect(caption('{camera} · "{lens}"', { ...full, camera: null })).toBe('"Fixture 35mm F1.4"');
+    expect(caption("({camera}) · {lens}", { ...full, lens: null })).toBe("(Fixture Optics FX-1)");
+  });
+
   test("hashtags can be in the caption once", () => {
     expect(checkTemplates(templates({ caption: "{hashtags} {hashtags}" })).problems).toEqual([
       "The caption can have {hashtags} once.",
