@@ -91,6 +91,18 @@ describe("buildCaption", () => {
     expect(built.caption).toBe("Shot on Fixture Optics FX-1\n\n#film #35mm");
   });
 
+  test("a mark that opens a line goes with a missing first field", () => {
+    const caption = (capture: CaptureData) =>
+      buildCaption({
+        capture,
+        templates: templates({ caption: "\u{1f4cd} {coordinates} · {camera}" }),
+        coordinateFormat: "dms",
+      }).caption;
+
+    expect(caption({ ...full, latitude: null, longitude: null })).toBe("Fixture Optics FX-1");
+    expect(caption(full)).toStartWith("\u{1f4cd} 10");
+  });
+
   test("words in brackets are left out with a field they hold that is missing", () => {
     const build = (capture: CaptureData) =>
       buildCaption({ capture, templates: templates(), coordinateFormat: "dms" }).altText;
@@ -263,7 +275,7 @@ describe("checkTemplates", () => {
       templates({ caption: `${"a".repeat(2110)} {camera} {lens}`, hashtagSets: [] }),
     );
     expect(over.problems).toEqual([
-      "The caption can be up to 2,208 characters, over Instagram's limit of 2,200.",
+      "The caption can be up to 2,304 characters, over Instagram's limit of 2,200.",
     ]);
   });
 

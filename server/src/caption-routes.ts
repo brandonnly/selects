@@ -128,13 +128,9 @@ export function captionRoutes({ store, coordinateFormat, capture }: CaptionRoute
         const data = capture(params.id);
         if (data === undefined) return status(404, notFound);
         const own: CaptionOverride = { caption: written(body.caption), altText: written(body.altText) };
-        const built = buildCaption({
-          capture: data,
-          templates: store.templates(),
-          coordinateFormat: coordinateFormat(),
-          override: own,
-        });
-        const check = checkCaption(built);
+        // Only what this request writes is measured: text from the template is not the writer's
+        // to fix here, and must not stop an own text being saved or cleared.
+        const check = checkCaption({ caption: own.caption ?? "", altText: own.altText ?? "" });
         if (check.problems.length > 0) return status(422, { problems: check.problems });
         store.setOverride(params.id, own);
         return captionFor(params.id, data);

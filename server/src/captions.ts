@@ -69,9 +69,9 @@ const NEAR = 0.9;
 
 /**
  * How a caption and alt text measure against Instagram's limits. Characters are UTF-16 code
- * units, as JavaScript counts them: Meta does not say how it counts, and no other way counts
- * more, so text within this count is within Instagram's. Every `#` or `@` followed by a letter,
- * digit or underscore counts as a hashtag or an @ tag.
+ * units, as JavaScript counts them: Meta does not say how it counts, and this never counts
+ * fewer than code points or graphemes. Every `#` or `@` followed by a letter, digit or
+ * underscore counts as a hashtag or an @ tag.
  */
 export type LimitCheck = {
   captionCharacters: number;
@@ -91,7 +91,12 @@ export function checkCaption({ caption, altText }: { caption: string; altText: s
   return judge(count(caption, altText), "is");
 }
 
-/** A template's syntax problems, and how its longest caption measures against Instagram's limits. */
+/**
+ * A template's syntax problems, and how a long caption from it measures against Instagram's
+ * limits. This is an estimate that catches a template too long for ordinary photos: a select's
+ * own capture data can still carry more, so whatever publishes a post measures the caption it
+ * built with `checkCaption` before sending it.
+ */
 export function checkTemplates(templates: CaptionTemplates): Pick<LimitCheck, "warnings" | "problems"> {
   const problems = [
     ...unknownTokens(templates.caption, CAPTION_TOKENS, "caption"),
@@ -149,12 +154,13 @@ function judge(counts: Counts, verb: "is" | "can be"): LimitCheck {
 
 /** Every field at its longest: names as long as a frame prints them, numbers at their widest. */
 const LONGEST: CaptureData = {
-  camera: "W".repeat(48),
-  lens: "W".repeat(48),
+  // Two UTF-16 units to the character, as a name in emoji or rare script would be.
+  camera: "\u{1d54e}".repeat(48),
+  lens: "\u{1d54e}".repeat(48),
   focalLength: 1234.5,
-  exposureTime: 1 / 32000,
+  exposureTime: 1 / 1_000_000,
   fNumber: 22.5,
-  iso: 409600,
+  iso: 3_280_000,
   latitude: -89.5,
   longitude: -179.5,
   capturedAt: "2024-12-31T23:59:59",
@@ -246,6 +252,8 @@ function fillLine(line: string, values: Values, tokens: ReadonlySet<string>): st
     else if (before !== undefined && isSeparator(before.text) && parts.slice(0, i).some(present)) {
       before.text = "";
     }
+    // A mark that opens the line before its first field, such as a pin before coordinates, goes too.
+    if (i === 1 && before !== undefined && isSeparator(before.text)) before.text = "";
   }
   return parts
     .map((part) => ("field" in part ? (part.field ?? "") : part.text))

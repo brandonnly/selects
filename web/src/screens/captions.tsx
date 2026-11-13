@@ -38,7 +38,10 @@ let nextSetKey = 0;
 const toTemplates = (draft: Draft): CaptionTemplates => ({
   caption: draft.caption,
   altText: draft.altText,
-  hashtagSets: draft.sets.map((set) => ({ name: set.name.trim(), tags: parseTags(set.tagsText) })),
+  // A set just added, with nothing in it yet, is not sent: it would hold back every other edit.
+  hashtagSets: draft.sets
+    .filter((set) => set.name.trim() !== "" || set.tagsText.trim() !== "")
+    .map((set) => ({ name: set.name.trim(), tags: parseTags(set.tagsText) })),
 });
 
 export function CaptionsScreen() {

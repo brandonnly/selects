@@ -48,6 +48,8 @@ export function SelectCaption({ selectId }: { selectId: string }) {
     };
   }, [selectId]);
 
+  const latestDraft = useRef(draft);
+
   // Measures what is being written, so a warning shows before a limit is reached.
   const settled = useSettled(draft, SETTLE_MS);
   const checkTurn = useRef(0);
@@ -71,14 +73,21 @@ export function SelectCaption({ selectId }: { selectId: string }) {
   const changed = JSON.stringify(normal(draft)) !== JSON.stringify(loaded.own);
   const blocked = (check?.problems.length ?? 0) > 0;
 
+  latestDraft.current = draft;
   const save = async () => {
     setState({ state: "saving" });
+    const sent = draft;
     try {
-      const { data, error } = await api.selects({ id: selectId }).caption.put(normal(draft));
+      const { data, error } = await api.selects({ id: selectId }).caption.put(normal(sent));
       if (data) {
         setLoaded(data);
-        setDraft(data.own);
-        setState({ state: "saved" });
+        // Words typed while the save was on its way stay; they are simply not saved yet.
+        if (latestDraft.current === sent) {
+          setDraft(data.own);
+          setState({ state: "saved" });
+        } else {
+          setState({ state: "idle" });
+        }
       } else {
         setState({ state: "failed", problems: problemsIn(error?.value) });
       }
@@ -183,7 +192,12 @@ function OwnText({
             {own === null ? " · from the template" : " · written for this photo"}
           </span>
         </label>
-        <Button variant="ghost" size="sm" onClick={() => onChange(own === null ? fromTemplate : null)}>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`${label}: ${own === null ? "write its own" : "use the template"}`}
+          onClick={() => onChange(own === null ? fromTemplate : null)}
+        >
           {own === null ? "Write its own" : "Use the template"}
         </Button>
       </div>
