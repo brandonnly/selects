@@ -378,6 +378,8 @@ function NextUp({ view, onChange }: { view: ScheduleView; onChange: (view: Sched
         const key = run.id;
         const skipped = run.state === "skipped";
         const time = slotTime(run.dueAt, view.schedule.timeZone);
+        // Names the slot for a screen reader: its time, and its next up for two slots at one time.
+        const slot = `the slot at ${time}${run.fileName === null ? "" : `, ${run.fileName}`}`;
         return (
           <li
             key={key}
@@ -443,7 +445,7 @@ function NextUp({ view, onChange }: { view: ScheduleView; onChange: (view: Sched
                       variant="outline"
                       size="sm"
                       disabled={busy === key || run.selectId === null}
-                      aria-label={`Swap next up for the slot at ${time}`}
+                      aria-label={`Swap next up for ${slot}`}
                       onClick={() => act(run, "swap")}
                     >
                       <Shuffle aria-hidden className="size-4" />
@@ -453,7 +455,7 @@ function NextUp({ view, onChange }: { view: ScheduleView; onChange: (view: Sched
                       variant="outline"
                       size="sm"
                       disabled={busy === key}
-                      aria-label={`Skip the slot at ${time}`}
+                      aria-label={`Skip ${slot}`}
                       onClick={() => act(run, "skip")}
                     >
                       <SkipForward aria-hidden className="size-4" />

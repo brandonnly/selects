@@ -174,7 +174,7 @@ export function ScheduleEditor({
                   ? `Random spread: ${errors.spread}`
                   : spread > 0
                     ? `Posts at a random time up to ${minutes(spread)} after ${slot.time || "its time"}.`
-                    : `Posts at its time. A spread of up to ${LIMITS.spreadMinutes} posts up to that many minutes later, at random.`}
+                    : `Posts at its time. With a spread (at most ${LIMITS.spreadMinutes} minutes), it posts up to that many minutes later, at random.`}
               </p>
             </li>
           );
