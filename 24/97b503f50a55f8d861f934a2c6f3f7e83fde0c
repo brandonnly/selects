@@ -1,0 +1,34 @@
+server/src/scheduler.test.ts
+  s_bf104c96fca8ce::t_b0a061c4116231 139,141-145
+  s_bf104c96fca8ce::t_eaea2a2c3e1b10 860,865,1016-1088
+  s_bf104c96fca8ce::t_61e390d6fb6432 272,279,283,725,729,736,741-742,859,861,876,883,887,896,900,903,907,911,913,1090,1161-1163,1167-1287,1289-1294,1296
+  s_bf104c96fca8ce::t_031540cf085644 21,140,270-271,273-278,280-282,284,722-724,726-728,730-735,737-740,743-744,862-864,866-875,877-882,884-886,888-895,897-899,901-902,904-906,908-910,912,914-917,1089,1107,1134-1138,1159,1288,1295
+server/src/migrations.ts
+  s_bf104c96fca8ce::t_fa536a6fc34ae8 304-313
+  s_bf104c96fca8ce::t_9bdbaf87e72f70 295
+server/src/schedule-api.test.ts
+  s_bf104c96fca8ce::t_0fd449f70bbcd5 231-254
+  s_bf104c96fca8ce::t_a407a36d72ea25 143-148
+server/src/schedule-routes.ts
+  s_bf104c96fca8ce::t_d29d326673c271 92-120,122-151
+server/src/scheduler.ts
+  s_bf104c96fca8ce::t_c977f33910dd4f 42-43,56,84-94,135-154,198-199,274-318,367-386,390-394,396-407,410-412,415,432-436,441-442,445-456,524-531,533,543-544,548,554,558-560,563-579,582-592,606,668-670,674,677-678,782-784,883-886,888-910
+web/src/lib/schedule.ts
+  s_bf104c96fca8ce::t_817d8d6ef554b3 205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2497b503f50a55f8d861f934a2c6f3f7e83fde0c",
+  "prompts": {},
+  "sessions": {
+    "s_bf104c96fca8ce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d026298d-4322-4643-83f2-8666dd34f3f5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
