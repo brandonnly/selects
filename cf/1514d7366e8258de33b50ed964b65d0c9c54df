@@ -1,0 +1,23 @@
+server/src/pick.ts
+  s_3e2ab1cb86d96d::t_7c0bc70b62e568 63-66,68-78,107,109,114-115
+server/src/scheduler.test.ts
+  s_3e2ab1cb86d96d::t_92882deaf5dd74 252-356,477-479,482,484,802-835
+server/src/scheduler.ts
+  s_3e2ab1cb86d96d::t_b67e4769077b53 5,242-247,249,253-272,274-315,317,374-375,382-383,406,447,449,531,539-543,551,567,617-620,622,626-628,630-637,639,643,650,654,658-662
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cf1514d7366e8258de33b50ed964b65d0c9c54df",
+  "prompts": {},
+  "sessions": {
+    "s_3e2ab1cb86d96d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bd2b11a-6ff6-449b-947e-52aec407382d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
