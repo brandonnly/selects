@@ -192,3 +192,25 @@ describe("placement on the frame", () => {
     expect(1800 - 1 - box.bottom).toBeGreaterThan(box.top);
   });
 });
+
+describe("color", () => {
+  test("a wide-gamut original keeps its colors after conversion to sRGB", async () => {
+    // The same scene, stored once in sRGB and once in Display P3.
+    const srgb = await pixels(await renderer().render(await source("landscape"), settings()));
+    const p3 = await pixels(await renderer().render(await source("wideGamut"), settings()));
+
+    const box = inkBox(srgb, LIGHT, { top: 0, bottom: 1200 });
+    let diff = 0;
+    let count = 0;
+    for (let y = box.top + 2; y < box.bottom - 2; y++) {
+      for (let x = box.left + 2; x < box.right - 2; x++) {
+        const at = (y * srgb.width + x) * 3;
+        for (let c = 0; c < 3; c++) diff += Math.abs((srgb.data[at + c] ?? 0) - (p3.data[at + c] ?? 0));
+        count += 3;
+      }
+    }
+    // Read as if it were sRGB, the P3 file is off by about 5 on average (see the fixture test);
+    // converted, what is left is rounding and JPEG noise.
+    expect(diff / count).toBeLessThan(2);
+  });
+});
