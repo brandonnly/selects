@@ -1,0 +1,25 @@
+docs/adr/0008-gallery-output.md
+  s_c4e8006bf0d88c::t_92b53436d16d5e 51,81-86
+docs/manifest.md
+  s_c4e8006bf0d88c::t_52655bcb643ea1 97-99
+server/src/gallery.test.ts
+  s_c4e8006bf0d88c::t_14be193c810e38 774-802
+server/src/gallery.ts
+  s_c4e8006bf0d88c::t_c9cdbacc5bc2ef 176-196,349,362,392,405,412,436-441,462,625-626
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "56b165723441bc99fb743258ed29365974300b94",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
