@@ -1,5 +1,5 @@
+import type { PublishedCapture } from "./capture";
 import { FRAME_FIELDS, type FrameField, type FrameSettings, fieldValues } from "./frame";
-import type { CaptureData } from "./photo";
 
 /** A named list of hashtags. One set is chosen at random for each post. */
 export type HashtagSet = { name: string; tags: string[] };
@@ -15,7 +15,8 @@ export const DEFAULT_CAPTION_TEMPLATES: CaptionTemplates = {
 
 export type CaptionInput = {
   /** The capture data as it may be published: coordinates are already null when hidden. */
-  capture: CaptureData;
+  /** As `published` gives it: coordinates are already gone when they are withheld. */
+  capture: PublishedCapture;
   templates: CaptionTemplates;
   coordinateFormat: FrameSettings["coordinateFormat"];
   /** A caption or alt text written for this select, used as written in place of the template. */
@@ -155,7 +156,7 @@ function judge(counts: Counts, verb: "is" | "can be"): LimitCheck {
 }
 
 /** Every field at its longest: names as long as a frame prints them, numbers at their widest. */
-const LONGEST: CaptureData = {
+const LONGEST = {
   // Two UTF-16 units to the character, as a name in emoji or rare script would be.
   camera: "\u{1d54e}".repeat(48),
   lens: "\u{1d54e}".repeat(48),
@@ -166,7 +167,7 @@ const LONGEST: CaptureData = {
   latitude: -89.5,
   longitude: -179.5,
   capturedAt: "2024-12-31T23:59:59",
-};
+} as PublishedCapture;
 
 function unknownTokens(template: string, tokens: ReadonlySet<string>, where: string): string[] {
   return [...template.matchAll(TOKEN)]

@@ -1,4 +1,4 @@
-# ADR 0004: Caption templates leave nothing behind a missing field
+# ADR 0005: Caption templates leave nothing behind a missing field
 
 ## Status
 

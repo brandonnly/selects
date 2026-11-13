@@ -22,7 +22,14 @@ type Draft = { caption: string | null; altText: string | null };
  * A select's caption and alt text: the templates' unless one is written for it here. What is
  * written replaces the template for this select only.
  */
-export function SelectCaption({ selectId }: { selectId: string }) {
+export function SelectCaption({
+  selectId,
+  refresh = 0,
+}: {
+  selectId: string;
+  /** Changes when the select's capture data does, so the template's text is built again. */
+  refresh?: number;
+}) {
   const [loaded, setLoaded] = useState<Loaded | undefined>();
   const [draft, setDraft] = useState<Draft>({ caption: null, altText: null });
   const [state, setState] = useState<
@@ -33,6 +40,8 @@ export function SelectCaption({ selectId }: { selectId: string }) {
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
+  const first = useRef(true);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh is the signal to load again.
   useEffect(() => {
     let live = true;
     api
@@ -42,7 +51,9 @@ export function SelectCaption({ selectId }: { selectId: string }) {
         if (!live) return;
         if (data) {
           setLoaded(data);
-          setDraft(data.own);
+          // What is being written stays when only the capture data changed.
+          if (first.current) setDraft(data.own);
+          first.current = false;
         }
         setLoadError(error !== null);
       })
@@ -52,7 +63,7 @@ export function SelectCaption({ selectId }: { selectId: string }) {
     return () => {
       live = false;
     };
-  }, [selectId]);
+  }, [selectId, refresh]);
 
   const latestDraft = useRef(draft);
 

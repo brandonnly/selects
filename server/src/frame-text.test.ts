@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import type { PublishedCapture } from "./capture";
 import { DEFAULT_FRAME_SETTINGS, type FrameSettings, frameText } from "./frame";
-import type { CaptureData } from "./photo";
 
-const full: CaptureData = {
+// Stands in for what `published` gives.
+const full = {
   camera: "Fixture Optics FX-1",
   lens: "Fixture 35mm F1.4",
   focalLength: 35,
@@ -12,9 +13,9 @@ const full: CaptureData = {
   latitude: 10.5,
   longitude: -40.25,
   capturedAt: "2024-05-01T10:20:30",
-};
+} as PublishedCapture;
 
-const none: CaptureData = {
+const none = {
   camera: null,
   lens: null,
   focalLength: null,
@@ -24,7 +25,7 @@ const none: CaptureData = {
   latitude: null,
   longitude: null,
   capturedAt: null,
-};
+} as PublishedCapture;
 
 const settings = (change: Partial<FrameSettings> = {}): FrameSettings => ({
   ...DEFAULT_FRAME_SETTINGS,

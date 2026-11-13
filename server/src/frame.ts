@@ -1,5 +1,5 @@
 import sharp, { type OverlayOptions } from "sharp";
-import type { CaptureData } from "./photo";
+import type { PublishedCapture } from "./capture";
 import { createFontSource, type PathCommand, type Typeface, type TypefaceId } from "./typefaces";
 
 /** The fields that can print on a frame, in the order they print. */
@@ -45,7 +45,7 @@ export const DEFAULT_FRAME_SETTINGS: FrameSettings = {
 const SEPARATOR = " · ";
 
 /** The line of metadata a frame prints: each shown field the select has, with nothing for the rest. */
-export function frameText(capture: CaptureData, settings: FrameSettings): string {
+export function frameText(capture: PublishedCapture, settings: FrameSettings): string {
   const values = fieldValues(capture, settings.coordinateFormat);
   return FRAME_FIELDS.filter((field) => settings.fields[field])
     .map((field) => values[field])
@@ -58,7 +58,7 @@ export function frameText(capture: CaptureData, settings: FrameSettings): string
  * the same way.
  */
 export function fieldValues(
-  capture: CaptureData,
+  capture: PublishedCapture,
   coordinateFormat: FrameSettings["coordinateFormat"],
 ): Record<FrameField, string | null> {
   return {
@@ -136,8 +136,11 @@ const COLORS = {
   dark: { background: "#121212", text: "#c8c8c8" },
 } as const;
 
-/** The select to frame: its original and the capture data to print. */
-export type FrameSource = { path: string; capture: CaptureData };
+/**
+ * The select to frame: its original and the capture data to print, as it may be published, so a
+ * frame can never print a withheld location.
+ */
+export type FrameSource = { path: string; capture: PublishedCapture };
 
 export type RenderOptions = {
   /** Scales the finished frame down to this width, for a preview. Default: full size. */

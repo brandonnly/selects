@@ -9,8 +9,8 @@ import {
   checkTemplates,
   TOKENS,
 } from "./captions";
+import type { PublishedCapture } from "./capture";
 import type { FrameSettings } from "./frame";
-import type { CaptureData } from "./photo";
 
 const notFound = { error: "Not found" } as const;
 
@@ -51,12 +51,12 @@ export type CaptionRoutesOptions = {
    * A select's capture data as it may be published, with coordinates already null when its
    * location is hidden; undefined when there is no such select.
    */
-  capture: (selectId: string) => CaptureData | undefined;
+  capture: (selectId: string) => PublishedCapture | undefined;
 };
 
 /** The Captions screen's templates and hashtag sets, their preview, and each select's own caption. */
 export function captionRoutes({ store, coordinateFormat, capture }: CaptionRoutesOptions) {
-  const captionFor = (selectId: string, data: CaptureData) => {
+  const captionFor = (selectId: string, data: PublishedCapture) => {
     const own = store.override(selectId);
     const fromTemplate = buildCaption({
       capture: data,

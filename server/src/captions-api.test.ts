@@ -267,6 +267,54 @@ describe("a preview of a template with problems", () => {
   });
 });
 
+describe("a select whose location is withheld", () => {
+  const coordinates = "10°30'00\"N";
+
+  test("has no coordinates in its caption inside a privacy zone, hidden on its own, or after either is undone", async () => {
+    const id = await addSelect("portrait");
+    const caption = async () => (await json(await request(`/api/selects/${id}/caption`))).caption.caption;
+    expect(await caption()).toContain(coordinates);
+
+    const zone = await json(
+      await send("POST", "/api/zones", { latitude: 10.5, longitude: -40.25, radiusMetres: 1000 }),
+    );
+    expect(await caption()).not.toContain("10°");
+    expect(await caption()).toStartWith("Fixture Optics FX-1");
+
+    await request(`/api/zones/${zone.id}`, { method: "DELETE" });
+    expect(await caption()).toContain(coordinates);
+
+    await send("PUT", `/api/selects/${id}/capture`, { edits: {}, locationHidden: true });
+    expect(await caption()).not.toContain("10°");
+  });
+
+  test("has none in a preview either", async () => {
+    const id = await addSelect("portrait");
+    await send("PUT", `/api/selects/${id}/capture`, { edits: {}, locationHidden: true });
+
+    const preview = await json(
+      await send("POST", "/api/captions/preview", {
+        selectId: id,
+        templates: (await json(await request("/api/captions"))).templates,
+      }),
+    );
+
+    expect(preview.caption.caption).not.toContain("10°");
+  });
+
+  test("builds its caption from edited capture data", async () => {
+    const id = await addSelect("portrait");
+    await send("PUT", `/api/selects/${id}/capture`, {
+      edits: { camera: "Edited Camera" },
+      locationHidden: false,
+    });
+
+    expect((await json(await request(`/api/selects/${id}/caption`))).caption.caption).toContain(
+      "Edited Camera",
+    );
+  });
+});
+
 describe("caption check", () => {
   test("measures text being written against Instagram's limits without saving it", async () => {
     const response = await send("POST", "/api/captions/check", {

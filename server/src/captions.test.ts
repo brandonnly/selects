@@ -6,9 +6,9 @@ import {
   checkTemplates,
   DEFAULT_CAPTION_TEMPLATES,
 } from "./captions";
-import type { CaptureData } from "./photo";
+import type { PublishedCapture } from "./capture";
 
-const full: CaptureData = {
+const full = {
   camera: "Fixture Optics FX-1",
   lens: "Fixture 35mm F1.4",
   focalLength: 35,
@@ -18,9 +18,9 @@ const full: CaptureData = {
   latitude: 10.5,
   longitude: -40.25,
   capturedAt: "2024-05-01T10:20:30",
-};
+} as PublishedCapture;
 
-const none: CaptureData = {
+const none = {
   camera: null,
   lens: null,
   focalLength: null,
@@ -30,7 +30,7 @@ const none: CaptureData = {
   latitude: null,
   longitude: null,
   capturedAt: null,
-};
+} as PublishedCapture;
 
 const film = { name: "Film", tags: ["#film", "#35mm"] };
 const night = { name: "Night", tags: ["#night", "#longexposure", "#city"] };
@@ -65,7 +65,7 @@ describe("buildCaption", () => {
   });
 
   test("a missing field takes its separator with it, at the start, middle or end of a line", () => {
-    const line = (capture: CaptureData) =>
+    const line = (capture: PublishedCapture) =>
       buildCaption({
         capture,
         templates: templates({ caption: "{camera} · {lens} · {focalLength}, {aperture} | {iso}" }),
@@ -116,7 +116,7 @@ describe("buildCaption", () => {
   });
 
   test("a mark that opens a line goes with a missing first field", () => {
-    const caption = (capture: CaptureData) =>
+    const caption = (capture: PublishedCapture) =>
       buildCaption({
         capture,
         templates: templates({ caption: "\u{1f4cd} {coordinates} · {camera}" }),
@@ -128,7 +128,7 @@ describe("buildCaption", () => {
   });
 
   test("words in brackets are left out with a field they hold that is missing", () => {
-    const build = (capture: CaptureData) =>
+    const build = (capture: PublishedCapture) =>
       buildCaption({ capture, templates: templates(), coordinateFormat: "dms" }).altText;
 
     expect(build({ ...full, capturedAt: null })).toBe("Photograph taken with Fixture Optics FX-1");
