@@ -24,7 +24,7 @@ export const BACKUP_TIME = "03:30";
 const RETRY_AFTER_MS = HOUR;
 
 const COPY_NAME = /^selects-\d{4}-\d{2}-\d{2}\.db$/;
-const TEMPORARY = /^\.selects-.*\.tmp$/;
+const TEMPORARY = /^\.selects-.*\.tmp(-journal)?$/;
 
 export type BackupCopy = { name: string; at: number; bytes: number };
 
@@ -95,6 +95,8 @@ export function createBackups(options: BackupsOptions) {
     const now = clock.now();
     const name = `selects-${localDate(now, timeZone())}.db`;
     mkdirSync(dir, { recursive: true, mode: 0o700 });
+    // A folder that was already there keeps its mode otherwise.
+    chmodSync(dir, 0o700);
     // Leftovers of a copy a stop interrupted.
     for (const found of readdirSync(dir)) {
       if (TEMPORARY.test(found)) rmSync(join(dir, found), { force: true });
@@ -111,7 +113,12 @@ export function createBackups(options: BackupsOptions) {
       rmSync(temporary, { force: true });
       throw error;
     }
-    for (const old of listCopies().slice(BACKUPS_KEPT)) rmSync(join(dir, old.name), { force: true });
+    // The copy is made: a copy too many that cannot be removed now goes on the next night.
+    try {
+      for (const old of listCopies().slice(BACKUPS_KEPT)) rmSync(join(dir, old.name), { force: true });
+    } catch (error) {
+      console.error(`An old backup could not be removed (${errorKind(error)}).`);
+    }
   }
 
   function run(): Promise<void> {

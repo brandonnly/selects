@@ -131,14 +131,25 @@ To restore a copy:
    (`chmod 600 selects.db`).
 4. Remove `selects.db-wal` and `selects.db-shm`. They belong to the database you replaced, and
    SQLite would apply them to the copy.
-5. Start Selects.
+5. Start Selects with `SELECTS_START_PAUSED=true`. It starts with posting paused, and a post
+   that was under way when the copy was made is held on the Posted screen for you to check
+   instead of being sent again. Without this, a slot that is due could post before you get to
+   the pause switch.
 
-The photos are not in the database: originals, thumbnails and fonts stay in `DATA_DIR` and are
-not part of a copy. Restoring takes the library, posts, schedule and settings back to the night
-of the copy. A select posted since then is back in the pool and could be posted again, so as
-soon as Selects starts, turn on the pause switch on the Queue screen, compare the Posted screen
-with Instagram, and delete from the Library any select already on Instagram (its hash is kept,
-so it is never picked again). Then turn the pause switch off.
+Restoring takes the library, posts, schedule, settings, Instagram token and notification
+channels back to the night of the copy. Before you resume:
+
+- A select posted since the copy is back in the pool and could be posted again. The Posted
+  screen shows only what the copy knew of, so compare your Instagram feed with the Library and
+  delete from the Library any select already on Instagram (its hash is kept, so it is never
+  picked again).
+- The photos are not in the database: originals, thumbnails and fonts stay in `DATA_DIR` and
+  are not part of a copy. A select added since the copy is no longer in the library though its
+  file is still on disk; upload it again.
+- If the token was replaced since the copy, paste the current one in Settings.
+
+Then remove `SELECTS_START_PAUSED`, so a later restart does not pause again, and turn the pause
+switch off on the Queue screen.
 
 ## Checks
 

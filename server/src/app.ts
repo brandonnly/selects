@@ -25,7 +25,7 @@ import { galleryRoutes } from "./gallery-routes";
 import { createInstagramApi, type InstagramApi, InstagramError, LIVE_INSTAGRAM_URL } from "./instagram";
 import { createInstagramAccount } from "./instagram-account";
 import { createLibrary, duplicateMessage, errorKind, type Library } from "./library";
-import { createNotifier } from "./notify";
+import { createNotifier, NOTICE_HEADER } from "./notify";
 import { notifyRoutes } from "./notify-routes";
 import { passwordGate } from "./password";
 import { publishRoutes } from "./publish-routes";
@@ -497,6 +497,8 @@ export function createApp(options: AppOptions) {
     backups: services.backups,
     fetch: async (request: Request): Promise<Response> => {
       if (isCrossOrigin(request)) return Response.json({ error: "Forbidden" }, { status: 403 });
+      // A notice of Selects' own, aimed back at it by a webhook set to its own address.
+      if (request.headers.has(NOTICE_HEADER)) return Response.json({ error: "Forbidden" }, { status: 403 });
       return (await gate?.(request)) ?? routes.handle(request);
     },
   };

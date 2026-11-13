@@ -51,11 +51,16 @@ const app = createApp({
   fakeBucket: fakes?.bucket,
 });
 // Posts a stop left mid-attempt are taken up again, before any request can start a new one.
-app.publisher.recover();
+app.publisher.recover({ hold: config.startPaused });
 // Posts a stop left recorded for the gallery and not yet taken in, before any frame is cleaned up.
 // In fake mode the fake bucket starts empty: the gallery writes again what it lost.
 app.gallery.recover({ bucketEmptied: config.instagram === "fake" });
 // Slots a stop left part way are settled before the schedule runs: never posted twice.
+// Asked to start paused, as on a restored copy: no slot posts until its owner resumes.
+if (config.startPaused) {
+  app.scheduler.setPaused(true);
+  console.log("Started with posting paused (SELECTS_START_PAUSED). Resume on the Queue screen.");
+}
 app.scheduler.recover();
 
 const server = Bun.serve({

@@ -175,12 +175,15 @@ export function httpChannels(stored: Stored, http: HttpOptions): Channel[] {
  * POSTs JSON. Redirects are not followed, the answer's body is never read, and every failure
  * is told in words without the URL.
  */
+/** Marks a request as a notice from Selects, so Selects refuses one aimed at itself. */
+export const NOTICE_HEADER = "x-selects-notice";
+
 async function post(url: string, body: unknown, headers: Record<string, string>, http: HttpOptions) {
   let response: Response;
   try {
     response = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json", ...headers },
+      headers: { "content-type": "application/json", [NOTICE_HEADER]: "1", ...headers },
       body: JSON.stringify(body),
       redirect: "manual",
       signal: AbortSignal.timeout(http.timeoutMs),
@@ -232,6 +235,10 @@ export function createNotifier(options: NotifierOptions) {
     db.query(
       "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
     ).run(key, JSON.stringify(value));
+  };
+  const hasChannel = () => {
+    const { ntfy, webhook } = read();
+    return ntfy !== null || webhook !== null;
   };
   const read = (): Stored => {
     const saved = readKey<Stored>(KEY);
@@ -350,7 +357,7 @@ export function createNotifier(options: NotifierOptions) {
         send({
           event: "failed",
           title: "A post failed",
-          message: "A post failed and its select is back in the pool. The Posted screen says why.",
+          message: "A post failed for good. The Posted screen says why.",
         });
       } else {
         send({
@@ -382,7 +389,8 @@ export function createNotifier(options: NotifierOptions) {
         const pool = options.poolSize();
         const { poolThreshold } = events();
         if (pool >= poolThreshold) state.poolLow = false;
-        else if (!state.poolLow) {
+        else if (!state.poolLow && hasChannel()) {
+          // Marked only once there is a channel to tell: a crossing before one is set is told then.
           state.poolLow = true;
           send({
             event: "pool",
@@ -419,8 +427,8 @@ export function createNotifier(options: NotifierOptions) {
           ntfy === null
             ? null
             : {
-                server: ntfy.server,
-                topic: `${ntfy.topic.slice(0, 3)}…`,
+                server: shownUrl(ntfy.server),
+                topic: ntfy.topic.length > 6 ? `${ntfy.topic.slice(0, 3)}…` : "…",
                 token: ntfy.token !== null,
                 ...statusOf("ntfy"),
               },

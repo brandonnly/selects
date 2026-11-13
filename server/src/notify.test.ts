@@ -255,7 +255,7 @@ describe("events", () => {
       {
         event: "failed",
         title: "A post failed",
-        message: "A post failed and its select is back in the pool. The Posted screen says why.",
+        message: "A post failed for good. The Posted screen says why.",
       },
       {
         event: "failed",
@@ -416,6 +416,20 @@ describe("token about to expire", () => {
 });
 
 describe("pool running low", () => {
+  test("a pool already low before any channel is set is told once a channel is", async () => {
+    const recorded = recordingChannels();
+    const notifier = notifierWith({ channels: recorded.channels, poolSize: () => 0 });
+    notifier.check();
+    await notifier.idle();
+    expect(recorded.sent).toHaveLength(0);
+
+    notifier.setNtfy({ server: "https://ntfy.invalid", topic: TOPIC, token: null });
+    notifier.check();
+    await notifier.idle();
+
+    expect(recorded.sent.map(({ notice }) => notice.event)).toEqual(["pool"]);
+  });
+
   test("notifies once when the pool drops below the threshold, and again only after it has gone back up", async () => {
     const recorded = recordingChannels();
     let pool = 11;

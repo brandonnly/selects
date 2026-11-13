@@ -202,7 +202,12 @@ function ChannelFooter({
         <p className="text-muted-foreground">Last sent {formatTime(status.lastSentAt)}.</p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" onClick={test} disabled={testing}>
+        <Button
+          variant="outline"
+          aria-label={`Send a test notice to the ${channel === "ntfy" ? "ntfy topic" : "webhook"}`}
+          onClick={test}
+          disabled={testing}
+        >
           {testing ? "Sending…" : "Send test"}
         </Button>
         {children}
@@ -249,7 +254,11 @@ function RemoveChannel({
           </Button>
         </>
       ) : (
-        <Button variant="destructive" onClick={() => setConfirm(true)}>
+        <Button
+          variant="destructive"
+          aria-label={`Remove the ${channel === "ntfy" ? "ntfy topic" : "webhook"}`}
+          onClick={() => setConfirm(true)}
+        >
           Remove…
         </Button>
       )}
@@ -365,7 +374,7 @@ function NtfyChannel({
             kept on this server and never shown again in full. Saving replaces both.
           </p>
           {problems !== undefined && (
-            <p className="text-destructive">
+            <p role="alert" className="text-destructive">
               {problems.length > 0 ? problems.join(" ") : "Couldn't save. Try again."}
             </p>
           )}
@@ -380,13 +389,13 @@ function NtfyChannel({
         </form>
       ) : channel === null ? (
         <div>
-          <Button variant="outline" onClick={() => setEditing(true)}>
+          <Button variant="outline" aria-label="Set up the ntfy topic" onClick={() => setEditing(true)}>
             Set up…
           </Button>
         </div>
       ) : (
         <ChannelFooter channel="ntfy" status={channel} onChange={onChange}>
-          <Button variant="outline" onClick={() => setEditing(true)}>
+          <Button variant="outline" aria-label="Change the ntfy topic" onClick={() => setEditing(true)}>
             Change…
           </Button>
           <RemoveChannel channel="ntfy" onChange={onChange} />
@@ -464,7 +473,7 @@ function WebhookChannel({
             An http or https URL. Only its scheme and host are shown again: the rest may be a secret.
           </p>
           {problems !== undefined && (
-            <p className="text-destructive">
+            <p role="alert" className="text-destructive">
               {problems.length > 0 ? problems.join(" ") : "Couldn't save. Try again."}
             </p>
           )}
@@ -479,13 +488,13 @@ function WebhookChannel({
         </form>
       ) : channel === null ? (
         <div>
-          <Button variant="outline" onClick={() => setEditing(true)}>
+          <Button variant="outline" aria-label="Set up the webhook" onClick={() => setEditing(true)}>
             Set up…
           </Button>
         </div>
       ) : (
         <ChannelFooter channel="webhook" status={channel} onChange={onChange}>
-          <Button variant="outline" onClick={() => setEditing(true)}>
+          <Button variant="outline" aria-label="Change the webhook" onClick={() => setEditing(true)}>
             Change…
           </Button>
           <RemoveChannel channel="webhook" onChange={onChange} />

@@ -40,8 +40,8 @@ export function BackupStatus() {
           </p>
           {status.lastError !== null && (
             <p className="text-destructive">
-              The last try failed {formatTime(status.lastError.at)}: {status.lastError.reason} Selects tries
-              again in an hour.
+              Last try {formatTime(status.lastError.at)}: {status.lastError.reason} Selects tries again in an
+              hour.
             </p>
           )}
           <p className="text-muted-foreground">

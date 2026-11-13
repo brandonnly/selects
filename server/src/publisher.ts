@@ -1017,7 +1017,19 @@ export function createPublisher(options: PublisherOptions) {
      * Takes up posts a stop left mid-attempt: the next `runDue` resumes them. Called once at
      * start, before anything is published.
      */
-    recover(): void {
+    recover({ hold = false }: { hold?: boolean } = {}): void {
+      if (hold) {
+        // A restored copy: what was under way when it was made has long since ended one way or
+        // the other. Nothing is sent again; each waits for its owner to say what became of it.
+        db.query(
+          `UPDATE posts SET state = 'unconfirmed', next_attempt_at = ?, error = ?
+           WHERE state IN ('publishing', 'retrying')`,
+        ).run(
+          clock.now() + UNCONFIRMED_CHECK_MS,
+          "Selects started on a restored copy while this post was under way. Check Instagram, then say whether it was posted.",
+        );
+        return;
+      }
       db.query("UPDATE posts SET state = 'retrying', next_attempt_at = ? WHERE state = 'publishing'").run(
         clock.now(),
       );

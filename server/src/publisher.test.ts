@@ -853,6 +853,28 @@ describe("a publish interrupted part way", () => {
     expect(post?.permalink).toBe(instagram.media[0]?.permalink ?? "missing");
   });
 
+  test("on a start that holds, as on a restored copy, is not sent again and waits to be checked", async () => {
+    const before = setup();
+    await connect(before.account);
+    const id = await addSelect("portrait");
+    instagram.fail("container", "transient");
+    const first = await postNow(before.publisher, id);
+    expect(first.state).toBe("retrying");
+    const requests = instagram.requests.length;
+
+    const { publisher } = setup();
+    publisher.recover({ hold: true });
+    clock.advance(5 * MINUTE);
+    await publisher.runDue();
+
+    expect(publisher.post(first.id)?.state).toBe("unconfirmed");
+    expect(instagram.media).toHaveLength(0);
+    expect(instagram.requests.filter((r) => r.operation === "container")).toHaveLength(
+      instagram.requests.slice(0, requests).filter((r) => r.operation === "container").length,
+    );
+    expect(library.pool()).toEqual([]);
+  });
+
   test("by a restart is finished after it, and published once", async () => {
     const before = setup();
     await connect(before.account);

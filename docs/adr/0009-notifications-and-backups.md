@@ -16,7 +16,7 @@ a copy holds the Instagram token, so each choice leans towards sending and keepi
 
 - **A notice says what happened, and nothing about the photo.** It never carries coordinates, a
   file name, a caption or a link. Posted: that a select was posted, and how many are left in the
-  pool. Failed: that a post failed and its select is back in the pool, or that Instagram has not
+  pool. Failed: that a post failed for good, or that Instagram has not
   said whether it published one. Token: that the token expires in so many days (and could not be
   refreshed), or that Instagram no longer accepts it. Pool: how many selects are left, below the
   threshold. ntfy gets `topic`, `title`, `message` and the event as a tag, as JSON to the server's
@@ -53,6 +53,12 @@ a copy holds the Instagram token, so each choice leans towards sending and keepi
   start after a stop. A failure is shown in Settings with its kind only and tried again an hour
   later. One runs at a time. The last copy's time is read from the files, not the database, so a
   restored database never misreports it.
+
+- **A restored copy starts paused.** `SELECTS_START_PAUSED=true` starts Selects with posting
+  paused and holds every post that was under way as needing a check, so nothing in a restored
+  copy is posted or sent again before its owner has compared it with Instagram.
+- **A notice is never taken by Selects itself.** Each carries a header that Selects refuses, so
+  a webhook set to the app's own address cannot call it in a loop.
 
 ## Consequences
 

@@ -171,3 +171,14 @@ describe("loadConfig: the fake bucket", () => {
     expect(loadConfig({ ...minimal, BUCKET_PUBLIC_URL: "https://cdn.test" }).fakePublicUrl).toBe(true);
   });
 });
+
+describe("starting paused", () => {
+  test("is off unless SELECTS_START_PAUSED says true, and anything else is refused by name", () => {
+    expect(loadConfig({ DATA_DIR: "/data" }).startPaused).toBe(false);
+    expect(loadConfig({ DATA_DIR: "/data", SELECTS_START_PAUSED: "true" }).startPaused).toBe(true);
+    expect(loadConfig({ DATA_DIR: "/data", SELECTS_START_PAUSED: "false" }).startPaused).toBe(false);
+    expect(() => loadConfig({ DATA_DIR: "/data", SELECTS_START_PAUSED: "maybe" })).toThrow(
+      /SELECTS_START_PAUSED/,
+    );
+  });
+});

@@ -55,6 +55,11 @@ export class Config {
      * of its own, so gallery output can be tried; the variable's value is not used.
      */
     readonly fakePublicUrl = false,
+    /**
+     * Start with posting paused and posts that were under way held for checking. For the first
+     * start on a restored copy, whose selects may have been posted since it was made.
+     */
+    readonly startPaused = false,
   ) {
     this.#password = password;
   }
@@ -110,6 +115,12 @@ export function loadConfig(env: Env): Config {
     problems.push("INSTAGRAM_API must be fake or live");
   }
 
+  const rawPaused = read("SELECTS_START_PAUSED");
+  const startPaused = rawPaused === "true" || rawPaused === "1";
+  if (rawPaused !== undefined && !startPaused && rawPaused !== "false" && rawPaused !== "0") {
+    problems.push("SELECTS_START_PAUSED must be true or false");
+  }
+
   if (problems.length > 0 || dataDir === undefined) {
     throw new ConfigError(`Invalid configuration:\n  - ${problems.join("\n  - ")}`);
   }
@@ -121,6 +132,7 @@ export function loadConfig(env: Env): Config {
     bucket,
     instagram,
     read("BUCKET_PUBLIC_URL") !== undefined,
+    startPaused,
   );
 }
 
