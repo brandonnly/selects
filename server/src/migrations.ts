@@ -216,4 +216,8 @@ export const migrations: readonly Migration[] = [
     added_at INTEGER NOT NULL
   );
   `,
+  // 7: the Instagram account a post was confirmed for, so it is never sent to another one.
+  `
+  ALTER TABLE posts ADD COLUMN account_id TEXT;
+  `,
 ];

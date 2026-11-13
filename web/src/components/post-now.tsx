@@ -59,19 +59,22 @@ export function PostNow({
     return () => clearInterval(timer);
   }, [sentId]);
 
+  // Only the newest preview asked for is shown.
+  const reviewTurn = useRef(0);
   const review = async () => {
+    const turn = ++reviewTurn.current;
     setState({ step: "loading" });
     const { data, error } = await api
       .selects({ id: select.id })
       .publish.get()
       .catch(() => ({ data: null, error: { status: 0, value: null } }));
-    if (!live.current) return;
+    if (!live.current || turn !== reviewTurn.current) return;
     if (data && "caption" in data) setState({ step: "confirm", preview: data });
     else setState({ step: "failed", problems: problemsIn(error?.value) });
   };
 
   // An open confirmation never shows what was true before a save: it is loaded again.
-  const confirming = state.step === "confirm";
+  const confirming = state.step === "confirm" || state.step === "loading";
   const seen = useRef(refresh);
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a change of `refresh` loads again.
   useEffect(() => {

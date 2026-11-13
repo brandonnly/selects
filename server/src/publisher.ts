@@ -176,6 +176,8 @@ type PostRow = {
   error: string | null;
   report: string | null;
   mode: InstagramMode | null;
+  /** The Instagram account the post was confirmed for. Null before version 7 and for a dry run with none. */
+  account_id: string | null;
   created_at: number;
   published_at: number | null;
 };
@@ -338,12 +340,13 @@ export function createPublisher(options: PublisherOptions) {
 
   function insertPost(id: string, selectIds: string[], content: Content, extra: Partial<PostRow>) {
     db.query(
-      `INSERT INTO posts (id, state, mode, caption, alt_text, hashtag_set, capture, report, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO posts (id, state, mode, account_id, caption, alt_text, hashtag_set, capture, report, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       extra.state ?? "publishing",
       options.mode,
+      account.credentials()?.userId ?? null,
       content.caption,
       content.altText,
       content.hashtagSet,
@@ -429,6 +432,19 @@ export function createPublisher(options: PublisherOptions) {
     };
     const current = () => row(id) ?? claimed;
 
+    // A post made under the other Instagram is never sent to this one: a fake post must not
+    // become a real one because the mode changed while it waited. It fails and its select returns.
+    if (claimed.mode !== null && claimed.mode !== options.mode) {
+      update({
+        state: "failed",
+        error: `This post was made in ${claimed.mode} mode and Selects is now in ${options.mode} mode. Post it again.`,
+        next_attempt_at: null,
+        object_key: null,
+      });
+      console.error(`Post ${id} was made in another Instagram mode; it was not sent.`);
+      return;
+    }
+
     // The token this attempt sends: a refusal means that token, not one pasted since.
     const used: { token?: string } = {};
     try {
@@ -484,6 +500,14 @@ export function createPublisher(options: PublisherOptions) {
     if (credentials === undefined)
       throw new PostFailure(accountProblem() ?? "No Instagram account is connected.", false);
     const { token, userId } = credentials;
+    // The post goes to the account it was confirmed for, or nowhere. A new token for the same
+    // account is fine.
+    if (post.account_id !== null && post.account_id !== userId) {
+      throw new PostFailure(
+        "The connected Instagram account changed since this post was confirmed. Post it again.",
+        false,
+      );
+    }
     used.token = token;
     const selectIds = selectIdsOf(post.id);
 
@@ -674,6 +698,9 @@ export function createPublisher(options: PublisherOptions) {
         .run(clock.now() + UNCONFIRMED_CHECK_MS, id);
     const credentials = account.credentials();
     if (credentials === undefined || found.container_id === null) return void later();
+    // Only the Instagram and the account that were asked can say what became of it.
+    if (found.mode !== null && found.mode !== options.mode) return void later();
+    if (found.account_id !== null && found.account_id !== credentials.userId) return void later();
     let status: Awaited<ReturnType<InstagramApi["containerStatus"]>>;
     try {
       status = await api.containerStatus(credentials.token, found.container_id);

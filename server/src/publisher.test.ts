@@ -72,6 +72,7 @@ function setup(
     wrapBucket?: (bucket: Bucket) => Bucket;
     wrapApi?: (api: InstagramApi) => InstagramApi;
     renderer?: PublisherOptions["renderer"];
+    mode?: PublisherOptions["mode"];
   } = {},
 ) {
   const zones = createZones(db);
@@ -100,7 +101,7 @@ function setup(
       ? { missing: ["BUCKET_ENDPOINT", "BUCKET_NAME"] }
       : (options.wrapBucket?.(bucket) ?? bucket),
     clock,
-    mode: "fake",
+    mode: options.mode ?? "fake",
     random: () => 0,
   });
   return { publisher, zones, captures, settings, captionStore, account, renderer };
@@ -509,6 +510,50 @@ describe("a failed publish", () => {
     expect(post.attempts).toBe(1);
     expect(post.error).toContain("Paste a new token in Settings");
     expect(account.view()?.status).toBe("invalid");
+    expect(library.pool()).toEqual([id]);
+  });
+
+  test("never goes to an account other than the one it was confirmed for", async () => {
+    const { publisher, account } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    // The first attempt fails; before the retry the owner connects a different account.
+    instagram.fail("container", "transient");
+    const first = await postNow(publisher, id);
+    expect(first.state).toBe("retrying");
+    instagram.addAccount("IGfake-other-account-token-0003", { userId: "1784149999", username: "other" });
+    await account.connect("IGfake-other-account-token-0003");
+    const before = instagram.media.length;
+
+    clock.advance(2 * 60 * 1000);
+    await publisher.runDue();
+
+    const post = publisher.post(first.id);
+    expect(post?.state).toBe("failed");
+    expect(post?.error).toContain("account changed");
+    expect(instagram.media).toHaveLength(before);
+    expect(library.pool()).toEqual([id]);
+  });
+
+  test("made in fake mode is never sent once Selects is in live mode", async () => {
+    const fake = setup();
+    await connect(fake.account);
+    const id = await addSelect("portrait");
+    instagram.fail("container", "transient");
+    const first = await postNow(fake.publisher, id);
+    expect(first.state).toBe("retrying");
+    const requests = instagram.requests.length;
+
+    // The same database, started again in live mode.
+    const live = setup({ mode: "live" });
+    clock.advance(2 * 60 * 1000);
+    await live.publisher.runDue();
+
+    const post = live.publisher.post(first.id);
+    expect(post?.state).toBe("failed");
+    expect(post?.error).toContain("fake mode");
+    expect(instagram.requests).toHaveLength(requests);
+    expect(instagram.media).toHaveLength(0);
     expect(library.pool()).toEqual([id]);
   });
 
