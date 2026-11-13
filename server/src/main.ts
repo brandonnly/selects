@@ -18,6 +18,8 @@ const RETRY_INTERVAL_MS = 30 * 1000;
 const GALLERY_INTERVAL_MS = 30 * 1000;
 /** How often the Instagram token is checked for a refresh. */
 const TOKEN_CHECK_INTERVAL_MS = HOUR;
+/** How often the token and the pool are checked for notifications, and the nightly backup for being due. */
+const HOUSEKEEPING_INTERVAL_MS = 60 * 1000;
 
 const webDir = resolve(import.meta.dir, "../../web/dist");
 
@@ -114,6 +116,13 @@ const scheduleTimer = setInterval(tick, SCHEDULE_INTERVAL_MS);
 const refreshToken = () => app.instagramAccount.refreshIfDue().catch(() => {});
 void refreshToken();
 const tokenTimer = setInterval(refreshToken, TOKEN_CHECK_INTERVAL_MS);
+// Neither throws. The backup runs at start when the last copy is from before last night.
+const housekeeping = () => {
+  app.notifier.check();
+  void app.backups.runDue();
+};
+housekeeping();
+const housekeepingTimer = setInterval(housekeeping, HOUSEKEEPING_INTERVAL_MS);
 
 const shutdown = () => {
   clearInterval(inboxTimer);
@@ -121,6 +130,7 @@ const shutdown = () => {
   clearInterval(galleryTimer);
   clearInterval(scheduleTimer);
   clearInterval(tokenTimer);
+  clearInterval(housekeepingTimer);
   // Let requests in flight finish, the fakes they may be using still up, before the database closes.
   server
     .stop()
