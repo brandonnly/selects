@@ -179,8 +179,10 @@ describe("the schedule", () => {
     const { body } = await request("/api/schedule");
     expect(body.paused).toBe(true);
     expect(body.rules).toEqual(rules);
-    const bad = await send("PUT", "/api/pick-rules", { ...rules, place: { on: true, km: -1, posts: 4 } });
-    expect(bad.status).toBe(422);
+    for (const km of [-1, 0, 2.5, 20_001]) {
+      const bad = await send("PUT", "/api/pick-rules", { ...rules, place: { on: true, km, posts: 4 } });
+      expect(bad.status).toBe(422);
+    }
   });
 
   test("next up can be swapped and skipped", async () => {

@@ -18,6 +18,9 @@ export type PickRules = {
   order: PickOrder;
 };
 
+/** What the pick rules' numbers may be: whole numbers from 1. */
+export const PICK_RULE_LIMITS = { posts: 50, km: 20_000 } as const;
+
 export const DEFAULT_PICK_RULES: PickRules = {
   captureDay: { on: true, posts: 5 },
   place: { on: false, km: 10, posts: 5 },

@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import type { Captures } from "./capture";
 import type { Library } from "./library";
-import type { PickRules } from "./pick";
+import { PICK_RULE_LIMITS, type PickRules } from "./pick";
 import { runKey, SCHEDULE_LIMITS, type Scheduler, SLOT_ID } from "./scheduler";
 import type { Settings } from "./settings";
 import type { Weekday } from "./slots";
@@ -28,12 +28,12 @@ const scheduleSchema = t.Object(
   { additionalProperties: false },
 );
 
-const posts = t.Integer({ minimum: 1, maximum: 50 });
+const posts = t.Integer({ minimum: 1, maximum: PICK_RULE_LIMITS.posts });
 const pickRulesSchema = t.Object(
   {
     captureDay: t.Object({ on: t.Boolean(), posts }, { additionalProperties: false }),
     place: t.Object(
-      { on: t.Boolean(), km: t.Number({ exclusiveMinimum: 0, maximum: 20_000 }), posts },
+      { on: t.Boolean(), km: t.Integer({ minimum: 1, maximum: PICK_RULE_LIMITS.km }), posts },
       { additionalProperties: false },
     ),
     order: t.Union([t.Literal("random"), t.Literal("oldest"), t.Literal("newest")]),
