@@ -41,14 +41,16 @@ export type ScheduleErrors = {
 };
 
 /**
- * The schedule to save, or undefined while any field is not whole: a slot with no day or no time,
- * or a number out of bounds, holds back the whole save. A slot is only ever removed by its
- * remove button, never by being left incomplete.
+ * The schedule to save: every whole field as typed, and for a field that is not whole what was
+ * last saved, so an edit elsewhere still saves. A slot with no day or no time, or a number out of
+ * bounds, keeps its saved version; a new one is left out until it is whole. A slot is only ever
+ * removed by its remove button, never by being left incomplete. `complete` is false while any
+ * field is not whole.
  */
-export function parseSchedule(draft: ScheduleDraft): {
-  schedule: Schedule | undefined;
-  errors: ScheduleErrors;
-} {
+export function parseSchedule(
+  draft: ScheduleDraft,
+  saved: Schedule,
+): { schedule: Schedule; complete: boolean; errors: ScheduleErrors } {
   const errors: ScheduleErrors = { slots: {} };
   const slots: Schedule["slots"] = [];
   for (const slot of draft.slots) {
@@ -57,8 +59,11 @@ export function parseSchedule(draft: ScheduleDraft): {
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(slot.time)) slotErrors.time = "Set a time.";
     const spread = wholeNumber(slot.spreadText, { min: 0, max: LIMITS.spreadMinutes, empty: 0 });
     if (!spread.ok) slotErrors.spread = spread.problem;
-    if (Object.keys(slotErrors).length > 0) errors.slots[slot.id] = slotErrors;
-    else if (spread.ok)
+    if (Object.keys(slotErrors).length > 0 || !spread.ok) {
+      errors.slots[slot.id] = slotErrors;
+      const before = saved.slots.find((s) => s.id === slot.id);
+      if (before !== undefined) slots.push(before);
+    } else
       slots.push({
         id: slot.id,
         days: [...new Set(slot.days)].sort() as Weekday[],
@@ -68,9 +73,9 @@ export function parseSchedule(draft: ScheduleDraft): {
   }
   const grace = wholeNumber(draft.graceText, { min: 0, max: LIMITS.graceMinutes });
   if (!grace.ok) errors.grace = grace.problem;
-  const whole = grace.ok && Object.keys(errors.slots).length === 0;
   return {
-    schedule: whole ? { slots, timeZone: draft.timeZone, graceMinutes: grace.value } : undefined,
+    schedule: { slots, timeZone: draft.timeZone, graceMinutes: grace.ok ? grace.value : saved.graceMinutes },
+    complete: grace.ok && Object.keys(errors.slots).length === 0,
     errors,
   };
 }
@@ -106,13 +111,14 @@ export function toRulesDraft(rules: PickRules): PickRulesDraft {
 }
 
 /**
- * The rules to save, or undefined while a number is not whole and within bounds. A rule switched
- * off keeps the numbers last saved, so a field it greys out never blocks a save.
+ * The rules to save: each number as typed while whole and within bounds, and otherwise the number
+ * last saved, so the other edits still save. A rule switched off keeps the numbers last saved, so
+ * a field it greys out is never in error. `complete` is false while a number is in error.
  */
 export function parsePickRules(
   draft: PickRulesDraft,
   saved: PickRules,
-): { rules: PickRules | undefined; errors: PickRulesErrors } {
+): { rules: PickRules; complete: boolean; errors: PickRulesErrors } {
   const errors: PickRulesErrors = {};
   const field = (on: boolean, text: string, max: number, fallback: number, key: keyof PickRulesErrors) => {
     if (!on) return fallback;
@@ -139,7 +145,7 @@ export function parsePickRules(
     },
     order: draft.order,
   };
-  return { rules: Object.keys(errors).length === 0 ? rules : undefined, errors };
+  return { rules, complete: Object.keys(errors).length === 0, errors };
 }
 
 /** "1 minute", "15 minutes". */

@@ -45,7 +45,8 @@ describe("parseSchedule", () => {
   };
 
   test("is the schedule to save when every field is whole", () => {
-    expect(parseSchedule(draft)).toEqual({
+    expect(parseSchedule(draft, saved)).toEqual({
+      complete: true,
       schedule: {
         slots: [
           { id: "a", days: [1, 3], time: "18:30", spreadMinutes: 15 },
@@ -58,31 +59,67 @@ describe("parseSchedule", () => {
     });
   });
 
-  test("a slot with its last day or its time cleared holds back the whole save, never drops the slot", () => {
-    const noDay = parseSchedule({
-      ...draft,
-      slots: [{ ...draft.slots[0], days: [] }, draft.slots[1]],
-    } as never);
-    expect(noDay.schedule).toBeUndefined();
+  const saved = {
+    slots: [
+      { id: "a", days: [1, 3], time: "18:30", spreadMinutes: 15 },
+      { id: "d", days: [7], time: "07:05", spreadMinutes: 0 },
+    ],
+    timeZone: "Europe/Berlin",
+    graceMinutes: 90,
+  } as never;
+
+  test("a slot with its last day or its time cleared keeps what was saved for it, never drops it", () => {
+    // Slot d's new time is saved; slot a stays as it was saved until it is whole again.
+    const noDay = parseSchedule(
+      {
+        ...draft,
+        slots: [
+          { ...draft.slots[0], days: [] },
+          { ...draft.slots[1], time: "08:00" },
+        ],
+      } as never,
+      saved,
+    );
+    expect(noDay.complete).toBe(false);
     expect(noDay.errors.slots.a?.days).toBe("Pick at least one day.");
-    const noTime = parseSchedule({
-      ...draft,
-      slots: [{ ...draft.slots[0], time: "" }, draft.slots[1]],
-    } as never);
-    expect(noTime.schedule).toBeUndefined();
+    expect(noDay.schedule.slots).toEqual([
+      { id: "a", days: [1, 3], time: "18:30", spreadMinutes: 15 },
+      { id: "d", days: [7], time: "08:00", spreadMinutes: 0 },
+    ]);
+    const noTime = parseSchedule(
+      { ...draft, slots: [{ ...draft.slots[0], time: "" }, draft.slots[1]] } as never,
+      saved,
+    );
+    expect(noTime.complete).toBe(false);
     expect(noTime.errors.slots.a?.time).toBe("Set a time.");
+    expect(noTime.schedule.slots[0]).toEqual({ id: "a", days: [1, 3], time: "18:30", spreadMinutes: 15 });
+  });
+
+  test("a new slot is left out until it is whole: it starts with no days", () => {
+    const added = parseSchedule(
+      { ...draft, slots: [...draft.slots, { id: "new", days: [], time: "18:00", spreadText: "" }] } as never,
+      saved,
+    );
+    expect(added.complete).toBe(false);
+    expect(added.schedule.slots.map((slot) => slot.id)).toEqual(["a", "d"]);
   });
 
   test("a spread or grace period that is not a whole number within bounds is a field error", () => {
-    const spread = parseSchedule({ ...draft, slots: [{ ...draft.slots[0], spreadText: "1.5" }] } as never);
-    expect(spread.schedule).toBeUndefined();
+    const spread = parseSchedule(
+      { ...draft, slots: [{ ...draft.slots[0], spreadText: "1.5" }] } as never,
+      saved,
+    );
+    expect(spread.complete).toBe(false);
     expect(spread.errors.slots.a?.spread).toBe("A whole number from 0 to 720.");
+    expect(spread.schedule.slots[0]?.spreadMinutes).toBe(15);
     for (const graceText of ["", "1e2", "1,000", "1441"]) {
-      const grace = parseSchedule({ ...draft, graceText });
-      expect(grace.schedule).toBeUndefined();
+      // The timezone changed alongside: it is saved; the grace period keeps what was saved.
+      const grace = parseSchedule({ ...draft, timeZone: "Asia/Tokyo", graceText }, saved);
+      expect(grace.complete).toBe(false);
       expect(grace.errors.grace).toBe("A whole number from 0 to 1,440.");
+      expect(grace.schedule).toMatchObject({ timeZone: "Asia/Tokyo", graceMinutes: 90 });
     }
-    expect(parseSchedule({ ...draft, graceText: "0" }).schedule?.graceMinutes).toBe(0);
+    expect(parseSchedule({ ...draft, graceText: "0" }, saved).schedule.graceMinutes).toBe(0);
   });
 });
 
@@ -101,15 +138,21 @@ describe("parsePickRules", () => {
   test("is the rules to save when every number is whole and within bounds", () => {
     expect(parsePickRules(draft, saved)).toEqual({
       rules: { captureDay: { on: true, posts: 3 }, place: { on: true, km: 25, posts: 4 }, order: "oldest" },
+      complete: true,
       errors: {},
     });
   });
 
-  test("a number out of bounds is a field error and nothing is saved", () => {
+  test("a number out of bounds is a field error and keeps what was saved; the other edits save", () => {
     for (const posts of ["0", "51", "1.5"]) {
       const parsed = parsePickRules({ ...draft, captureDay: { on: true, posts } }, saved);
-      expect(parsed.rules).toBeUndefined();
+      expect(parsed.complete).toBe(false);
       expect(parsed.errors.captureDayPosts).toBe("A whole number from 1 to 50.");
+      expect(parsed.rules).toEqual({
+        captureDay: { on: true, posts: 5 },
+        place: { on: true, km: 25, posts: 4 },
+        order: "oldest",
+      });
     }
     const km = parsePickRules({ ...draft, place: { ...draft.place, km: "20001" } }, saved);
     expect(km.errors.placeKm).toBe("A whole number from 1 to 20,000.");

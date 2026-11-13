@@ -1,5 +1,5 @@
 import type { Run, Select } from "@selects/server";
-import { Plus, Shuffle, SkipForward, Undo2 } from "lucide-react";
+import { Plus, RotateCcw, Shuffle, SkipForward, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { api } from "@/api";
@@ -8,6 +8,7 @@ import { QueueList } from "@/components/queue-list";
 import { ScheduleEditor } from "@/components/schedule-editor";
 import { Button } from "@/components/ui/button";
 import { problemsIn } from "@/lib/autosave";
+import { createFreshness, type Freshness, track } from "@/lib/freshness";
 import { describeRun, move, slotTime } from "@/lib/schedule";
 import { Screen } from "./screen";
 
@@ -22,16 +23,29 @@ export function QueueScreen() {
   const [queue, setQueue] = useState<QueueView | undefined>();
   const [loadError, setLoadError] = useState({ schedule: false, queue: false });
   const [queueError, setQueueError] = useState(false);
+  // Every change to what the schedule read shows goes through this: a read that began before a
+  // change, or while one was on its way, never puts an older schedule back on screen.
+  const [fresh] = useState(createFreshness);
 
   const loadSchedule = useCallback(async () => {
+    const read = fresh.startRead();
     let failed = true;
     try {
       const { data, error } = await api.schedule.get();
-      if (data) setView(data);
+      if (data && fresh.readIsFresh(read)) setView(data);
       failed = error !== null;
     } catch {}
     setLoadError((current) => ({ ...current, schedule: failed }));
-  }, []);
+  }, [fresh]);
+  /** Shows a change's answer when it is the latest; otherwise the latest one's answer shows. */
+  const showAnswer = useCallback(
+    (latest: boolean, data: ScheduleView | null | undefined) => {
+      if (!latest) return;
+      if (data) setView(data);
+      else void loadSchedule();
+    },
+    [loadSchedule],
+  );
 
   // Queue changes go one after another; only the answer to the latest is shown. A read is shown
   // only if no change was started or waiting while it ran: an older read never replaces a newer queue.
@@ -71,8 +85,9 @@ export function QueueScreen() {
     waiting.current++;
     const selectIds = next.queue.map((select) => select.id);
     sending.current = sending.current
-      .then(() => api.queue.put({ selectIds }))
-      .then(({ data, error }) => {
+      // Next up changes with the queue: a schedule read overlapping it is not shown.
+      .then(() => track(fresh, () => api.queue.put({ selectIds })))
+      .then(({ answer: { data, error } }) => {
         if (mine !== sent.current) return;
         setQueueError(error !== null);
         if (data) setQueue(data);
@@ -108,33 +123,12 @@ export function QueueScreen() {
           </Button>
         </div>
       )}
-      {view !== undefined && <Status view={view} queued={queue?.queue.length ?? 0} onChange={setView} />}
+      {view !== undefined && (
+        <Status view={view} queued={queue?.queue.length ?? 0} fresh={fresh} onAnswer={showAnswer} />
+      )}
 
       {view !== undefined && view.attention.length > 0 && (
-        <section aria-labelledby="attention" className="flex flex-col gap-3">
-          <h2 id="attention" className="text-sm font-medium text-destructive">
-            Needs attention
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            These can't be posted as they stand, so slots pass them over. They stay where they are until fixed
-            in the{" "}
-            <Link to="/library" className="underline underline-offset-4">
-              Library
-            </Link>
-            .
-          </p>
-          <ul className="flex flex-col gap-2 text-sm">
-            {view.attention.map((item) => (
-              <li
-                key={item.selectId}
-                className="flex flex-col gap-0.5 rounded-lg border border-destructive p-3"
-              >
-                <span className="truncate font-medium">{item.fileName}</span>
-                <span className="text-muted-foreground">{item.problems.join(" ")}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <Attention view={view} fresh={fresh} onAnswer={showAnswer} />
       )}
 
       {view !== undefined && (
@@ -142,7 +136,7 @@ export function QueueScreen() {
           <h2 id="next-up" className="text-sm font-medium text-muted-foreground">
             Next up
           </h2>
-          <NextUp view={view} onChange={setView} />
+          <NextUp view={view} fresh={fresh} onAnswer={showAnswer} />
         </section>
       )}
 
@@ -194,8 +188,9 @@ export function QueueScreen() {
           </h2>
           <ScheduleEditor
             schedule={view.schedule}
+            fresh={fresh}
             // The answer is the whole view, with next up for the new slots.
-            onSaved={setView}
+            onSaved={showAnswer}
           />
         </section>
       )}
@@ -205,7 +200,7 @@ export function QueueScreen() {
           <h2 id="pick-rules" className="text-sm font-medium text-muted-foreground">
             Pick rules
           </h2>
-          <PickRulesEditor rules={view.rules} onSaved={() => void loadSchedule()} />
+          <PickRulesEditor rules={view.rules} fresh={fresh} onSaved={() => void loadSchedule()} />
         </section>
       )}
 
@@ -248,22 +243,29 @@ export function QueueScreen() {
 }
 
 /** The pause switch, and what the schedule will do next, in words. */
+type OnAnswer = (latest: boolean, data: ScheduleView | null | undefined) => void;
+
 function Status({
   view,
   queued,
-  onChange,
+  fresh,
+  onAnswer,
 }: {
   view: ScheduleView;
   queued: number;
-  onChange: (view: ScheduleView) => void;
+  fresh: Freshness;
+  onAnswer: OnAnswer;
 }) {
   const [state, setState] = useState<"idle" | "saving" | "failed">("idle");
   const setPaused = async (paused: boolean) => {
     setState("saving");
     try {
-      const { data, error } = await api.schedule.paused.put({ paused });
+      const {
+        answer: { data, error },
+        latest,
+      } = await track(fresh, () => api.schedule.paused.put({ paused }));
       if (error || !data) throw error;
-      onChange(data);
+      onAnswer(latest, data);
       setState("idle");
     } catch {
       setState("failed");
@@ -337,9 +339,10 @@ function Status({
 }
 
 /** The slots to come within a day, each with its next up, to swap or skip. */
-function NextUp({ view, onChange }: { view: ScheduleView; onChange: (view: ScheduleView) => void }) {
+function NextUp({ view, fresh, onAnswer }: { view: ScheduleView; fresh: Freshness; onAnswer: OnAnswer }) {
   const [problem, setProblem] = useState<{ key: string; text: string } | undefined>();
-  const [busy, setBusy] = useState<string | undefined>();
+  // Each run's own pending action: one starting on another run never frees this one's controls.
+  const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
 
   if (view.upcoming.length === 0) {
     return (
@@ -353,11 +356,14 @@ function NextUp({ view, onChange }: { view: ScheduleView; onChange: (view: Sched
 
   const act = async (run: Run, action: "swap" | "skip" | "unskip") => {
     const key = run.id;
-    setBusy(key);
-    setProblem(undefined);
+    setBusy((current) => new Set(current).add(key));
+    setProblem((current) => (current?.key === key ? undefined : current));
     try {
-      const { data, error } = await api.schedule.runs({ id: run.id })[action].post();
-      if (data) onChange(data);
+      const {
+        answer: { data, error },
+        latest,
+      } = await track(fresh, () => api.schedule.runs({ id: run.id })[action].post());
+      if (data) onAnswer(latest, data);
       if (error) {
         const problems = problemsIn(error.value);
         setProblem({
@@ -368,7 +374,11 @@ function NextUp({ view, onChange }: { view: ScheduleView; onChange: (view: Sched
     } catch {
       setProblem({ key, text: "Couldn't change it. Try again." });
     } finally {
-      setBusy(undefined);
+      setBusy((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
     }
   };
 
@@ -432,7 +442,7 @@ function NextUp({ view, onChange }: { view: ScheduleView; onChange: (view: Sched
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={busy === key}
+                    disabled={busy.has(key)}
                     aria-label={`Don't skip the slot at ${time}`}
                     onClick={() => act(run, "unskip")}
                   >
@@ -444,7 +454,7 @@ function NextUp({ view, onChange }: { view: ScheduleView; onChange: (view: Sched
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={busy === key || run.selectId === null}
+                      disabled={busy.has(key) || run.selectId === null}
                       aria-label={`Swap next up for ${slot}`}
                       onClick={() => act(run, "swap")}
                     >
@@ -454,7 +464,7 @@ function NextUp({ view, onChange }: { view: ScheduleView; onChange: (view: Sched
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={busy === key}
+                      disabled={busy.has(key)}
                       aria-label={`Skip ${slot}`}
                       onClick={() => act(run, "skip")}
                     >
@@ -470,6 +480,82 @@ function NextUp({ view, onChange }: { view: ScheduleView; onChange: (view: Sched
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * Selects slots pass over: those that can't be posted as they stand, until fixed, and those held
+ * back after a failed post, until they are tried again.
+ */
+function Attention({ view, fresh, onAnswer }: { view: ScheduleView; fresh: Freshness; onAnswer: OnAnswer }) {
+  const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
+  const [problem, setProblem] = useState<string | undefined>();
+
+  const tryAgain = async (selectId: string) => {
+    setBusy((current) => new Set(current).add(selectId));
+    setProblem((current) => (current === selectId ? undefined : current));
+    try {
+      const {
+        answer: { data },
+        latest,
+      } = await track(fresh, () => api.schedule.holds({ id: selectId }).delete());
+      if (!data) setProblem(selectId);
+      onAnswer(latest, data);
+    } catch {
+      setProblem(selectId);
+    } finally {
+      setBusy((current) => {
+        const next = new Set(current);
+        next.delete(selectId);
+        return next;
+      });
+    }
+  };
+
+  return (
+    <section aria-labelledby="attention" className="flex flex-col gap-3">
+      <h2 id="attention" className="text-sm font-medium text-destructive">
+        Needs attention
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        Slots pass these over and they keep their place. One that can't be posted as it stands waits until
+        it's fixed in the{" "}
+        <Link to="/library" className="underline underline-offset-4">
+          Library
+        </Link>
+        ; one whose post failed is tried again after a week, or now with Try again. Post now still posts any
+        of them.
+      </p>
+      <ul className="flex flex-col gap-2 text-sm">
+        {view.attention.map((item) => (
+          <li key={item.selectId} className="flex flex-col gap-2 rounded-lg border border-destructive p-3">
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="truncate font-medium">{item.fileName}</span>
+              <span className="text-muted-foreground">{item.problems.join(" ")}</span>
+              {item.heldUntil !== null && (
+                <span className="text-muted-foreground">
+                  Slots try it again from {slotTime(item.heldUntil, view.schedule.timeZone)}.
+                </span>
+              )}
+            </span>
+            {item.heldUntil !== null && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="self-start"
+                disabled={busy.has(item.selectId)}
+                aria-label={`Try ${item.fileName} again`}
+                onClick={() => tryAgain(item.selectId)}
+              >
+                <RotateCcw aria-hidden className="size-4" />
+                Try again
+              </Button>
+            )}
+            {problem === item.selectId && <p className="text-destructive">Couldn't change it. Try again.</p>}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

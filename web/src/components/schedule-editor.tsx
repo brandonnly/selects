@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { api } from "@/api";
 import { Button } from "@/components/ui/button";
 import { type SaveState, useAutosave } from "@/lib/autosave";
+import { type Freshness, track } from "@/lib/freshness";
 import {
   deviceTimeZone,
   LIMITS,
@@ -25,21 +26,27 @@ function newSlotId(): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+type ScheduleAnswer = NonNullable<Awaited<ReturnType<typeof api.schedule.put>>["data"]>;
+
 /**
  * The schedule: slots with days of the week, a time and an optional spread, the install's
- * timezone and the grace period. Saved as it changes, and only while every field is whole: a slot
- * left without a day or a time holds the save back and is never saved as removed. `onSaved` takes
- * what the server answered. A newer schedule from the server is taken up while nothing is unsaved.
+ * timezone and the grace period. Saved as it changes. A field that is not whole (a slot left
+ * without a day or a time, a number out of bounds) keeps what was saved for it while the rest
+ * saves, so leaving the screen loses no whole edit; a slot is never saved as removed, and a new
+ * one is saved once it is whole. `onSaved` takes what the server answered, and whether it is the
+ * latest change's answer. A newer schedule from the server is taken up while nothing is unsaved.
  */
 export function ScheduleEditor({
   schedule,
+  fresh,
   onSaved,
 }: {
   schedule: Schedule;
-  onSaved: (answer: NonNullable<Awaited<ReturnType<typeof api.schedule.put>>["data"]>) => void;
+  fresh: Freshness;
+  onSaved: (latest: boolean, answer: ScheduleAnswer) => void;
 }) {
   const [draft, setDraft] = useState<ScheduleDraft>(() => toDraft(schedule));
-  const parsed = useMemo(() => parseSchedule(draft), [draft]);
+  const parsed = useMemo(() => parseSchedule(draft, schedule), [draft, schedule]);
   const zones = useMemo(timeZones, []);
   const device = useMemo(deviceTimeZone, []);
 
@@ -47,13 +54,14 @@ export function ScheduleEditor({
     value: parsed.schedule,
     loaded: schedule,
     save: async (next) => {
-      const answer = await api.schedule.put(next);
-      if (answer.data) onSaved(answer.data);
+      const { answer, latest } = await track(fresh, () => api.schedule.put(next));
+      if (answer.data) onSaved(latest, answer.data);
       return answer;
     },
     url: "/api/schedule",
     ms: SETTLE_MS,
-    onNewer: (newer) => setDraft(toDraft(newer)),
+    // Not while a field is incomplete: taking it up would drop what is being typed, or a new slot.
+    onNewer: parsed.complete ? (newer) => setDraft(toDraft(newer)) : undefined,
   });
 
   const changeSlot = (id: string, change: Partial<SlotDraft>) =>
@@ -105,7 +113,7 @@ export function ScheduleEditor({
                         key={day}
                         type="button"
                         aria-pressed={on}
-                        aria-label={long}
+                        aria-label={`Slot ${index + 1}, ${long}`}
                         onClick={() =>
                           changeSlot(slot.id, {
                             days: on ? slot.days.filter((d) => d !== day) : [...slot.days, day],
@@ -188,7 +196,8 @@ export function ScheduleEditor({
             ...current,
             slots: [
               ...current.slots,
-              { id: newSlotId(), days: [1, 2, 3, 4, 5, 6, 7], time: "18:00", spreadText: "" },
+              // No days yet: incomplete, so nothing is saved until its days are picked.
+              { id: newSlotId(), days: [], time: "18:00", spreadText: "" },
             ],
           }))
         }
@@ -247,19 +256,20 @@ export function ScheduleEditor({
             <span className="text-destructive">Grace period: {parsed.errors.grace}</span>
           )}
           <span id="grace-help" className="text-xs text-muted-foreground">
-            While Selects runs, every slot posts on time. A slot missed while it was down posts late only
-            within this long, and only the latest; 0 never posts late. Up to {LIMITS.graceMinutes} minutes.
+            A slot found more than a minute late (Selects was down, or checked late) counts as late and posts
+            only within this long, and only the latest; 0 never posts late. Up to {LIMITS.graceMinutes}{" "}
+            minutes.
           </span>
         </label>
       </div>
-      {parsed.schedule === undefined ? (
-        <p role="status" className="text-sm text-destructive">
-          Not saved until the fields marked above are fixed. Nothing changes on the server until then; to drop
-          a slot, use its remove button.
+      {!parsed.complete && (
+        <p className="text-sm text-destructive">
+          The fields marked above aren't saved until they're fixed: until then each keeps what was saved, and
+          a new slot is saved once it has its days. Everything else saves as usual. To drop a slot, use its
+          remove button.
         </p>
-      ) : (
-        <SaveStatus save={save} />
       )}
+      <SaveStatus save={save} />
     </form>
   );
 }

@@ -2,6 +2,7 @@ import type { PickRules } from "@selects/server";
 import { useMemo, useState } from "react";
 import { api } from "@/api";
 import { useAutosave } from "@/lib/autosave";
+import { type Freshness, track } from "@/lib/freshness";
 import { LIMITS, type PickRulesDraft, parsePickRules, toRulesDraft } from "@/lib/schedule";
 import { SaveStatus } from "./schedule-editor";
 
@@ -9,17 +10,25 @@ const SETTLE_MS = 600;
 
 /**
  * The pick rules for picks from the pool, each with a switch and its numbers. Saved as they
- * change, and only while every number is whole and within bounds. Newer rules from the server
- * are taken up while nothing is unsaved.
+ * change; a number that is not whole and within bounds keeps what was saved for it while the rest
+ * saves. Newer rules from the server are taken up while nothing is unsaved.
  */
-export function PickRulesEditor({ rules, onSaved }: { rules: PickRules; onSaved: () => void }) {
+export function PickRulesEditor({
+  rules,
+  fresh,
+  onSaved,
+}: {
+  rules: PickRules;
+  fresh: Freshness;
+  onSaved: () => void;
+}) {
   const [draft, setDraft] = useState<PickRulesDraft>(() => toRulesDraft(rules));
   const parsed = useMemo(() => parsePickRules(draft, rules), [draft, rules]);
   const save = useAutosave({
     value: parsed.rules,
     loaded: rules,
     save: async (next) => {
-      const answer = await api["pick-rules"].put(next);
+      const { answer } = await track(fresh, () => api["pick-rules"].put(next));
       if (answer.data) onSaved();
       return answer;
     },
@@ -161,13 +170,13 @@ export function PickRulesEditor({ rules, onSaved }: { rules: PickRules; onSaved:
       <p className="text-xs text-muted-foreground">
         Posts: 1 to {LIMITS.posts}. Kilometres: 1 to {LIMITS.km.toLocaleString("en-US")}.
       </p>
-      {parsed.rules === undefined ? (
-        <p role="status" className="text-sm text-destructive">
-          Not saved until the numbers marked above are fixed.
+      {!parsed.complete && (
+        <p className="text-sm text-destructive">
+          The numbers marked above aren't saved until they're fixed: until then each keeps what was saved.
+          Everything else saves as usual.
         </p>
-      ) : (
-        <SaveStatus save={save} />
       )}
+      <SaveStatus save={save} />
     </form>
   );
 }
