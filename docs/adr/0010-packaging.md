@@ -1,4 +1,4 @@
-# ADR 0009: One image on Bun's Debian image, published from a tag, installable as a PWA
+# ADR 0010: One image on Bun's Debian image, published from a tag, installable as a PWA
 
 ## Status
 
