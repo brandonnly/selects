@@ -140,7 +140,12 @@ describe("the schedule", () => {
     await send("PUT", "/api/queue", { selectIds: [id] });
     const { body } = await request("/api/schedule");
     expect(body.attention).toEqual([
-      { selectId: id, fileName: "portrait.jpg", problems: [expect.stringContaining("2,200")] },
+      {
+        selectId: id,
+        fileName: "portrait.jpg",
+        problems: [expect.stringContaining("2,200")],
+        heldUntil: null,
+      },
     ]);
   });
 
@@ -222,6 +227,30 @@ describe("the schedule", () => {
     expect(body.history[0]).toMatchObject({ state: "posted", selectId: id });
     expect((await request("/api/posts")).body.posts[0].state).toBe("published");
     expect(bodies.join("\n")).not.toContain(TOKEN);
+  });
+
+  test("a select held back after a failed post is listed, and Try again clears the hold", async () => {
+    instagram.addAccount(TOKEN, { userId: "1784140001", username: "selects_test" });
+    await send("PUT", "/api/instagram/token", { token: TOKEN });
+    const id = await addSelect("portrait");
+    await send("PUT", "/api/schedule", { slots: [NOON], timeZone: "UTC", graceMinutes: 120 });
+    instagram.fail("container", "invalid");
+    clock.advance(Date.parse("2026-11-13T12:00:00Z") - clock.now());
+    await app.scheduler.tick();
+    await app.publisher.settled();
+    // A minute on, tomorrow's slot is planned.
+    clock.advance(60_000);
+    await app.scheduler.tick();
+    const held = await request("/api/schedule");
+    expect(held.body.attention).toEqual([
+      expect.objectContaining({ selectId: id, heldUntil: Date.parse("2026-11-20T12:00:00Z") }),
+    ]);
+    expect(held.body.upcoming[0].selectId).toBeNull();
+    const cleared = await send("DELETE", `/api/schedule/holds/${id}`);
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.attention).toEqual([]);
+    expect(cleared.body.upcoming[0].selectId).toBe(id);
+    expect((await send("DELETE", `/api/schedule/holds/${id}`)).status).toBe(404);
   });
 });
 

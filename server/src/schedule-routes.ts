@@ -89,58 +89,64 @@ export function scheduleRoutes({ scheduler, library, captures, settings }: Sched
     };
   };
 
-  return new Elysia()
-    .get("/api/schedule", view)
-    .put(
-      "/api/schedule",
-      ({ body, status }) => {
-        const result = scheduler.setSchedule({
-          ...body,
-          slots: body.slots.map((slot) => ({ ...slot, days: slot.days as Weekday[] })),
-        });
-        if (!result.ok) return status(422, { problems: result.problems });
+  return (
+    new Elysia()
+      .get("/api/schedule", view)
+      .put(
+        "/api/schedule",
+        ({ body, status }) => {
+          const result = scheduler.setSchedule({
+            ...body,
+            slots: body.slots.map((slot) => ({ ...slot, days: slot.days as Weekday[] })),
+          });
+          if (!result.ok) return status(422, { problems: result.problems });
+          return view();
+        },
+        { body: scheduleSchema },
+      )
+      .put(
+        "/api/schedule/paused",
+        ({ body }) => {
+          scheduler.setPaused(body.paused);
+          return view();
+        },
+        { body: t.Object({ paused: t.Boolean() }, { additionalProperties: false }) },
+      )
+      .put("/api/pick-rules", ({ body }) => scheduler.setRules(body as PickRules), { body: pickRulesSchema })
+      .post("/api/schedule/runs/:id/swap", ({ params, status }) => {
+        const key = runKey(params.id);
+        const result = key === undefined ? "not-found" : scheduler.swap(key.slotId, key.date);
+        if (result === "not-found") return status(404, notFound);
+        if (result === "none") return status(409, { problems: [NOTHING_ELSE] });
         return view();
-      },
-      { body: scheduleSchema },
-    )
-    .put(
-      "/api/schedule/paused",
-      ({ body }) => {
-        scheduler.setPaused(body.paused);
-        return view();
-      },
-      { body: t.Object({ paused: t.Boolean() }, { additionalProperties: false }) },
-    )
-    .put("/api/pick-rules", ({ body }) => scheduler.setRules(body as PickRules), { body: pickRulesSchema })
-    .post("/api/schedule/runs/:id/swap", ({ params, status }) => {
-      const key = runKey(params.id);
-      const result = key === undefined ? "not-found" : scheduler.swap(key.slotId, key.date);
-      if (result === "not-found") return status(404, notFound);
-      if (result === "none") return status(409, { problems: [NOTHING_ELSE] });
-      return view();
-    })
-    .post("/api/schedule/runs/:id/skip", ({ params, status }) => {
-      const key = runKey(params.id);
-      const result = key === undefined ? "not-found" : scheduler.skip(key.slotId, key.date);
-      return result === "not-found" ? status(404, notFound) : view();
-    })
-    .post("/api/schedule/runs/:id/unskip", ({ params, status }) => {
-      const key = runKey(params.id);
-      const result = key === undefined ? "not-found" : scheduler.unskip(key.slotId, key.date);
-      return result === "not-found" ? status(404, notFound) : view();
-    })
-    .get("/api/queue", queueView)
-    .put(
-      "/api/queue",
-      ({ body }) => {
-        scheduler.setQueue(body.selectIds);
-        return queueView();
-      },
-      {
-        body: t.Object(
-          { selectIds: t.Array(t.String({ maxLength: 64 }), { maxItems: 10_000 }) },
-          { additionalProperties: false },
-        ),
-      },
-    );
+      })
+      .post("/api/schedule/runs/:id/skip", ({ params, status }) => {
+        const key = runKey(params.id);
+        const result = key === undefined ? "not-found" : scheduler.skip(key.slotId, key.date);
+        return result === "not-found" ? status(404, notFound) : view();
+      })
+      .post("/api/schedule/runs/:id/unskip", ({ params, status }) => {
+        const key = runKey(params.id);
+        const result = key === undefined ? "not-found" : scheduler.unskip(key.slotId, key.date);
+        return result === "not-found" ? status(404, notFound) : view();
+      })
+      // Try again: a select held back after a failed post can be picked at once.
+      .delete("/api/schedule/holds/:id", ({ params, status }) =>
+        scheduler.clearHold(params.id) ? view() : status(404, notFound),
+      )
+      .get("/api/queue", queueView)
+      .put(
+        "/api/queue",
+        ({ body }) => {
+          scheduler.setQueue(body.selectIds);
+          return queueView();
+        },
+        {
+          body: t.Object(
+            { selectIds: t.Array(t.String({ maxLength: 64 }), { maxItems: 10_000 }) },
+            { additionalProperties: false },
+          ),
+        },
+      )
+  );
 }

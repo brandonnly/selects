@@ -39,6 +39,8 @@ export const SCHEDULE_LIMITS = { slots: 50, spreadMinutes: 720, graceMinutes: 24
  * - `dry-run`: dry run was on; a dry run was recorded and the select stayed where it was.
  * - `missed`: Selects was not running at its time, past the grace period, or a later slot
  *   posted in its place after a stop.
+ * - `late`: Selects was running but checked later than the tolerance (a tick held up): past the
+ *   grace period, or a later slot posted in its place.
  * - `paused`: the pause switch was on at its time.
  * - `empty`: nothing was left to post.
  * - `unavailable`: no account or bucket to publish with; nothing was taken from the queue.
@@ -51,6 +53,7 @@ export type RunState =
   | "posted"
   | "dry-run"
   | "missed"
+  | "late"
   | "paused"
   | "empty"
   | "unavailable"
@@ -78,8 +81,17 @@ export type Run = {
   note: string | null;
 };
 
-/** A select that cannot be posted as it stands: slots pass it over until it is fixed. */
-export type Attention = { selectId: string; fileName: string; problems: string[] };
+/**
+ * A select slots pass over: one that cannot be posted as it stands, until it is fixed, or one
+ * whose latest post failed for good, until `heldUntil` or until its owner clears the hold.
+ */
+export type Attention = {
+  selectId: string;
+  fileName: string;
+  problems: string[];
+  /** When a select held back after a failed post is tried again; null when it is not held. */
+  heldUntil: number | null;
+};
 
 /** What the scheduler did, for notifications (issue #10). */
 export type ScheduleEvent = { kind: Exclude<RunState, "planned" | "posting" | "skipped">; run: Run };
@@ -120,6 +132,26 @@ type StoredSchedule = Omit<Schedule, "slots"> & { slots: StoredSlot[] };
 const MISSED_PAST_GRACE = "Selects was not running at its time, and the grace period has passed.";
 const MISSED_STACKED =
   "Selects was not running at its time. Missed slots never stack: only the latest within the grace period may post.";
+const NOTHING_POSTABLE =
+  "Nothing left could be posted as it stands: the selects that need attention are on the Queue screen.";
+const LATE_PAST_GRACE =
+  "Selects was running but checked more than a minute late, and the grace period has passed.";
+const LATE_STACKED =
+  "Selects was running but checked more than a minute late. Late slots never stack: only the latest within the grace period may post.";
+
+/** How long a select whose post failed for good is held back from slots. */
+export const HOLD_MS = 7 * DAY;
+/**
+ * How many selects one plan, or one read of the schedule, checks for what would be sent. Picks
+ * past these are taken as postable until their turn comes; each is checked before it posts.
+ */
+export const PREVIEW_CAP = 50;
+/** Of those, how many listed as needing attention are checked again, oldest check first. */
+const RECHECK = 20;
+/** How many times a slot about to post plans again when next up turns out not to be postable. */
+const VERIFY_TRIES = 20;
+/** A last tick this recent means Selects was running: a slot found late was a tick held up. */
+const RUNNING_WITHIN = 10;
 
 /** How far ahead next up is chosen. */
 const LOOKAHEAD = DAY;
@@ -163,7 +195,8 @@ export function createScheduler(options: SchedulerOptions) {
     fileName: row.select_id === null ? null : (library.get(row.select_id)?.fileName ?? null),
     note: row.note,
   });
-  const tolerance = toleranceFor(options.intervalMs ?? SCHEDULE_INTERVAL_MS);
+  const interval = options.intervalMs ?? SCHEDULE_INTERVAL_MS;
+  const tolerance = toleranceFor(interval);
 
   const readSetting = <T>(key: string): T | undefined => {
     const row = db.query<{ value: string }, [string]>("SELECT value FROM settings WHERE key = ?").get(key);
@@ -238,8 +271,51 @@ export function createScheduler(options: SchedulerOptions) {
     const preview = publisher.preview([id]);
     return preview === undefined ? ["The select is gone."] : preview.check.problems;
   };
-  /** Selects the last plan passed over, with why. */
-  let passedOver = new Map<string, string[]>();
+  /**
+   * Selects found not postable as they stand, with why. Kept across plans, so the Queue screen
+   * lists them until they are fixed or leave the pool; each plan checks a few of them again, the
+   * longest unchecked first (a check moves one to the end).
+   */
+  const unpostable = new Map<string, string[]>();
+  /** Selects the latest plan checked and found postable. */
+  let verified = new Set<string>();
+
+  /** Records each post that failed for good as Selects first sees it: from then it holds its select back. */
+  const noteFailures = (now: number) =>
+    db
+      .query(
+        `INSERT INTO post_failures (post_id, failed_at) SELECT id, ? FROM posts
+         WHERE state = 'failed' AND id NOT IN (SELECT post_id FROM post_failures)`,
+      )
+      .run(now);
+
+  type Hold = { postId: string; until: number; error: string | null };
+  /**
+   * Selects held back from slots: those whose latest post (dry runs aside) failed for good less
+   * than `HOLD_MS` ago and whose owner has not cleared the hold. A later post replaces the hold.
+   */
+  const holds = (now: number): Map<string, Hold> => {
+    noteFailures(now);
+    const rows = db
+      .query<{ select_id: string; post_id: string; failed_at: number; error: string | null }, [number]>(
+        `SELECT post_selects.select_id, posts.id AS post_id, post_failures.failed_at, posts.error
+         FROM post_failures JOIN posts ON posts.id = post_failures.post_id
+         JOIN post_selects ON post_selects.post_id = posts.id
+         WHERE post_failures.cleared = 0 AND post_failures.failed_at > ? AND posts.state = 'failed'
+           AND post_selects.select_id IS NOT NULL
+           AND posts.id = (
+             SELECT latest.id FROM posts AS latest JOIN post_selects AS its ON its.post_id = latest.id
+             WHERE its.select_id = post_selects.select_id AND latest.state != 'dry-run'
+             ORDER BY latest.created_at DESC, latest.rowid DESC LIMIT 1)`,
+      )
+      .all(now - HOLD_MS);
+    return new Map(
+      rows.map((row) => [
+        row.select_id,
+        { postId: row.post_id, until: row.failed_at + HOLD_MS, error: row.error },
+      ]),
+    );
+  };
 
   /** Queued selects whose post was published, or that were marked as posted, leave the queue. */
   function pruneQueue() {
@@ -288,29 +364,55 @@ export function createScheduler(options: SchedulerOptions) {
    */
   function replan(swapping?: { slotId: string; date: string }): boolean {
     pruneQueue();
+    const held = holds(clock.now());
+    const poolIds = library.pool();
+    const inPoolNow = new Set(poolIds);
+    let previews = 0;
+    const check = (id: string) => {
+      previews++;
+      return problemsOf(id);
+    };
+    /** What this plan found, select by select: each is checked at most once. */
+    const checked = new Map<string, boolean>();
+    verified = new Set();
+    const record = (id: string, problems: string[]) => {
+      unpostable.delete(id);
+      if (problems.length > 0) unpostable.set(id, problems);
+      checked.set(id, problems.length === 0);
+      if (problems.length === 0) verified.add(id);
+    };
+    // Those listed that left the pool leave the list; a few of the rest are checked again.
+    for (const id of [...unpostable.keys()]) if (!inPoolNow.has(id)) unpostable.delete(id);
+    for (const id of [...unpostable.keys()].slice(0, RECHECK)) record(id, check(id));
     const rows = db
       .query<RunRow, []>("SELECT * FROM slot_runs WHERE state = 'planned' ORDER BY due_at, slot_id")
       .all();
-    passedOver = new Map();
-    if (rows.length === 0) return false;
-    const checked = new Map<string, boolean>();
-    /** True when the select can be posted as it stands; the problems of one that cannot are kept. */
-    const postable = (id: string) => {
-      let ok = checked.get(id);
-      if (ok === undefined) {
-        const problems = problemsOf(id);
-        ok = problems.length === 0;
-        checked.set(id, ok);
-        if (!ok) passedOver.set(id, problems);
+    if (rows.length === 0) {
+      // With no slot to plan, the queue is still checked, so what needs attention shows.
+      for (const id of queued()) {
+        if (previews >= PREVIEW_CAP) break;
+        if (!checked.has(id) && !unpostable.has(id) && !held.has(id)) record(id, check(id));
       }
-      return ok;
+      return false;
+    }
+    /** True when the select can be posted as it stands, as far as this plan has checked. */
+    const postable = (id: string) => {
+      if (held.has(id)) return false;
+      const known = checked.get(id);
+      if (known !== undefined) return known;
+      if (unpostable.has(id)) return false;
+      // Past the cap, taken as postable until its turn: a slot checks next up before it posts.
+      if (previews >= PREVIEW_CAP) return true;
+      record(id, check(id));
+      return checked.get(id) as boolean;
     };
     const current = rules();
-    const pool = library
-      .pool()
+    // Built once for the plan, without the selects already known to be held back.
+    const pool = poolIds
+      .filter((id) => !held.has(id) && !unpostable.has(id))
       .map(candidate)
       .filter((found) => found !== undefined);
-    const free = new Set(pool.map((found) => found.id));
+    const free = inPoolNow;
     const queue = queued();
     const isSwapping = (row: RunRow) => row.slot_id === swapping?.slotId && row.date === swapping.date;
     const swapStands = (row: RunRow) =>
@@ -327,18 +429,31 @@ export function createScheduler(options: SchedulerOptions) {
     const update = db.query(
       "UPDATE slot_runs SET select_id = ?, picked = ? WHERE slot_id = ? AND date = ? AND state = 'planned'",
     );
-    /** A pool pick under the rules: the one planned while the rules still allow it, or another. */
+    /**
+     * A pool pick under the rules: the one planned while the rules still allow it, or another in
+     * the rules' order, passing over those that cannot be posted. The rules are worked out once
+     * for each step of relaxing them, never once per select passed over.
+     */
     const pickFromPool = (row: RunRow, excluded: Set<string>): string | null => {
       for (;;) {
         const found = eligible({ pool, recent: [...ahead, ...real], rules: current, exclude: excluded });
         if (found === undefined) return null;
-        const keep =
+        const planned = row.select_id;
+        if (
           row.picked === "pool" &&
           !isSwapping(row) &&
-          found.candidates.some((candidate) => candidate.id === row.select_id);
-        const id = keep ? (row.select_id as string) : choose(found.candidates, current.order, random).id;
-        if (postable(id)) return id;
-        excluded.add(id);
+          planned !== null &&
+          found.candidates.some((candidate) => candidate.id === planned) &&
+          postable(planned)
+        )
+          return planned;
+        const left = [...found.candidates];
+        while (left.length > 0) {
+          const next = choose(left, current.order, random);
+          if (postable(next.id)) return next.id;
+          excluded.add(next.id);
+          left.splice(left.indexOf(next), 1);
+        }
       }
     };
     let swapped = false;
@@ -406,13 +521,16 @@ export function createScheduler(options: SchedulerOptions) {
   };
 
   /**
-   * Posts the slots that are due. A slot found within the timer's tolerance came due while Selects
-   * was running, and posts; every such slot posts, one after another. A slot found later than that
-   * came due while Selects (or its timer) was not running: of those, only the latest posts, only
-   * within the grace period, and only when no slot on time posts in its place. Missed slots never
-   * stack.
+   * Posts the slots that are due. A slot found within the timer's tolerance is on time, and
+   * posts; every such slot posts, one after another. A slot found later than that came due while
+   * Selects was not running, or while it ran but checked late (`running`: the last tick was
+   * recent): of those, only the latest posts, only within the grace period, and only when no slot
+   * on time posts in its place. Late slots never stack.
+   *
+   * Each slot is read again after the one before it posted, as posting awaits: one paused, moved
+   * later, skipped or settled meanwhile does not post now.
    */
-  async function fire(now: number) {
+  async function fire(now: number, running: boolean) {
     const due = db
       .query<RunRow, [number]>(
         "SELECT * FROM slot_runs WHERE state = 'planned' AND due_at <= ? ORDER BY due_at, slot_id",
@@ -422,26 +540,56 @@ export function createScheduler(options: SchedulerOptions) {
     const grace = stored().graceMinutes * MINUTE;
     const onTime = (row: RunRow) => now - row.due_at <= tolerance;
     const withinGrace = (row: RunRow) => now - row.due_at <= grace + tolerance;
+    const lateState = running ? "late" : "missed";
+    const pastGrace = running ? LATE_PAST_GRACE : MISSED_PAST_GRACE;
     if (paused()) {
       for (const row of due) {
         if (withinGrace(row)) finish(row, "paused", { note: "Posting was paused." });
-        else finish(row, "missed", { note: MISSED_PAST_GRACE });
+        else finish(row, lateState, { note: pastGrace });
       }
       return;
     }
     const timely = due.filter(onTime);
     const late = due.filter((row) => !onTime(row));
-    // After downtime, the latest late slot within grace posts, unless one on time posts instead.
+    // Of the late slots, the latest within grace posts, unless one on time posts instead.
     const survivor = timely.length === 0 ? late.filter(withinGrace).at(-1) : undefined;
     for (const row of late) {
       if (row === survivor) continue;
-      finish(row, "missed", { note: withinGrace(row) ? MISSED_STACKED : MISSED_PAST_GRACE });
+      finish(row, lateState, {
+        note: withinGrace(row) ? (running ? LATE_STACKED : MISSED_STACKED) : pastGrace,
+      });
     }
     for (const row of survivor === undefined ? timely : [survivor]) {
-      // Who is free changed with each slot settled before this one: next up is planned again.
+      const current = ready(row);
+      if (current === undefined) continue;
+      if (paused()) {
+        finish(current, "paused", { note: "Posting was paused." });
+        continue;
+      }
+      await post(current);
+    }
+  }
+
+  /**
+   * A due run as it stands now, with next up planned again and checked: who is free changed with
+   * each slot settled before it. Undefined when it is no longer to post now: settled, skipped or
+   * moved later meanwhile, or left with nothing that can be posted.
+   */
+  function ready(row: RunRow): RunRow | undefined {
+    for (let tries = 0; ; tries++) {
       replan();
       const current = runRow(row.slot_id, row.date);
-      if (current?.state === "planned") await post(current);
+      if (current?.state !== "planned" || current.due_at > clock.now()) return undefined;
+      const id = current.select_id;
+      // A pick past the plan's cap was taken as postable: it is checked now, before it posts.
+      if (id === null || verified.has(id)) return current;
+      const problems = problemsOf(id);
+      if (problems.length === 0) return current;
+      unpostable.set(id, problems);
+      if (tries >= VERIFY_TRIES) {
+        finish(current, "empty", { note: NOTHING_POSTABLE, selectId: null });
+        return undefined;
+      }
     }
   }
 
@@ -455,9 +603,7 @@ export function createScheduler(options: SchedulerOptions) {
     const selectId = row.select_id;
     if (selectId === null || !inPool(selectId)) {
       const note =
-        passedOver.size > 0
-          ? "Nothing left could be posted as it stands: the selects that need attention are on the Queue screen."
-          : "Nothing left to post.";
+        unpostable.size > 0 || holds(clock.now()).size > 0 ? NOTHING_POSTABLE : "Nothing left to post.";
       finish(row, "empty", { note, selectId: null });
       return;
     }
@@ -519,12 +665,17 @@ export function createScheduler(options: SchedulerOptions) {
   let running: Promise<void> | undefined;
   async function tickNow() {
     const now = clock.now();
+    // A tick this recent means Selects was running: a slot found late was a tick held up.
+    const last = readSetting<number>("scheduleTickedAt");
+    const running = last !== undefined && now - last <= RUNNING_WITHIN * interval;
     plan(now);
     writeSetting("scheduleTickedAt", now);
     // Settles what is missed or paused first, then plans again before each slot posts.
-    await fire(now);
+    await fire(now, running);
     replan();
     prune(now);
+    // Posting may take minutes: the next tick counts from the end of this one.
+    writeSetting("scheduleTickedAt", clock.now());
   }
 
   const planned = (slotId: string, date: string) => {
@@ -628,8 +779,9 @@ export function createScheduler(options: SchedulerOptions) {
             old?.spreadMinutes === slot.spreadMinutes
               ? Math.min(row.due_at - row.slot_at, slot.spreadMinutes * MINUTE)
               : drawSpread(slot);
-          // Moved before now: it posts from its next time on. A skip stays, for that day.
-          if (row.state === "planned" && slotAt + spread <= now) remove.run(row.slot_id, row.date);
+          // Moved to a time already past: it posts from its next time on, whatever its spread. A
+          // skip stays, for that day.
+          if (row.state === "planned" && slotAt <= now) remove.run(row.slot_id, row.date);
           else move.run(slotAt, slotAt + spread, row.slot_id, row.date);
         }
       })();
@@ -728,19 +880,34 @@ export function createScheduler(options: SchedulerOptions) {
       return preview.problems.slice(preview.check.problems.length);
     },
 
-    /** Selects that cannot be posted as they stand: queued ones, and those the plan passed over. */
+    /**
+     * Selects slots pass over, with why: those found not postable as they stand, and those held
+     * back after a failed post. Reads only what the plans found: it previews nothing itself.
+     */
     attention(): Attention[] {
-      const found = new Map(passedOver);
-      for (const id of queued()) {
-        if (found.has(id)) continue;
-        const problems = problemsOf(id);
-        if (problems.length > 0) found.set(id, problems);
-      }
-      return [...found].map(([selectId, problems]) => ({
-        selectId,
-        fileName: library.get(selectId)?.fileName ?? "A deleted select",
-        problems,
-      }));
+      const held = holds(clock.now());
+      const ids = [...new Set([...unpostable.keys(), ...held.keys()])].filter(inPool);
+      return ids.map((selectId) => {
+        const hold = held.get(selectId);
+        return {
+          selectId,
+          fileName: library.get(selectId)?.fileName ?? "A deleted select",
+          problems: [
+            ...(unpostable.get(selectId) ?? []),
+            ...(hold === undefined ? [] : [`Its last post failed: ${hold.error ?? "no reason was given."}`]),
+          ],
+          heldUntil: hold?.until ?? null,
+        };
+      });
+    },
+
+    /** Lets a select held back after a failed post be picked again at once. False if it was not held. */
+    clearHold(selectId: string): boolean {
+      const hold = holds(clock.now()).get(selectId);
+      if (hold === undefined) return false;
+      db.query("UPDATE post_failures SET cleared = 1 WHERE post_id = ?").run(hold.postId);
+      replan();
+      return true;
     },
 
     /**

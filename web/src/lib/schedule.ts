@@ -202,6 +202,7 @@ export function describeRun(run: Pick<Run, "state" | "note" | "post">): {
     posted: "Sent to post",
     "dry-run": "Dry run",
     missed: "Missed",
+    late: "Found late",
     paused: "Paused",
     empty: "Nothing to post",
     unavailable: "Not posted",

@@ -292,7 +292,7 @@ export const migrations: readonly Migration[] = [
     picked TEXT CHECK (picked IN ('queue', 'pool', 'swap')),
     -- Selects swapped away for this slot, as a JSON list.
     passed TEXT NOT NULL DEFAULT '[]',
-    state TEXT NOT NULL CHECK (state IN ('planned', 'skipped', 'posting', 'posted', 'dry-run', 'missed',
+    state TEXT NOT NULL CHECK (state IN ('planned', 'skipped', 'posting', 'posted', 'dry-run', 'missed', 'late',
       'paused', 'empty', 'unavailable', 'failed')),
     -- Set before the publisher is called, so a restart finds a slot that was firing.
     claimed_at INTEGER,
@@ -301,5 +301,15 @@ export const migrations: readonly Migration[] = [
     PRIMARY KEY (slot_id, date)
   );
   CREATE INDEX slot_runs_due ON slot_runs (state, due_at);
+
+  -- When Selects saw each post fail for good. While a select's latest post is a failure seen
+  -- less than 7 days ago and not cleared by its owner, slots pass the select over.
+  CREATE TABLE post_failures (
+    post_id TEXT PRIMARY KEY REFERENCES posts (id) ON DELETE CASCADE,
+    failed_at INTEGER NOT NULL,
+    cleared INTEGER NOT NULL DEFAULT 0 CHECK (cleared IN (0, 1))
+  );
+  -- Posts that failed before this was kept count from when they were made.
+  INSERT INTO post_failures (post_id, failed_at) SELECT id, created_at FROM posts WHERE state = 'failed';
   `,
 ];
