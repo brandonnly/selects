@@ -1,0 +1,23 @@
+# An allowlist: the build context holds only what the Dockerfile copies. Everything else,
+# including .git, .env files, data/, .tmp/, node_modules and the frame references, stays out.
+*
+!package.json
+!bun.lock
+!server/package.json
+!server/src
+!server/fonts
+!web/package.json
+!web/index.html
+!web/tsconfig.json
+!web/vite.config.ts
+!web/src
+!brand/favicon
+!brand/tokens
+
+# Never inside the allowed folders either.
+**/*.test.ts
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/.DS_Store
