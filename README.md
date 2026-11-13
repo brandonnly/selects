@@ -9,8 +9,8 @@ post. Upload your finals once. On the schedule you set, it picks one, renders it
 its shutter speed, aperture, ISO and coordinates read from the file, and publishes it to your
 Instagram account.
 
-It's early: photos can be added to the Library and framed, but nothing is posted yet. The plan is in
-[docs/PRODUCT.md](docs/PRODUCT.md).
+It's early, and it has not yet posted to the real Instagram API: everything up to that is built
+and runs against a fake Instagram. The plan is in [docs/PRODUCT.md](docs/PRODUCT.md).
 
 - One container, one volume, SQLite. No other services to run.
 - Meant for a home server on a LAN or tailnet, not the open internet.
@@ -50,6 +50,170 @@ Six typefaces are bundled, each with its license in `server/fonts`. To use anoth
 one `.ttf`, `.otf` or `.woff` file in the `fonts` folder of the data directory: it replaces the
 chosen typeface on every frame until it is removed.
 
+## Running Selects
+
+Selects is published as one container image for amd64 and arm64:
+`ghcr.io/brandonnly/selects`, tagged with each version and `latest`. It keeps everything in one
+volume at `/data` and listens on port 3000.
+
+### Keep it off the internet
+
+Selects has no login by default: anyone who can reach it can post to your Instagram account,
+read your photos' locations and download the originals. Run it on your LAN, over a VPN or
+tailnet, or behind a reverse proxy that has its own authentication. Do not forward a port to
+it or put it on a public hostname.
+
+`SELECTS_PASSWORD` puts the whole app behind one password. It is a second lock for a trusted
+network, not a reason to expose Selects: there are no accounts, no rate limit on guesses and no
+two-factor sign-in. With it set, the health check, the web manifest and the app's icons still
+answer without it; the health check says only whether the app is up.
+
+### With Docker
+
+```sh
+docker run --detach --name selects --restart unless-stopped \
+  --publish 3000:3000 \
+  --volume selects-data:/data \
+  ghcr.io/brandonnly/selects:latest
+```
+
+Then open port 3000 of the server from a device on the same network. Or with Compose, keeping
+the variables in an env file made from [.env.example](.env.example):
+
+```yaml
+services:
+  selects:
+    image: ghcr.io/brandonnly/selects:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - selects-data:/data
+    # SELECTS_PASSWORD, INSTAGRAM_API and BUCKET_*; DATA_DIR and PORT are set by the image.
+    env_file: selects.env
+
+volumes:
+  selects-data:
+```
+
+The image runs as user and group 1000, not root. A named volume, as above, is ready for it. To
+keep the data in a folder on the host instead, make the folder writable by that user
+(`sudo chown 1000:1000 <folder>`), or run the container as the folder's owner with
+`--user <uid>:<gid>` (`user:` in Compose). If Selects cannot write to its data folder it says
+so and stops.
+
+The image starts in fake mode: nothing is posted until you [go live](#go-live). The container
+reports healthy once `/api/health` answers, and stops cleanly on `docker stop`: requests in
+flight finish and the database is closed. To update, pull the new image and recreate the
+container; the database is migrated when it starts.
+
+Back up the volume: it holds the database, the original photos and the inbox.
+
+### On Unraid
+
+The template is [unraid/selects.xml](unraid/selects.xml). Save it on the server as
+`/boot/config/plugins/dockerMan/templates-user/my-Selects.xml`, then pick Selects under
+**Add Container** in the Docker tab. It runs Selects as `nobody:users` (99:100), the owner Unraid
+gives files in its shares, so photos copied into the inbox over the network can be moved.
+Before the first start, create the data folder and give it to that user:
+
+```sh
+mkdir -p /mnt/user/appdata/selects
+chown 99:100 /mnt/user/appdata/selects
+```
+
+The template's warnings apply: keep it off the internet, and leave `INSTAGRAM_API` at `fake`
+until you go live.
+
+## Posting to Instagram
+
+Selects publishes through Meta's Instagram API with Instagram Login (see
+[ADR 0003](docs/adr/0003-instagram-publishing.md)). It needs three things: a Meta app of your
+own, a long-lived token for your Instagram account, and an S3-compatible bucket that Instagram
+fetches each frame from. Until `INSTAGRAM_API=live` is set none of them is used.
+
+These steps follow Meta's documentation as of November 2026; Meta renames its dashboard often,
+so look for the nearest match if a label differs.
+
+### Create the Meta app
+
+1. Your Instagram account must be a professional account (business or creator) and public.
+   Switch it in the Instagram app's settings if it is not. No Facebook Page is needed.
+2. At [developers.facebook.com](https://developers.facebook.com/), log in, open My Apps and
+   choose **Create App**.
+3. For the use case choose **Other**; for the app type, **Business**. Give it a name and your
+   contact email.
+4. On the app's dashboard, find **Instagram** and choose **Set up**. Use **API setup with
+   Instagram login**, not the Facebook login variant.
+5. Under **App roles > Roles**, add your Instagram account as an **Instagram Tester**. Accept the
+   invite from that account: in Instagram's settings, under **Apps and websites**, open
+   **Tester invites**.
+
+The app stays with Standard Access, which is meant for an app used only by accounts that have a
+role on it. It needs no App Review and no login flow. You can leave webhooks and business login
+settings empty. Meta's app guide also mentions connecting a verified business before
+publishing; its overview asks for that only when the app serves accounts without a role on it.
+If Instagram refuses to publish for that reason, connect one under **App settings > Basic**.
+
+### Generate the long-lived token
+
+1. In the app's dashboard, open **Instagram > API setup with Instagram login**.
+2. Under the step for generating access tokens, add your Instagram account if it is not listed,
+   then choose **Generate token** beside it and log in to Instagram. Allow at least
+   `instagram_business_basic` and `instagram_business_content_publish`.
+3. Copy the token. A token from the dashboard is long-lived: it lasts 60 days.
+4. In Selects, paste it under **Settings**. Selects shows the account it belongs to, refreshes it
+   daily (Meta allows a refresh once a token is a day old, each adding 60 days) and never shows
+   it again. Its expiry shows once a refresh works. If Selects is stopped for 60 days the token
+   expires, and you generate a new one.
+
+Treat the token like a password: it can post to your account. It is kept in the database, in
+the data volume.
+
+### Configure the bucket
+
+Instagram takes an image only as a URL it fetches itself, so each frame is uploaded to a bucket
+first. Any S3-compatible service works.
+
+- `BUCKET_ENDPOINT`: the provider's S3 API endpoint, as an `https://` URL.
+- `BUCKET_NAME`: the bucket.
+- `BUCKET_ACCESS_KEY_ID` and `BUCKET_SECRET_ACCESS_KEY`: an access key limited to this bucket,
+  allowed to read, write and delete objects. Keep them in the environment, never in a file in
+  git.
+- `BUCKET_REGION`: the bucket's region where the provider needs one. Default: `auto`.
+- `BUCKET_PUBLIC_URL`: the public URL the bucket's objects are served from, without a trailing
+  slash: the provider's public bucket URL or a custom domain in front of it. Set it. Instagram
+  fetches each frame from it, and gallery output needs it.
+
+Objects get random keys, never file names. A framed image is deleted once it is published,
+unless gallery output keeps it. With gallery output on, `posts.json` and the clean images are
+public under `BUCKET_PUBLIC_URL`. A gallery on another site reads `posts.json` only if the bucket
+allows it: add a CORS rule allowing `GET` from that site's origin (see
+[docs/manifest.md](docs/manifest.md)). Instagram's own fetch needs no CORS rule.
+
+**Private buckets are unverified.** Without `BUCKET_PUBLIC_URL`, Selects hands Instagram a
+one-hour presigned link to each frame instead. This is not supported yet: no real publish
+through a presigned link has passed, and gallery output is unavailable without a public URL.
+Use a public base URL.
+
+### Go live
+
+Fake mode is the default and makes no outside request. Moving to the real API is a deliberate
+step:
+
+1. Turn on **Dry run** in Settings.
+2. Set `INSTAGRAM_API=live` and the `BUCKET_*` variables, and restart Selects. Settings names any
+   bucket variable still missing.
+3. Paste the token in Settings and check the account it shows.
+4. Use **Post now** on a select. The Posted screen shows the frame, caption and everything a real
+   post would send, and nothing leaves Selects.
+5. Turn **Dry run** off. From now on the schedule and **Post now** publish to Instagram, and a
+   post cannot be taken back from Selects: remove it in the Instagram app.
+
+If Instagram is asked to publish a post and never confirms whether it did, the post shows on the
+Posted screen as needing a check, and its select stays out of the pool until Instagram answers
+or you say whether it was posted.
+
 ## Development
 
 You need [Bun](https://bun.sh); the version is pinned in `package.json` under `packageManager`.
@@ -82,7 +246,7 @@ Every environment variable is listed in [.env.example](.env.example). Copy it to
 change a port. The password applies to the built app: under `bun run dev` it guards the API but
 the dev server has no password page, so leave it unset there.
 
-## Running the built app
+## Running from source
 
 ```sh
 bun run build
@@ -91,32 +255,13 @@ bun run start
 
 `bun run build` builds the UI into `web/dist`. `bun run start` runs one process that serves the
 API under `/api` and the built UI everywhere else. It needs `DATA_DIR` set: a missing `DATA_DIR`
-or an invalid `PORT` stops startup and names the variable.
-
-### Publishing to Instagram
-
-Publishing needs an S3-compatible bucket and an Instagram account (see
-[ADR 0003](docs/adr/0003-instagram-publishing.md)):
-
-1. Set `INSTAGRAM_API=live`. Without it, Selects talks only to its fake Instagram server and fake
-   bucket, and nothing is posted.
-2. Set `BUCKET_ENDPOINT`, `BUCKET_NAME`, `BUCKET_ACCESS_KEY_ID` and `BUCKET_SECRET_ACCESS_KEY`,
-   and `BUCKET_PUBLIC_URL`, the URL the bucket serves its objects from. Publishing without a
-   public URL, through a presigned link, is not yet proven against Instagram. They are used only in live
-   mode; without them Selects runs, and Settings names the variables still missing.
-3. Paste a long-lived token from your Meta app in Settings. Selects shows the account it belongs
-   to, refreshes it daily and never shows it again. Its expiry shows once a refresh works.
-
-If Instagram is asked to publish a post and never confirms whether it did, the post shows on the
-Posted screen as needing a check, and its select stays out of the pool until Instagram answers
-or you say whether it was posted.
-
-Try a post with the Dry run switch on first: the Posted screen shows the frame, caption and
-everything a real post would send.
+or an invalid `PORT` stops startup and names the variable. Everything under
+[Running Selects](#running-selects) and [Posting to Instagram](#posting-to-instagram) applies.
 
 ## Checks
 
-These run in CI on every pull request:
+These run in CI on every pull request, with a build of the image that is started and checked by
+[.github/scripts/smoke-test-image.sh](.github/scripts/smoke-test-image.sh):
 
 ```sh
 bun run typecheck
@@ -124,6 +269,15 @@ bun run lint     # Biome; `bun run format` fixes what it can
 bun test
 bun run build
 ```
+
+## Releasing
+
+A tag `v<version>` publishes the image. Set `version` in the root `package.json` to the same
+version first: the release refuses a tag that does not match it, since `/api/health` reports
+that version. The release smoke-tests the image natively on amd64 and arm64, then pushes both
+to `ghcr.io/brandonnly/selects` as `<version>` and `latest` (a pre-release such as
+`v1.0.0-rc.1` is not tagged `latest`). The first push creates the package private: make it
+public once in the package's settings on GitHub.
 
 ## License
 
