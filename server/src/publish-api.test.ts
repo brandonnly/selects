@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createApp } from "./app";
 import { createFakeClock, type FakeClock } from "./clock";
-import { loadConfig } from "./config";
+import { BucketSettings, loadConfig } from "./config";
 import { openDatabase } from "./db";
 import { createFakeBucket, FAKE_BUCKET_KEYS, type FakeBucket } from "./fake-bucket";
 import { createFakeInstagram, type FakeInstagram } from "./fake-instagram";
@@ -32,18 +32,23 @@ let app: ReturnType<typeof createApp>;
 /** Every response body the app sent in a test, to check for secrets. */
 let bodies: string[];
 
-const appWith = (env: Record<string, string> = {}) =>
+/** The app in fake mode, as `main.ts` runs it: the fake Instagram and the fake bucket. */
+const appWith = (env: Record<string, string> = {}, options: { noBucket?: boolean } = {}) =>
   createApp({
     config: loadConfig({ DATA_DIR: dataDir, ...env }),
     db,
     webDir: join(dataDir, "no-ui"),
     instagram: createInstagramApi({ baseUrl: instagram.url }),
+    fakeBucket: options.noBucket ? undefined : fakeBucketSettings(bucket),
     clock,
   });
 
-const bucketEnv = () => ({
-  BUCKET_ENDPOINT: bucket.endpoint,
-  BUCKET_NAME: bucket.name,
+const fakeBucketSettings = (fake: FakeBucket) =>
+  new BucketSettings(fake.endpoint, fake.name, "auto", undefined, FAKE_BUCKET_KEYS);
+
+const bucketEnv = (fake: FakeBucket) => ({
+  BUCKET_ENDPOINT: fake.endpoint,
+  BUCKET_NAME: fake.name,
   BUCKET_ACCESS_KEY_ID: FAKE_BUCKET_KEYS.accessKeyId,
   BUCKET_SECRET_ACCESS_KEY: FAKE_BUCKET_KEYS.secretAccessKey,
 });
@@ -55,7 +60,7 @@ beforeEach(() => {
   instagram = createFakeInstagram({ clock });
   bucket = createFakeBucket();
   bodies = [];
-  app = appWith(bucketEnv());
+  app = appWith();
 });
 afterEach(async () => {
   await instagram.stop();
@@ -194,21 +199,48 @@ describe("the Instagram token in Settings", () => {
 
 describe("publishing settings", () => {
   test("say which bucket variables are missing, by name only", async () => {
-    app = appWith();
+    app = appWith({ INSTAGRAM_API: "live" });
 
     const { body } = await request("/api/publishing");
 
     expect(body.bucket).toEqual({
       configured: false,
+      fake: false,
       missing: ["BUCKET_ENDPOINT", "BUCKET_NAME", "BUCKET_ACCESS_KEY_ID", "BUCKET_SECRET_ACCESS_KEY"],
       url: null,
     });
   });
 
+  test("in fake mode never send anything to the bucket set in the environment", async () => {
+    // `bucket` stands in for a real bucket the owner has set; the fakes run beside it.
+    const fakes = createFakeBucket();
+    try {
+      app = createApp({
+        config: loadConfig({ DATA_DIR: dataDir, ...bucketEnv(bucket) }),
+        db,
+        webDir: join(dataDir, "no-ui"),
+        instagram: createInstagramApi({ baseUrl: instagram.url }),
+        fakeBucket: fakeBucketSettings(fakes),
+        clock,
+      });
+      await connect();
+      const id = await addSelect("portrait");
+
+      const { body } = await postNow(id);
+
+      expect(app.publisher.post(body.post.id)?.state).toBe("published");
+      expect(fakes.requests.length).toBeGreaterThan(0);
+      expect(bucket.requests).toHaveLength(0);
+      expect((await request("/api/publishing")).body.bucket).toMatchObject({ configured: true, fake: true });
+    } finally {
+      await fakes.stop();
+    }
+  });
+
   test("say how Instagram will be given the frame, and never show the keys", async () => {
     const { body } = await request("/api/publishing");
 
-    expect(body.bucket).toEqual({ configured: true, missing: [], url: "presigned" });
+    expect(body.bucket).toEqual({ configured: true, fake: true, missing: [], url: "presigned" });
     expect(body.instagram.mode).toBe("fake");
     expect(bodies.join("\n")).not.toContain(FAKE_BUCKET_KEYS.accessKeyId);
     expect(bodies.join("\n")).not.toContain(FAKE_BUCKET_KEYS.secretAccessKey);
@@ -323,7 +355,8 @@ describe("post now", () => {
   });
 
   test("is refused without a bucket, saying what is missing", async () => {
-    app = appWith();
+    // Live mode with no bucket set; Instagram is still the fake.
+    app = appWith({ INSTAGRAM_API: "live" });
     await connect();
     const id = await addSelect("portrait");
 

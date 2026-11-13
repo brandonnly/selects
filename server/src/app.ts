@@ -9,7 +9,7 @@ import { createCaptionStore } from "./caption-store";
 import { createCaptures } from "./capture";
 import { captureRoutes } from "./capture-routes";
 import { type Clock, systemClock } from "./clock";
-import type { Config } from "./config";
+import type { BucketConfig, BucketSettings, Config } from "./config";
 import { databaseStatus } from "./db";
 import {
   createFrameRenderer,
@@ -56,6 +56,11 @@ export type AppOptions = {
    * every request fails until the fake server is passed in (as `main.ts` does).
    */
   instagram?: InstagramApi;
+  /**
+   * The fake bucket, in fake mode. In fake mode the bucket in `BUCKET_*` is never used, so
+   * nothing leaves the install; without this, publishing is unavailable.
+   */
+  fakeBucket?: BucketSettings;
   clock?: Clock;
 };
 
@@ -109,7 +114,22 @@ const framePreviewQuery = t.Object({
 
 export type FramePreviewQuery = (typeof framePreviewQuery)["static"];
 
-function createServices({ config, db, library, inboxSettleMs, instagram, clock = systemClock }: AppOptions) {
+/** The bucket publishing uses: the one configured in live mode, only the fake one in fake mode. */
+export function bucketFor(config: Config, fakeBucket: BucketSettings | undefined): BucketConfig {
+  if (config.instagram === "live") return config.bucket;
+  return fakeBucket ?? { status: "missing", missing: [] };
+}
+
+function createServices({
+  config,
+  db,
+  library,
+  inboxSettleMs,
+  instagram,
+  fakeBucket,
+  clock = systemClock,
+}: AppOptions) {
+  const bucket = bucketFor(config, fakeBucket);
   const lib = library ?? createLibrary({ db, dataDir: config.dataDir, inboxSettleMs });
   const settings = createSettings(db);
   const renderer = createFrameRenderer({ dataDir: config.dataDir });
@@ -130,11 +150,11 @@ function createServices({ config, db, library, inboxSettleMs, instagram, clock =
     captionStore,
     account,
     api,
-    bucket: config.bucket.status === "configured" ? createBucket(config.bucket) : config.bucket,
+    bucket: bucket.status === "configured" ? createBucket(bucket) : bucket,
     clock,
     mode: config.instagram,
   });
-  return { library: lib, settings, renderer, zones, captures, captionStore, account, publisher };
+  return { library: lib, settings, renderer, zones, captures, captionStore, account, publisher, bucket };
 }
 
 /** Stands in for the fake Instagram server when none was started: every request fails. */
@@ -157,7 +177,7 @@ type Services = ReturnType<typeof createServices>;
 
 function createRoutes(
   { config, db, webDir, maxUploadBytes = MAX_UPLOAD_BYTES }: AppOptions,
-  { library: lib, settings, renderer, zones, captures, captionStore, account, publisher }: Services,
+  { library: lib, settings, renderer, zones, captures, captionStore, account, publisher, bucket }: Services,
 ) {
   const uploadDir = join(config.dataDir, "uploads");
 
@@ -232,7 +252,7 @@ function createRoutes(
         capture: (id) => captures.published(id),
       }),
     )
-    .use(publishRoutes({ publisher, account, settings, bucket: config.bucket, instagram: config.instagram }))
+    .use(publishRoutes({ publisher, account, settings, bucket, instagram: config.instagram }))
     .delete("/api/selects/:id", ({ params, status }) =>
       lib.remove(params.id) ? status(204) : status(404, notFound),
     )

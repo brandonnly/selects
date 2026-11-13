@@ -24,14 +24,16 @@ export function publishRoutes({ publisher, account, settings, bucket, instagram 
   const publishing = () => ({
     dryRun: settings.publishing().dryRun,
     instagram: { mode: instagram, account: account.view() },
+    // In fake mode the bucket is the fake one inside Selects, whatever BUCKET_* says.
     bucket:
       bucket.status === "configured"
         ? {
             configured: true as const,
+            fake: instagram === "fake",
             missing: [] as string[],
             url: bucket.publicBaseUrl === undefined ? ("presigned" as const) : ("public" as const),
           }
-        : { configured: false as const, missing: bucket.missing, url: null },
+        : { configured: false as const, fake: instagram === "fake", missing: bucket.missing, url: null },
   });
 
   return (

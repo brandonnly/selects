@@ -265,6 +265,7 @@ export function createPublisher(options: PublisherOptions) {
   const bucketProblem = (): string | undefined => {
     if (!("missing" in options.bucket)) return undefined;
     const names = options.bucket.missing;
+    if (names.length === 0) return "No bucket is available.";
     const listed =
       names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
     return `The bucket is not configured: set ${listed}.`;

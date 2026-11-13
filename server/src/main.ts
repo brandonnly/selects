@@ -4,8 +4,7 @@ import { createApp } from "./app";
 import { HOUR } from "./clock";
 import { ConfigError, loadConfig } from "./config";
 import { openDatabase } from "./db";
-import { createFakeInstagram } from "./fake-instagram";
-import { createInstagramApi } from "./instagram";
+import { startFakes } from "./fakes";
 import { createLibrary, errorKind } from "./library";
 import { migrations } from "./migrations";
 import { MAX_UPLOAD_BYTES } from "./upload";
@@ -35,14 +34,16 @@ const library = createLibrary({ db, dataDir: config.dataDir });
 rmSync(join(config.dataDir, "uploads"), { recursive: true, force: true });
 mkdirSync(library.inboxDir, { recursive: true });
 
-// Unless INSTAGRAM_API=live, Instagram is the fake server, run here: nothing is posted for real.
-const fakeInstagram = config.instagram === "fake" ? createFakeInstagram({ acceptAnyToken: true }) : undefined;
+// Unless INSTAGRAM_API=live, Instagram and the bucket are fakes run here, and BUCKET_* is not
+// used: nothing leaves the install and nothing is posted for real.
+const fakes = startFakes(config.instagram);
 const app = createApp({
   config,
   db,
   webDir,
   library,
-  instagram: fakeInstagram === undefined ? undefined : createInstagramApi({ baseUrl: fakeInstagram.url }),
+  instagram: fakes?.instagram,
+  fakeBucket: fakes?.bucket,
 });
 // Posts a stop left mid-attempt are taken up again, before any request can start a new one.
 app.publisher.recover();
@@ -67,12 +68,12 @@ if (config.password === undefined)
   console.log("No password is set: the app is open to anyone who can reach it.");
 if (config.instagram === "fake") {
   console.log(
-    "Instagram: the fake server inside Selects. Nothing is posted for real; set INSTAGRAM_API=live to post.",
+    "Fake mode: Instagram and the bucket are fakes inside Selects, and BUCKET_* is not used. Nothing leaves this install and nothing is posted for real; set INSTAGRAM_API=live to post.",
   );
 } else {
   console.log("Instagram: live. Posts go to the connected Instagram account.");
 }
-if (config.bucket.status === "missing") {
+if (config.instagram === "live" && config.bucket.status === "missing") {
   console.log(`Publishing is unavailable until the bucket is set: ${config.bucket.missing.join(", ")}.`);
 }
 if (!existsSync(resolve(webDir, "index.html"))) {
@@ -101,7 +102,7 @@ const shutdown = () => {
   clearInterval(inboxTimer);
   clearInterval(retryTimer);
   clearInterval(tokenTimer);
-  void fakeInstagram?.stop();
+  void fakes?.stop();
   // Let requests in flight finish before the database closes.
   server.stop().finally(() => {
     db.close();
