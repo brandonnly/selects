@@ -45,6 +45,20 @@ describe("the bucket", () => {
     expect(Date.now() - started).toBeLessThan(5000);
   });
 
+  test("deletes what an upload stores after it was given up on", async () => {
+    const bucket = createBucket(settings(), { timeoutMs: 100 });
+    fake.slow(400);
+    const key = bucket.newKey();
+
+    await expect(bucket.put(key, JPEG)).rejects.toThrow("did not answer in time");
+    fake.slow(0);
+    // The write lands after the caller has moved on, and is then removed.
+    await Bun.sleep(900);
+
+    expect(fake.requests.some((r) => r.method === "PUT")).toBe(true);
+    expect(fake.objects.has(key)).toBe(false);
+  });
+
   test("adds no metadata to the object it stores", async () => {
     const bucket = createBucket(settings());
     const key = bucket.newKey();

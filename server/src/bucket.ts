@@ -27,6 +27,8 @@ export type Bucket = {
 
 export class BucketError extends Error {
   override name = "BucketError";
+  /** The request was given up on, and may still finish at the bucket. */
+  timedOut = false;
 }
 
 /** The bucket through Bun's built-in S3 client (ADR 0002). */
@@ -47,10 +49,11 @@ export function createBucket(
   const attempt = async (what: string, run: () => Promise<unknown>) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new BucketError(`The bucket did not answer in time to ${what}.`)),
-        timeoutMs,
-      );
+      timer = setTimeout(() => {
+        const error = new BucketError(`The bucket did not answer in time to ${what}.`);
+        error.timedOut = true;
+        reject(error);
+      }, timeoutMs);
     });
     try {
       await Promise.race([run(), late]);
@@ -66,7 +69,24 @@ export function createBucket(
   return {
     urlKind: publicBaseUrl === undefined ? "presigned" : "public",
     newKey: () => `frames/${randomUUID()}.jpg`,
-    put: (key, jpeg) => attempt("store the frame", () => client.write(key, jpeg, { type: "image/jpeg" })),
+    put: async (key, jpeg) => {
+      const write = client.write(key, jpeg, { type: "image/jpeg" });
+      try {
+        await attempt("store the frame", () => write);
+      } catch (error) {
+        // A write given up on can still land later, after the caller has cleaned up: once it
+        // settles, whatever it stored is deleted, so no frame is left that nothing knows about.
+        if (error instanceof BucketError && error.timedOut) {
+          void write.then(
+            () => client.delete(key).catch(() => {}),
+            () => {},
+          );
+        } else {
+          void write.catch(() => {});
+        }
+        throw error;
+      }
+    },
     urlFor: (key) =>
       publicBaseUrl === undefined
         ? client.presign(key, { expiresIn: PRESIGNED_SECONDS, method: "GET" })

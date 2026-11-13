@@ -43,6 +43,7 @@ export function createFakeBucket({
   let failures = 0;
   let readsFail = false;
   let hanging = false;
+  let slowWrites = 0;
   const held: (() => void)[] = [];
 
   const server = Bun.serve({
@@ -75,6 +76,7 @@ export function createFakeBucket({
           held.push(() => resolve(new Response(null, { status: 504 }))),
         );
       }
+      if (slowWrites > 0 && request.method === "PUT") await Bun.sleep(slowWrites);
       if (failures > 0) {
         failures--;
         return error(503, "SlowDown");
@@ -140,6 +142,10 @@ export function createFakeBucket({
     /** While on, every read of an object fails, as an unreachable bucket's would. */
     failReads(on: boolean) {
       readsFail = on;
+    },
+    /** Makes each write take this long before it is stored and answered. */
+    slow(ms: number) {
+      slowWrites = ms;
     },
     /** While on, writes and deletes are taken and never answered. */
     hang(on: boolean) {
