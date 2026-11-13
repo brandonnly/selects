@@ -2,6 +2,7 @@ import type { Select } from "@selects/server";
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/api";
+import { SelectCaption } from "@/components/select-caption";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CaptureEditor } from "./capture-editor";
@@ -97,6 +98,9 @@ export function SelectDetails({
               <DetailsSection title="Capture data">
                 <CaptureEditor key={select.id} selectId={select.id} onSaved={changed} />
               </DetailsSection>
+              <div className="p-4 [&>section]:border-t-0 [&>section]:pt-0">
+                <SelectCaption key={select.id} selectId={select.id} refresh={version} />
+              </div>
               <DetailsSection title="File">
                 <p className="text-xs text-muted-foreground">
                   {select.width} × {select.height} · {select.format.toUpperCase()} ·{" "}

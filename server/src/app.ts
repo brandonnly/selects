@@ -3,6 +3,8 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { Elysia, t } from "elysia";
 import rootPackage from "../../package.json";
+import { captionRoutes } from "./caption-routes";
+import { createCaptionStore } from "./caption-store";
 import { createCaptures } from "./capture";
 import { captureRoutes } from "./capture-routes";
 import type { Config } from "./config";
@@ -23,6 +25,7 @@ import { serveUi } from "./ui";
 import { MAX_UPLOAD_BYTES, receiveUpload } from "./upload";
 import { createZones } from "./zones";
 
+export type { CaptionOverride, CaptionTemplates, HashtagSet, LimitCheck } from "./captions";
 export type { CaptureEdits, CaptureView, Withheld } from "./capture";
 export type { FrameField, FrameSettings } from "./frame";
 export type { Rejection, ScanResult, Select, UploadResult } from "./library";
@@ -171,6 +174,13 @@ function createRoutes({
       maxBorder: MAX_BORDER,
     }))
     .put("/api/frame", ({ body }) => settings.setFrame(body), { body: frameSettingsSchema })
+    .use(
+      captionRoutes({
+        store: createCaptionStore(db),
+        coordinateFormat: () => settings.frame().coordinateFormat,
+        capture: (id) => captures.published(id),
+      }),
+    )
     .delete("/api/selects/:id", ({ params, status }) =>
       lib.remove(params.id) ? status(204) : status(404, notFound),
     )

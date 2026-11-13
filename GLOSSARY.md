@@ -13,6 +13,9 @@
 | **Next up** | The pick for the coming slot, made a day ahead so it can be swapped or skipped. |
 | **Frame** | The rendered 4:5 image: the photo, a border, and a line of metadata. |
 | **Post** | One publication to Instagram. A post holds one select today and may hold several later. |
+| **Template** | The text a caption or alt text is built from, with tokens where a select's data goes. |
+| **Token** | A field name in braces in a template, such as `{camera}`, replaced by the select's value. |
+| **Hashtag set** | A named list of hashtags. One set is chosen at random for each post. |
 | **Privacy zone** | A point and a radius. A select taken inside one never has its location published. |
 | **Gallery output** | The clean image and manifest entry written to the bucket for a public gallery. |
 | **Manifest** | `posts.json` in the bucket: one entry per post, read by the gallery and other sites. |

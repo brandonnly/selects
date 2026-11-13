@@ -46,7 +46,22 @@ const SEPARATOR = " · ";
 
 /** The line of metadata a frame prints: each shown field the select has, with nothing for the rest. */
 export function frameText(capture: PublishedCapture, settings: FrameSettings): string {
-  const values: Record<FrameField, string | null> = {
+  const values = fieldValues(capture, settings.coordinateFormat);
+  return FRAME_FIELDS.filter((field) => settings.fields[field])
+    .map((field) => values[field])
+    .filter((value): value is string => value !== null && value !== "")
+    .join(SEPARATOR);
+}
+
+/**
+ * Each field as the frame prints it, or null when the select lacks it. Captions print fields
+ * the same way.
+ */
+export function fieldValues(
+  capture: PublishedCapture,
+  coordinateFormat: FrameSettings["coordinateFormat"],
+): Record<FrameField, string | null> {
+  return {
     camera: clip(capture.camera),
     lens: clip(capture.lens),
     focalLength: capture.focalLength === null ? null : `${decimals(capture.focalLength, 1)}mm`,
@@ -56,13 +71,9 @@ export function frameText(capture: PublishedCapture, settings: FrameSettings): s
     coordinates:
       capture.latitude === null || capture.longitude === null
         ? null
-        : coordinates(capture.latitude, capture.longitude, settings.coordinateFormat),
+        : coordinates(capture.latitude, capture.longitude, coordinateFormat),
     date: capture.capturedAt?.slice(0, 10) ?? null,
   };
-  return FRAME_FIELDS.filter((field) => settings.fields[field])
-    .map((field) => values[field])
-    .filter((value): value is string => value !== null && value !== "")
-    .join(SEPARATOR);
 }
 
 /** The longest camera or lens name a frame prints: a longer one would shrink the line too far to read. */
