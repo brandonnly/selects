@@ -38,9 +38,13 @@ export function gallerySwitch(view: Pick<GalleryView, "enabled" | "availability"
  * How soon the Posted screen checks again: soon while a write or removal is under way, since it
  * finishes in seconds; later while one is retried after a failure; not at all once all settled.
  */
-export function galleryPolling(posts: Pick<GalleryPost, "state" | "error">[]): "soon" | "later" | undefined {
+export function galleryPolling(
+  posts: Pick<GalleryPost, "state" | "error">[],
+  available = true,
+): "soon" | "later" | undefined {
   const busy = posts.filter((post) => post.state === "writing" || post.state === "removing");
-  if (busy.some((post) => post.error === null)) return "soon";
+  // While gallery output is unavailable nothing can finish soon.
+  if (available && busy.some((post) => post.error === null)) return "soon";
   return busy.length > 0 ? "later" : undefined;
 }
 
@@ -54,6 +58,11 @@ export function postName(when: string, caption: string): string {
     .find((line) => line.trim() !== "")
     ?.trim();
   if (first === undefined) return `post of ${when}`;
-  const shown = first.length > NAME_CHARACTERS ? `${first.slice(0, NAME_CHARACTERS).trimEnd()}…` : first;
+  // Counted in whole characters, so an emoji is never cut in two.
+  const characters = [...first];
+  const shown =
+    characters.length > NAME_CHARACTERS
+      ? `${characters.slice(0, NAME_CHARACTERS).join("").trimEnd()}…`
+      : first;
   return `post of ${when}, “${shown}”`;
 }

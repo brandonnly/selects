@@ -865,8 +865,13 @@ describe("manifest writes", () => {
     await parts.gallery.runDue();
     expect(manifest()?.posts[0]?.location).not.toBeNull();
 
-    // The stale one lands over it, then is replaced.
-    await Bun.sleep(600);
+    // The stale one lands over it, then is replaced. Waited for, not timed: the late write has
+    // landed once the slowed request is answered, and its replacement once the gallery settles.
+    const lateWrites = () =>
+      fakeBucket.requests.filter((r) => r.method === "PUT" && r.path.endsWith("posts.json")).length;
+    const before = lateWrites();
+    for (let waited = 0; waited < 10_000 && lateWrites() <= before; waited += 25) await Bun.sleep(25);
+    await Bun.sleep(100);
     await parts.gallery.settled();
 
     expect(fakeBucket.objects.has("posts.json")).toBe(true);

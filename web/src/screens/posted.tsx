@@ -46,11 +46,15 @@ export function PostedScreen() {
     loaded?.posts.some((post) => post.state === "publishing" || post.state === "retrying") ?? false;
   const unconfirmed = loaded?.posts.some((post) => post.state === "unconfirmed") ?? false;
   // Gallery writes and removals finish in the background, and are retried while they fail.
-  const gallery = galleryPolling(loaded?.gallery?.posts ?? []);
+  const gallery = galleryPolling(
+    loaded?.gallery?.posts ?? [],
+    loaded?.gallery?.availability.available ?? true,
+  );
   const pollMs =
     pending || gallery === "soon"
       ? POLL_MS
-      : unconfirmed || gallery === "later"
+      : // A failed gallery request is asked again, so what is shown does not stay stale.
+        unconfirmed || gallery === "later" || galleryError
         ? UNCONFIRMED_POLL_MS
         : undefined;
   const galleryById = useMemo(

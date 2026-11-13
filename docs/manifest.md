@@ -60,7 +60,7 @@ Every field is always present. A value the select lacks is `null`, never left ou
 | `posts[].images.clean.url` | string | Its public URL, on the public base URL as it is when the manifest is written. |
 | `posts[].images.clean.width` | number | Its width in pixels. |
 | `posts[].images.clean.height` | number | Its height in pixels. |
-| `posts[].images.framed` | object or null | The framed image posted to Instagram. Null when it was not kept: a post confirmed published after its frame was deleted, or one whose location was withheld after it was posted, since the frame prints it. |
+| `posts[].images.framed` | object or null | The framed image posted to Instagram. Null when it was not kept: a post confirmed published after its frame was deleted, or one whose location was withheld after it was posted, since the frame may print it. |
 | `posts[].images.framed.url` | string | Its public URL. |
 | `posts[].images.framed.width` | number | 1440. |
 | `posts[].images.framed.height` | number | 1800. |
@@ -73,13 +73,14 @@ Every field is always present. A value the select lacks is `null`, never left ou
 | `posts[].capture.iso` | number or null | ISO. |
 | `posts[].capture.takenAt` | string or null | When it was taken, local time as the camera recorded it, with no zone: `YYYY-MM-DDTHH:MM:SS`. |
 | `posts[].location` | object or null | Where it was taken. Null when its location is withheld. |
-| `posts[].location.latitude` | number | Decimal degrees, north positive, to four places (about 11 m), as the frame prints them. |
+| `posts[].location.latitude` | number | Decimal degrees, north positive, to four places (about 11 m). |
 | `posts[].location.longitude` | number | Decimal degrees, east positive, to four places. |
 
 ## Images
 
 - Each image has its own random key. Keys never carry a file name, and images never change once
-  written. The clean image is served with `Cache-Control: public, max-age=31536000, immutable`.
+  written. The clean image is uploaded with `Cache-Control: public, max-age=31536000, immutable`;
+  that a bucket keeps this header is not yet checked against a real one (see ADR 0008).
 - The clean image is the photo upright with no frame, 2048 px on its long side (never enlarged
   from a smaller original), in sRGB, as a JPEG with no embedded metadata of any kind.
 - The framed image is the 1440 × 1800 JPEG Instagram was given, also with no metadata. It has no
