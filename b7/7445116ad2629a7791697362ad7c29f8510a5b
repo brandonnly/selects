@@ -1,0 +1,35 @@
+docs/PRODUCT.md
+  s_c4e8006bf0d88c::t_6a2069c99962ba 70-72
+docs/adr/0007-scheduling.md
+  s_c4e8006bf0d88c::t_54c90fa65deb3c 58-60,132,135-139
+server/src/migrations.ts
+  s_c4e8006bf0d88c::t_cb06ad7cccfcf4 305-307
+server/src/publisher.ts
+  s_c4e8006bf0d88c::t_9efabbff377ea9 192-193,215-216,573-578,690-695,751,839
+server/src/scheduler.test.ts
+  s_c4e8006bf0d88c::t_5a4b896dfcea3e 270-288,1126,1153-1154,1156
+server/src/scheduler.ts
+  s_c4e8006bf0d88c::t_fa92cc9f986f17 295-298,308,669-670,675-676,686,792-796
+web/src/components/pick-rules.tsx
+  s_c4e8006bf0d88c::t_b65eb8b033103f 174
+web/src/components/schedule-editor.tsx
+  s_c4e8006bf0d88c::t_8624622eb01a3b 266
+web/src/screens/queue.tsx
+  s_c4e8006bf0d88c::t_4545a9e66c26f8 38-39,44-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b77445116ad2629a7791697362ad7c29f8510a5b",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
