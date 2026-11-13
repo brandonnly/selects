@@ -28,6 +28,23 @@ describe("the bucket", () => {
     expect(fake.objects.get(first)?.contentType).toBe("image/jpeg");
   });
 
+  test("gives up on a bucket that takes a request and never answers", async () => {
+    const bucket = createBucket(settings(), { timeoutMs: 200 });
+    fake.hang(true);
+
+    const started = Date.now();
+    const [put, deleted] = await Promise.allSettled([
+      bucket.put(bucket.newKey(), JPEG),
+      bucket.delete(bucket.newKey()),
+    ]);
+
+    for (const result of [put, deleted]) {
+      expect(result.status).toBe("rejected");
+      expect(String((result as PromiseRejectedResult).reason)).toContain("did not answer in time");
+    }
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
   test("adds no metadata to the object it stores", async () => {
     const bucket = createBucket(settings());
     const key = bucket.newKey();

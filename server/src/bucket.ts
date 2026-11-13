@@ -5,6 +5,12 @@ import type { BucketSettings } from "./config";
 export const PRESIGNED_SECONDS = 60 * 60;
 
 /**
+ * How long one bucket request may take. A bucket that takes a request and never answers would
+ * otherwise hold up every post, as attempts run one at a time.
+ */
+const REQUEST_TIMEOUT_MS = 60_000;
+
+/**
  * The bucket frames are uploaded to, for Instagram to fetch. Keys are random IDs, never a file
  * name, and objects carry no metadata. See ADR 0003.
  */
@@ -24,7 +30,10 @@ export class BucketError extends Error {
 }
 
 /** The bucket through Bun's built-in S3 client (ADR 0002). */
-export function createBucket(settings: BucketSettings): Bucket {
+export function createBucket(
+  settings: BucketSettings,
+  { timeoutMs = REQUEST_TIMEOUT_MS }: { timeoutMs?: number } = {},
+): Bucket {
   const client = new Bun.S3Client({
     endpoint: settings.endpoint,
     bucket: settings.name,
@@ -36,11 +45,21 @@ export function createBucket(settings: BucketSettings): Bucket {
 
   // The client's own errors are replaced, so nothing it says about the request is passed on.
   const attempt = async (what: string, run: () => Promise<unknown>) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new BucketError(`The bucket did not answer in time to ${what}.`)),
+        timeoutMs,
+      );
+    });
     try {
-      await run();
+      await Promise.race([run(), late]);
     } catch (error) {
+      if (error instanceof BucketError) throw error;
       const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
       throw new BucketError(`The bucket refused to ${what}${/^\w+$/.test(code) ? ` (${code})` : ""}.`);
+    } finally {
+      clearTimeout(timer);
     }
   };
 

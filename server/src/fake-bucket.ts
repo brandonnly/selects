@@ -42,6 +42,8 @@ export function createFakeBucket({
   const requests: { method: string; path: string }[] = [];
   let failures = 0;
   let readsFail = false;
+  let hanging = false;
+  const held: (() => void)[] = [];
 
   const server = Bun.serve({
     port,
@@ -68,6 +70,11 @@ export function createFakeBucket({
       }
 
       if (!signedFor(request)) return error(403, "SignatureDoesNotMatch");
+      if (hanging) {
+        return new Promise<Response>((resolve) =>
+          held.push(() => resolve(new Response(null, { status: 504 }))),
+        );
+      }
       if (failures > 0) {
         failures--;
         return error(503, "SlowDown");
@@ -134,7 +141,14 @@ export function createFakeBucket({
     failReads(on: boolean) {
       readsFail = on;
     },
-    stop: () => server.stop(true),
+    /** While on, writes and deletes are taken and never answered. */
+    hang(on: boolean) {
+      hanging = on;
+    },
+    stop() {
+      for (const release of held.splice(0)) release();
+      return server.stop(true);
+    },
   };
 }
 
