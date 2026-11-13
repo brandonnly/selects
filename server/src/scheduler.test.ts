@@ -470,6 +470,34 @@ describe("downtime", () => {
     ]);
   });
 
+  test("while Selects runs, two slots at the same minute both post", async () => {
+    const { scheduler, publisher } = await setup();
+    const a = await addSelect("portrait");
+    const b = await addSelect("landscape");
+    scheduler.setSchedule({
+      slots: [everyDay("09:30", "first"), everyDay("09:30", "second")],
+      timeZone: "UTC",
+      graceMinutes: 120,
+    });
+    await runUntil(scheduler, publisher, "2026-11-13T09:31:00Z", 30_000);
+    expect(postedSelects(publisher)).toEqual([a, b]);
+    expect(scheduler.history().map((run) => run.state)).toEqual(["posted", "posted"]);
+  });
+
+  test("a slot not chosen is never called downtime", async () => {
+    const { scheduler, publisher } = await setup();
+    await addSelect("portrait");
+    scheduler.setSchedule({
+      slots: [everyDay("09:30", "first"), everyDay("09:30", "second")],
+      timeZone: "UTC",
+      graceMinutes: 120,
+    });
+    await runUntil(scheduler, publisher, "2026-11-13T09:31:00Z", 30_000);
+    const notes = scheduler.history().map((run) => `${run.state} ${run.note ?? ""}`);
+    expect(notes.join("\n")).not.toContain("not running");
+    expect(scheduler.history().map((run) => run.state)).toEqual(["empty", "posted"]);
+  });
+
   test("a slot's random spread is drawn once, and a restart neither moves it nor fires it twice", async () => {
     let draw = 0.5;
     const { scheduler, publisher, restart } = await setup({ random: () => draw });

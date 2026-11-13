@@ -110,6 +110,10 @@ type RunRow = {
 type StoredSlot = Slot & { since: number };
 type StoredSchedule = Omit<Schedule, "slots"> & { slots: StoredSlot[] };
 
+const MISSED_PAST_GRACE = "Selects was not running at its time, and the grace period has passed.";
+const MISSED_STACKED =
+  "Selects was not running at its time. Missed slots never stack: only the latest within the grace period may post.";
+
 /** How far ahead next up is chosen. */
 const LOOKAHEAD = DAY;
 /** Slots that came round are kept this long. */
@@ -299,7 +303,13 @@ export function createScheduler(options: SchedulerOptions) {
     }
   };
 
-  /** Posts the slots that are due: at most one, the latest, and only within the grace period. */
+  /**
+   * Posts the slots that are due. A slot found within the timer's tolerance came due while Selects
+   * was running, and posts; every such slot posts, one after another. A slot found later than that
+   * came due while Selects (or its timer) was not running: of those, only the latest posts, only
+   * within the grace period, and only when no slot on time posts in its place. Missed slots never
+   * stack.
+   */
   async function fire(now: number) {
     const due = db
       .query<RunRow, [number]>(
@@ -307,24 +317,28 @@ export function createScheduler(options: SchedulerOptions) {
       )
       .all(now);
     if (due.length === 0) return;
+    const grace = stored().graceMinutes * MINUTE;
+    const onTime = (row: RunRow) => now - row.due_at <= tolerance;
+    const withinGrace = (row: RunRow) => now - row.due_at <= grace + tolerance;
     if (paused()) {
-      for (const row of due) finish(row, "paused", { note: "Posting was paused." });
+      for (const row of due) {
+        if (withinGrace(row)) finish(row, "paused", { note: "Posting was paused." });
+        else finish(row, "missed", { note: MISSED_PAST_GRACE });
+      }
       return;
     }
-    // Found within the timer's tolerance is on time; the grace period covers lateness past that.
-    const grace = stored().graceMinutes * MINUTE + tolerance;
-    const latest = due.at(-1) as RunRow;
-    for (const row of due) {
-      if (row.due_at < now - grace) {
-        finish(row, "missed", {
-          note: "Selects was not running at its time, and the grace period has passed.",
-        });
-      } else if (row !== latest) {
-        // Missed slots never stack: after a stop, only the latest posts.
-        finish(row, "missed", { note: "Selects was not running at its time; a later slot posted instead." });
-      }
+    const timely = due.filter(onTime);
+    const late = due.filter((row) => !onTime(row));
+    // After downtime, the latest late slot within grace posts, unless one on time posts instead.
+    const survivor = timely.length === 0 ? late.filter(withinGrace).at(-1) : undefined;
+    for (const row of late) {
+      if (row === survivor) continue;
+      finish(row, "missed", { note: withinGrace(row) ? MISSED_STACKED : MISSED_PAST_GRACE });
     }
-    if (latest.due_at >= now - grace) await post(latest);
+    for (const row of survivor === undefined ? timely : [survivor]) {
+      const current = runRow(row.slot_id, row.date);
+      if (current?.state === "planned") await post(current);
+    }
   }
 
   async function post(row: RunRow) {
@@ -540,7 +554,7 @@ export function createScheduler(options: SchedulerOptions) {
       return db
         .query<RunRow, [number, number]>(
           `SELECT * FROM slot_runs WHERE state NOT IN ('planned', 'posting', 'skipped') OR (state = 'skipped' AND due_at <= ?)
-           ORDER BY due_at DESC, slot_id LIMIT ?`,
+           ORDER BY due_at DESC, slot_id DESC LIMIT ?`,
         )
         .all(clock.now(), limit)
         .map(toRun);
