@@ -1,0 +1,21 @@
+README.md
+  s_4006560c52cb12::t_448054cb8a4fe8 12,42-52,66-71
+AGENTS.md
+  s_4006560c52cb12::t_448054cb8a4fe8 21-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c4d8f59f46f840be89d0654c599a561ecf2f8a1",
+  "prompts": {},
+  "sessions": {
+    "s_4006560c52cb12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da0f7775-eeec-4f85-8315-af9d873f806d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
