@@ -36,7 +36,7 @@ mkdirSync(library.inboxDir, { recursive: true });
 
 // Unless INSTAGRAM_API=live, Instagram and the bucket are fakes run here, and BUCKET_* is not
 // used: nothing leaves the install and nothing is posted for real.
-const fakes = startFakes(config.instagram);
+const fakes = startFakes(config.instagram, { publicUrl: config.fakePublicUrl });
 const app = createApp({
   config,
   db,
@@ -91,7 +91,11 @@ void scanInbox();
 const inboxTimer = setInterval(scanInbox, INBOX_SCAN_INTERVAL_MS);
 
 const runDue = () =>
-  app.publisher.runDue().catch((error) => console.error(`Publishing retries failed (${errorKind(error)}).`));
+  app.publisher
+    .runDue()
+    .catch((error) => console.error(`Publishing retries failed (${errorKind(error)}).`))
+    // Gallery output: retried writes, the manifest after a privacy change, and removals.
+    .then(() => app.gallery.runDue());
 void runDue();
 const retryTimer = setInterval(runDue, RETRY_INTERVAL_MS);
 const refreshToken = () => app.instagramAccount.refreshIfDue().catch(() => {});

@@ -10,13 +10,21 @@ import { createInstagramApi, type InstagramApi } from "./instagram";
  */
 export function startFakes(
   mode: InstagramMode,
+  /** Serve the fake bucket's objects under a public base URL, as a bucket set up with one. */
+  { publicUrl = false }: { publicUrl?: boolean } = {},
 ): { instagram: InstagramApi; bucket: BucketSettings; stop(): Promise<void> } | undefined {
   if (mode === "live") return undefined;
   const instagram = createFakeInstagram({ acceptAnyToken: true });
   const bucket = createFakeBucket();
   return {
     instagram: createInstagramApi({ baseUrl: instagram.url }),
-    bucket: new BucketSettings(bucket.endpoint, bucket.name, "auto", undefined, FAKE_BUCKET_KEYS),
+    bucket: new BucketSettings(
+      bucket.endpoint,
+      bucket.name,
+      "auto",
+      publicUrl ? bucket.publicBaseUrl : undefined,
+      FAKE_BUCKET_KEYS,
+    ),
     async stop() {
       await Promise.all([instagram.stop(), bucket.stop()]);
     },
