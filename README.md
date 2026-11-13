@@ -114,6 +114,32 @@ or you say whether it was posted.
 Try a post with the Dry run switch on first: the Posted screen shows the frame, caption and
 everything a real post would send.
 
+### Backups and restoring
+
+Each night at 03:30, in the timezone set on the Queue screen, Selects copies its database to
+`backups/selects-YYYY-MM-DD.db` in `DATA_DIR`, keeping the latest seven. It also makes one at
+start when the last copy is from before last night. Settings shows when the last copy was made
+and why the last try failed, if it did. Each copy holds the Instagram token and the notification
+channels, so it is readable by its owner only; keep it that way wherever you copy it.
+
+To restore a copy:
+
+1. Stop Selects.
+2. Copy the database aside, in case you want it back: `selects.db`, `selects.db-wal` and
+   `selects.db-shm` in `DATA_DIR`.
+3. Replace `selects.db` with the copy, named `selects.db`, and keep it owner-only
+   (`chmod 600 selects.db`).
+4. Remove `selects.db-wal` and `selects.db-shm`. They belong to the database you replaced, and
+   SQLite would apply them to the copy.
+5. Start Selects.
+
+The photos are not in the database: originals, thumbnails and fonts stay in `DATA_DIR` and are
+not part of a copy. Restoring takes the library, posts, schedule and settings back to the night
+of the copy. A select posted since then is back in the pool and could be posted again, so as
+soon as Selects starts, turn on the pause switch on the Queue screen, compare the Posted screen
+with Instagram, and delete from the Library any select already on Instagram (its hash is kept,
+so it is never picked again). Then turn the pause switch off.
+
 ## Checks
 
 These run in CI on every pull request:
