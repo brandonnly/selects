@@ -1,0 +1,30 @@
+server/src/migrations.ts
+  s_e242c501dd158b::t_7c4b2fbedf0712 60-67
+server/src/app.ts
+  s_e242c501dd158b::t_87c2e3a0ee3202 6-7,25,168-174
+server/src/captions.ts
+  s_e242c501dd158b::t_7c4b2fbedf0712 188-202
+server/src/captions-api.test.ts
+  s_e242c501dd158b::t_f7f8e63d395c62 1-98,103-114,119-151,157-162,166-193,202-205,209-215,220-225,230-237,241-250
+  s_e242c501dd158b::t_7893538cbf6ea4 99-102,115-118,152-156,163-165,194-201,206-208,216-219,226-229,238-240
+server/src/caption-store.ts
+  s_e242c501dd158b::t_7c4b2fbedf0712 1-47
+server/src/caption-routes.ts
+  s_e242c501dd158b::t_af4eece4b17d64 1-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "906c537309fc13a7c9816b4008c84a64ea59571b",
+  "prompts": {},
+  "sessions": {
+    "s_e242c501dd158b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9094f290-7dab-41e0-a49f-28ad7706fcee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
