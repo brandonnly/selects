@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Selects</Name>
+  <Repository>ghcr.io/brandonnly/selects:latest</Repository>
+  <Registry>https://github.com/brandonnly/selects/pkgs/container/selects</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/brandonnly/selects/issues</Support>
+  <Project>https://github.com/brandonnly/selects</Project>
+  <ReadMe>https://github.com/brandonnly/selects#readme</ReadMe>
+  <Overview>Selects posts your photo backlog to Instagram on a schedule, each photo rendered on a frame with its capture data. Upload finished photos once, or drop them in the inbox folder of the data path, and set the schedule in the web UI.
+
+WARNING: do not expose Selects to the internet. It has no login by default, and the optional single password is not a reason to expose it. Reach it on your LAN, over a VPN, or behind a reverse proxy with its own authentication.
+
+Selects starts in fake mode: it publishes to a fake Instagram and a fake bucket inside the container, and nothing is posted for real. Set INSTAGRAM_API to live, with the bucket variables, only when you mean posts to go to Instagram. The README walks through the Meta app, the token and the bucket.
+
+Before the first start, create the data folder and give it to nobody:users, the user this template runs Selects as: mkdir -p /mnt/user/appdata/selects and chown 99:100 /mnt/user/appdata/selects.</Overview>
+  <Category>MediaApp:Photos Tools:</Category>
+  <WebUI>http://[IP]:[PORT:3000]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/brandonnly/selects/main/unraid/selects.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/brandonnly/selects/main/brand/favicon/icon-512.png</Icon>
+  <ExtraParams>--user 99:100</ExtraParams>
+  <PostArgs/>
+  <Requires>An S3-compatible bucket and a Meta app with a long-lived Instagram token, only for posting for real (INSTAGRAM_API=live). Fake mode needs neither.</Requires>
+  <Config Name="Web UI port" Target="3000" Default="3000" Mode="tcp" Description="The port the web UI is reached on. Change the host port here; leave the container port at 3000." Type="Port" Display="always" Required="true" Mask="false">3000</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/selects" Mode="rw" Description="Everything Selects keeps: the database, the original photos, thumbnails, the inbox folder and an optional font override. Must be writable by 99:100 (nobody:users). Back it up." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/selects</Config>
+  <Config Name="INSTAGRAM_API" Target="INSTAGRAM_API" Default="fake" Mode="" Description="fake (the default) publishes to a fake Instagram and a fake bucket inside the container: nothing leaves the server and nothing is posted for real. live posts to the real Instagram account whose token is pasted in Settings, through the bucket below. Set live deliberately, after a dry run." Type="Variable" Display="always" Required="true" Mask="false">fake</Config>
+  <Config Name="SELECTS_PASSWORD" Target="SELECTS_PASSWORD" Default="" Mode="" Description="Optional. When set, the whole app asks for this password. Leave empty for no password. A password is no reason to expose Selects to the internet." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="BUCKET_ENDPOINT" Target="BUCKET_ENDPOINT" Default="" Mode="" Description="Live mode only. The S3-compatible endpoint URL of the bucket frames are uploaded to for Instagram to fetch, such as https://s3.your-region.amazonaws.com or your provider's S3 API URL." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="BUCKET_NAME" Target="BUCKET_NAME" Default="" Mode="" Description="Live mode only. The bucket's name." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="BUCKET_ACCESS_KEY_ID" Target="BUCKET_ACCESS_KEY_ID" Default="" Mode="" Description="Live mode only. An access key allowed to read, write and delete objects in that bucket only." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="BUCKET_SECRET_ACCESS_KEY" Target="BUCKET_SECRET_ACCESS_KEY" Default="" Mode="" Description="Live mode only. The secret for that access key." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="BUCKET_PUBLIC_URL" Target="BUCKET_PUBLIC_URL" Default="" Mode="" Description="Recommended for live mode. The public URL the bucket's objects are served from, without a trailing slash. Without it Selects gives Instagram a one-hour presigned link to each frame, which has not yet been proven against Instagram and is unverified, and gallery output is unavailable. Set it." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="BUCKET_REGION" Target="BUCKET_REGION" Default="auto" Mode="" Description="Optional. The bucket's region. Default: auto." Type="Variable" Display="advanced" Required="false" Mask="false">auto</Config>
+  <Config Name="DATA_DIR" Target="DATA_DIR" Default="/data" Mode="" Description="Where Selects keeps its data inside the container. Leave it at /data, the path mapped above." Type="Variable" Display="advanced" Required="true" Mask="false">/data</Config>
+  <Config Name="PORT" Target="PORT" Default="3000" Mode="" Description="The port Selects listens on inside the container. Leave it at 3000 and change the host port above instead." Type="Variable" Display="advanced" Required="true" Mask="false">3000</Config>
+</Container>
