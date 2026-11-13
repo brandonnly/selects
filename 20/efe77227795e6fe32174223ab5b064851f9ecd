@@ -1,0 +1,29 @@
+server/fonts/inter/OFL.txt
+  s_4006560c52cb12::t_d2a1bc5ab70edc 1-92
+server/fonts/eb-garamond/OFL.txt
+  s_4006560c52cb12::t_d2a1bc5ab70edc 1-94
+server/fonts/space-mono/OFL.txt
+  s_4006560c52cb12::t_d2a1bc5ab70edc 1-93
+server/fonts/jetbrains-mono/OFL.txt
+  s_4006560c52cb12::t_d2a1bc5ab70edc 1-93
+server/fonts/ibm-plex-mono/OFL.txt
+  s_4006560c52cb12::t_d2a1bc5ab70edc 1-93
+server/fonts/courier-prime/OFL.txt
+  s_4006560c52cb12::t_d2a1bc5ab70edc 1-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "20efe77227795e6fe32174223ab5b064851f9ecd",
+  "prompts": {},
+  "sessions": {
+    "s_4006560c52cb12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da0f7775-eeec-4f85-8315-af9d873f806d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
