@@ -1,0 +1,23 @@
+server/src/bucket.test.ts
+  s_72f39d106bdcce::t_44bee6dce9b0df 48-56
+server/src/bucket.ts
+  s_72f39d106bdcce::t_8f23951e09f60c 31,46-50
+server/src/fake-bucket.ts
+  s_72f39d106bdcce::t_d443e2ac79f051 47-48,124-126,161-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "25bffc35c6a39d4b43605b5fdc410862d610eed6",
+  "prompts": {},
+  "sessions": {
+    "s_72f39d106bdcce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "96cce2c7-2c1c-4db6-ac89-108f23da68f7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
