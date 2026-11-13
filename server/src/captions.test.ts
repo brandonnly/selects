@@ -167,4 +167,30 @@ describe("buildCaption", () => {
       hashtagSet: null,
     });
   });
+
+  test("a caption or alt text written for a select replaces the template for it, as written", () => {
+    const build = (override: { caption: string | null; altText: string | null }) =>
+      buildCaption({ capture: full, templates: templates(), coordinateFormat: "dms", override });
+
+    expect(build({ caption: "Low tide, {camera}.\n#sea", altText: null })).toMatchObject({
+      caption: "Low tide, {camera}.\n#sea",
+      altText: "Photograph taken on 2024-05-01 with Fixture Optics FX-1",
+      hashtagSet: null,
+    });
+    expect(build({ caption: null, altText: "A pier at dusk." })).toMatchObject({
+      caption: `10°30'00"N 40°15'00"W\nFixture Optics FX-1 · Fixture 35mm F1.4\n\n#film #35mm`,
+      altText: "A pier at dusk.",
+      hashtagSet: "Film",
+    });
+  });
+
+  test("no hashtag set is reported as chosen when the caption has no hashtags token", () => {
+    const built = buildCaption({
+      capture: full,
+      templates: templates({ caption: "{camera}" }),
+      coordinateFormat: "dms",
+    });
+
+    expect(built).toMatchObject({ caption: "Fixture Optics FX-1", hashtagSet: null });
+  });
 });

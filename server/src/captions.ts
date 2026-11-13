@@ -18,11 +18,16 @@ export type CaptionInput = {
   capture: CaptureData;
   templates: CaptionTemplates;
   coordinateFormat: FrameSettings["coordinateFormat"];
+  /** A caption or alt text written for this select, used as written in place of the template. */
+  override?: CaptionOverride;
   /** The set to use, by name, in place of a random one: for a preview. */
   hashtagSet?: string;
   /** Picks the hashtag set: a number from 0 up to but not including 1. Default: Math.random. */
   random?: () => number;
 };
+
+/** What was written for one select. Null takes the template. */
+export type CaptionOverride = { caption: string | null; altText: string | null };
 
 export type Caption = {
   caption: string;
@@ -36,6 +41,7 @@ export function buildCaption({
   capture,
   templates,
   coordinateFormat,
+  override,
   hashtagSet,
   random = Math.random,
 }: CaptionInput): Caption {
@@ -47,10 +53,11 @@ export function buildCaption({
     ...fieldValues(capture, coordinateFormat),
     hashtags: set === undefined || set.tags.length === 0 ? null : set.tags.join(" "),
   };
+  const ownCaption = override?.caption ?? null;
   return {
-    caption: fill(templates.caption, values),
-    altText: fill(templates.altText, values),
-    hashtagSet: set?.name ?? null,
+    caption: ownCaption ?? fill(templates.caption, values),
+    altText: override?.altText ?? fill(templates.altText, values),
+    hashtagSet: ownCaption === null && templates.caption.includes("{hashtags}") ? (set?.name ?? null) : null,
   };
 }
 
