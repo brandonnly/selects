@@ -178,6 +178,8 @@ type PostRow = {
   mode: InstagramMode | null;
   /** The Instagram account the post was confirmed for. Null before version 7 and for a dry run with none. */
   account_id: string | null;
+  /** A fingerprint of what the post was confirmed with, location aside. Null before version 7. */
+  confirmed: string | null;
   created_at: number;
   published_at: number | null;
 };
@@ -316,6 +318,24 @@ export function createPublisher(options: PublisherOptions) {
     };
   }
 
+  /**
+   * A fingerprint of everything a post is built from except where it was taken: the templates,
+   * the select's own caption, the hashtag set, the frame settings and font, and the capture
+   * data without its coordinates. A post is sent only while this is what it was confirmed with;
+   * a location withheld since then still changes the caption and frame, and is allowed to.
+   */
+  function confirmedFingerprint(selectIds: string[], content: Content): string {
+    const inputs = {
+      templates: captionStore.templates(),
+      own: selectIds.map((selectId) => captionStore.override(selectId)),
+      hashtagSet: content.hashtagSet,
+      frame: settings.frame(),
+      font: renderer.fontOverride?.() ?? null,
+      captures: content.sources.map(({ capture }) => ({ ...capture, latitude: null, longitude: null })),
+    };
+    return createHash("sha256").update(JSON.stringify(inputs)).digest("hex").slice(0, 32);
+  }
+
   /** A short fingerprint of everything the frame is rendered from. */
   function frameFingerprint(content: Content): string {
     const inputs = {
@@ -340,13 +360,14 @@ export function createPublisher(options: PublisherOptions) {
 
   function insertPost(id: string, selectIds: string[], content: Content, extra: Partial<PostRow>) {
     db.query(
-      `INSERT INTO posts (id, state, mode, account_id, caption, alt_text, hashtag_set, capture, report, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO posts (id, state, mode, account_id, confirmed, caption, alt_text, hashtag_set, capture, report, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       extra.state ?? "publishing",
       options.mode,
       account.credentials()?.userId ?? null,
+      confirmedFingerprint(selectIds, content),
       content.caption,
       content.altText,
       content.hashtagSet,
@@ -435,12 +456,18 @@ export function createPublisher(options: PublisherOptions) {
     // A post made under the other Instagram is never sent to this one: a fake post must not
     // become a real one because the mode changed while it waited. It fails and its select returns.
     if (claimed.mode !== null && claimed.mode !== options.mode) {
-      update({
-        state: "failed",
-        error: `This post was made in ${claimed.mode} mode and Selects is now in ${options.mode} mode. Post it again.`,
-        next_attempt_at: null,
-        object_key: null,
-      });
+      const message = `This post was made in ${claimed.mode} mode and Selects is now in ${options.mode} mode.`;
+      if (claimed.publish_requested_at !== null) {
+        // That Instagram may have published it: it waits, out of the pool, until Selects is back
+        // in that mode or its owner says what happened.
+        update({
+          state: "unconfirmed",
+          error: `${message} ${UNCONFIRMED_MESSAGE}`,
+          next_attempt_at: clock.now() + UNCONFIRMED_CHECK_MS,
+        });
+      } else {
+        update({ state: "failed", error: `${message} Post it again.`, next_attempt_at: null });
+      }
       console.error(`Post ${id} was made in another Instagram mode; it was not sent.`);
       return;
     }
@@ -468,6 +495,8 @@ export function createPublisher(options: PublisherOptions) {
           next_attempt_at: clock.now() + UNCONFIRMED_CHECK_MS,
         });
         console.error(`Post ${id} needs checking after ${number} attempts: ${failure.message}`);
+        // Instagram fetched the frame when the container was made: it need not stay in the bucket.
+        await dropObject(id);
       } else if (final) {
         update({ state: "failed", error: failure.message, next_attempt_at: null });
         console.error(
@@ -556,6 +585,14 @@ export function createPublisher(options: PublisherOptions) {
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const content = build(selectIds, post.hashtag_set);
       if (content === undefined) throw new PostFailure("The select was deleted.", false);
+      // Templates, settings or the select's data edited since the post was confirmed: it is
+      // not sent as something its owner never saw.
+      if (post.confirmed !== null && confirmedFingerprint(selectIds, content) !== post.confirmed) {
+        throw new PostFailure(
+          "The caption, frame or capture data changed since this post was confirmed. Post it again.",
+          false,
+        );
+      }
       update({ caption: content.caption, alt_text: content.altText, capture: content.fingerprint });
       if (content.check.problems.length > 0) {
         throw new PostFailure(`The caption can't be posted. ${content.check.problems.join(" ")}`, false);
@@ -625,13 +662,17 @@ export function createPublisher(options: PublisherOptions) {
    */
   async function dropObject(id: string): Promise<void> {
     if ("missing" in options.bucket) return;
+    // A frame in the other mode's bucket is left for a run in that mode to delete.
+    const mode = row(id)?.mode ?? null;
+    if (mode !== null && mode !== options.mode) return;
     const key = db
       .transaction(() => {
         const found = row(id)?.object_key;
         if (found === null || found === undefined) return undefined;
-        db.query("INSERT OR IGNORE INTO bucket_cleanup (key, added_at) VALUES (?, ?)").run(
+        db.query("INSERT OR IGNORE INTO bucket_cleanup (key, added_at, mode) VALUES (?, ?, ?)").run(
           found,
           clock.now(),
+          options.mode,
         );
         db.query("UPDATE posts SET object_key = NULL WHERE id = ? AND object_key = ?").run(id, found);
         return found;
@@ -754,8 +795,10 @@ export function createPublisher(options: PublisherOptions) {
       .all();
     for (const { id } of left) await serially(() => dropObject(id));
     const discarded = db
-      .query<{ key: string }, []>("SELECT key FROM bucket_cleanup ORDER BY added_at, key")
-      .all();
+      .query<{ key: string }, [string]>(
+        "SELECT key FROM bucket_cleanup WHERE mode IS NULL OR mode = ? ORDER BY added_at, key",
+      )
+      .all(options.mode);
     for (const { key } of discarded) await serially(() => deleteObject(key));
   }
 

@@ -59,16 +59,22 @@ export class InstagramError extends Error {
   }
 }
 
-const RATE_LIMIT_CODES = new Set([4, 9, 17, 32, 613]);
+/** Request limits, which Meta says to wait out. 341 is the application's own limit. */
+const RATE_LIMIT_CODES = new Set([4, 9, 17, 32, 341, 613]);
 /** Server errors and download timeouts Meta says to retry. */
 const TRANSIENT_CODES = new Set([-2, -1, 1, 2]);
 /**
  * Subcodes Meta says to retry: the image could not be fetched (a new link is made next time),
  * the container is not ready or not found yet.
  */
-const TRANSIENT_SUBCODES = new Set([2207052, 2207027, 2207008, 2207003, 2207001, 2207032]);
+const TRANSIENT_SUBCODES = new Set([2207052, 2207027, 2207008, 2207006, 2207003, 2207001, 2207032]);
 /** Instagram restricts the action as possible spam. Sent with code 4, but no rate limit. */
 const SPAM_SUBCODE = 2207051;
+/**
+ * The account's posts for 24 hours are used up. Sent with code 9, but no wait of minutes clears
+ * it: the post fails at once and its select goes back to the pool for another day.
+ */
+const DAILY_LIMIT_SUBCODE = 2207042;
 
 /** Sorts Meta's answer into what Selects does about it. */
 export function errorKindOf(
@@ -78,7 +84,7 @@ export function errorKindOf(
   isTransient: boolean,
 ): InstagramErrorKind {
   if (code === 190 || code === 102 || status === 401) return "token";
-  if (subcode === SPAM_SUBCODE) return "refused";
+  if (subcode === SPAM_SUBCODE || subcode === DAILY_LIMIT_SUBCODE) return "refused";
   if (code === 10 || (code !== undefined && code >= 200 && code <= 299)) return "permission";
   if ((code !== undefined && RATE_LIMIT_CODES.has(code)) || status === 429) return "rate-limit";
   if (

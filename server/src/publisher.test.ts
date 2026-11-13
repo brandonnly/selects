@@ -400,11 +400,10 @@ describe("a failed publish", () => {
     const { publisher, account } = setup();
     await connect(account);
     const id = await addSelect("portrait");
-    instagram.fail("publish", "publish-limit");
+    instagram.fail("container", "rate-limit");
 
     const first = await postNow(publisher, id);
     expect(first.state).toBe("retrying");
-    expect(first.error).toContain("publishing limit");
     await after(publisher, 2 * MINUTE);
 
     expect(publisher.post(first.id)?.state).toBe("published");
@@ -533,6 +532,60 @@ describe("a failed publish", () => {
     expect(post?.error).toContain("account changed");
     expect(instagram.media).toHaveLength(before);
     expect(library.pool()).toEqual([id]);
+  });
+
+  test("is not sent with a caption or frame edited after it was confirmed", async () => {
+    const { publisher, account, captionStore, settings } = setup();
+    await connect(account);
+    const id = await addSelect("portrait");
+    const other = await addSelect("landscape");
+    instagram.fail("container", "transient", "transient");
+    const first = await postNow(publisher, id);
+    const second = await postNow(publisher, other);
+    expect(first.state).toBe("retrying");
+    expect(second.state).toBe("retrying");
+
+    // Before the retries, the caption template changes for one and the frame for both.
+    captionStore.setTemplates({ ...TEMPLATES, caption: "EDITED {camera}" });
+    await after(publisher, 2 * MINUTE);
+
+    for (const post of [first, second]) {
+      const now = publisher.post(post.id);
+      expect(now?.state).toBe("failed");
+      expect(now?.error).toContain("changed since this post was confirmed");
+    }
+    expect(instagram.media).toHaveLength(0);
+    expect(library.pool().sort()).toEqual([id, other].sort());
+    // A frame setting alone is caught the same way.
+    captionStore.setTemplates(TEMPLATES);
+    instagram.fail("container", "transient");
+    const third = await postNow(publisher, id);
+    settings.setFrame({ ...settings.frame(), border: 120 });
+    await after(publisher, 2 * MINUTE);
+    expect(publisher.post(third.id)?.error).toContain("changed since this post was confirmed");
+    expect(instagram.media).toHaveLength(0);
+  });
+
+  test("that Instagram may have published stays out of the pool when Selects starts in the other mode", async () => {
+    const live = setup({ mode: "live" });
+    await connect(live.account);
+    const id = await addSelect("portrait");
+    // Instagram publishes, and the app stops before the answer comes.
+    instagram.fail("publish", "hang");
+    const started = await live.publisher.publish({ selectIds: [id], dryRun: false });
+    if (started.status !== "started") throw new Error(started.status);
+    // The stopped app's attempt ends when the test's servers do.
+    started.done.catch(() => {});
+    while (instagram.media.length === 0) await Bun.sleep(5);
+
+    // It starts again without the live setting: fake mode.
+    const fake = setup();
+    fake.publisher.recover();
+    await fake.publisher.runDue();
+
+    expect(fake.publisher.post(started.post.id)?.state).toBe("unconfirmed");
+    expect(library.pool()).toEqual([]);
+    expect(instagram.media).toHaveLength(1);
   });
 
   test("made in fake mode is never sent once Selects is in live mode", async () => {

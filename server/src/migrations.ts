@@ -216,8 +216,12 @@ export const migrations: readonly Migration[] = [
     added_at INTEGER NOT NULL
   );
   `,
-  // 7: the Instagram account a post was confirmed for, so it is never sent to another one.
+  // 7: what a post was confirmed with, so it is never sent to another account or with other
+  // content: the account, and a fingerprint of everything it is built from but the location,
+  // which may still be withheld later. Bucket objects to delete record which bucket holds them.
   `
   ALTER TABLE posts ADD COLUMN account_id TEXT;
+  ALTER TABLE posts ADD COLUMN confirmed TEXT;
+  ALTER TABLE bucket_cleanup ADD COLUMN mode TEXT;
   `,
 ];
