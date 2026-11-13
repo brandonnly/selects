@@ -336,7 +336,7 @@ function Preview({ url, pending, empty }: { url: string | undefined; pending: bo
   );
 }
 
-function PreviewPicker({
+export function PreviewPicker({
   selects,
   chosen,
   onChoose,
