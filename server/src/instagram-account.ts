@@ -33,7 +33,15 @@ type Row = {
  * The token is refreshed once a day, long before its 60 days run out. It is never returned by
  * `view`, never logged and never put in an error.
  */
-export function createInstagramAccount({ db, api, clock }: { db: Database; api: InstagramApi; clock: Clock }) {
+export function createInstagramAccount({
+  db,
+  api,
+  clock,
+}: {
+  db: Database;
+  api: InstagramApi;
+  clock: Clock;
+}) {
   const row = () => db.query<Row, []>("SELECT * FROM instagram_account WHERE id = 1").get();
 
   const save = (values: Row) => {
@@ -73,7 +81,9 @@ export function createInstagramAccount({ db, api, clock }: { db: Database; api: 
       ).run(fresh.token, clock.now(), clock.now() + fresh.expiresInSeconds * 1000, found.token);
     } catch (error) {
       if (error instanceof InstagramError && error.kind === "token") {
-        db.query("UPDATE instagram_account SET status = 'invalid' WHERE id = 1 AND token = ?").run(found.token);
+        db.query("UPDATE instagram_account SET status = 'invalid' WHERE id = 1 AND token = ?").run(
+          found.token,
+        );
         console.error("Instagram no longer accepts the token. Paste a new one in Settings.");
         return;
       }
@@ -97,14 +107,24 @@ export function createInstagramAccount({ db, api, clock }: { db: Database; api: 
         owner = await api.me(token);
       } catch (error) {
         if (error instanceof InstagramError && (error.kind === "token" || error.kind === "refused")) {
-          throw new InstagramError("token", "Instagram did not accept the token. Check it and paste it again.");
+          throw new InstagramError(
+            "token",
+            "Instagram did not accept the token. Check it and paste it again.",
+          );
         }
-        throw new InstagramError("transient", "Instagram could not be reached to check the token. Try again.");
+        throw new InstagramError(
+          "transient",
+          "Instagram could not be reached to check the token. Try again.",
+        );
       }
       let current = { token, refreshedAt: clock.now(), expiresAt: clock.now() + LONG_LIVED_MS };
       try {
         const fresh = await api.refresh(token);
-        current = { token: fresh.token, refreshedAt: clock.now(), expiresAt: clock.now() + fresh.expiresInSeconds * 1000 };
+        current = {
+          token: fresh.token,
+          refreshedAt: clock.now(),
+          expiresAt: clock.now() + fresh.expiresInSeconds * 1000,
+        };
       } catch {
         // Too new to refresh: it was made within the day, so it has its full 60 days.
       }

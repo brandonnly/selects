@@ -122,7 +122,10 @@ function readBucket(read: (name: string) => string | undefined, problems: string
     read("BUCKET_NAME") ?? "",
     read("BUCKET_REGION") ?? DEFAULT_REGION,
     publicBaseUrl?.replace(/\/+$/, ""),
-    { accessKeyId: read("BUCKET_ACCESS_KEY_ID") ?? "", secretAccessKey: read("BUCKET_SECRET_ACCESS_KEY") ?? "" },
+    {
+      accessKeyId: read("BUCKET_ACCESS_KEY_ID") ?? "",
+      secretAccessKey: read("BUCKET_SECRET_ACCESS_KEY") ?? "",
+    },
   );
 }
 

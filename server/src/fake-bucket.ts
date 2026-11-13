@@ -32,7 +32,11 @@ export function createFakeBucket({
   name = "selects",
   accessKeyId = FAKE_BUCKET_KEYS.accessKeyId,
   port = 0,
-}: { name?: string; accessKeyId?: string; port?: number } = {}) {
+}: {
+  name?: string;
+  accessKeyId?: string;
+  port?: number;
+} = {}) {
   const objects = new Map<string, StoredObject>();
   /** Requests answered, without their query or headers. */
   const requests: { method: string; path: string }[] = [];
@@ -107,7 +111,9 @@ export function createFakeBucket({
   function serve(key: string): Response {
     const object = objects.get(key);
     if (object === undefined) return error(404, "NoSuchKey");
-    return new Response(object.bytes, { headers: { "content-type": object.contentType ?? "binary/octet-stream" } });
+    return new Response(object.bytes, {
+      headers: { "content-type": object.contentType ?? "binary/octet-stream" },
+    });
   }
 
   const endpoint = `http://127.0.0.1:${server.port}`;

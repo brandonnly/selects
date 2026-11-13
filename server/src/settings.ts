@@ -1,6 +1,10 @@
 import type { Database } from "bun:sqlite";
 import { DEFAULT_FRAME_SETTINGS, type FrameSettings } from "./frame";
 
+export type PublishingSettings = { dryRun: boolean };
+
+const DEFAULT_PUBLISHING: PublishingSettings = { dryRun: false };
+
 /**
  * Settings changed in the UI, kept in the database. Values are validated before they are saved;
  * a setting added since a value was saved takes its default.
@@ -29,6 +33,17 @@ export function createSettings(db: Database) {
 
     setFrame(settings: FrameSettings): FrameSettings {
       write("frame", settings);
+      return settings;
+    },
+
+    /** Publishing switches. Dry run renders and records each post without publishing it. */
+    publishing(): PublishingSettings {
+      const saved = read("publishing") as Partial<PublishingSettings> | undefined;
+      return { ...DEFAULT_PUBLISHING, ...saved };
+    },
+
+    setPublishing(settings: PublishingSettings): PublishingSettings {
+      write("publishing", settings);
       return settings;
     },
   };

@@ -81,7 +81,7 @@ export function createFakeInstagram({
   const fetches: { url: string; status: number }[] = [];
   const hanging: (() => void)[] = [];
   let processingPolls = 1;
-  let nextId = 17_841_400_000_000_000;
+  let nextId = 17_841_400_000_000;
   const newId = () => String(nextId++);
 
   const server = Bun.serve({
@@ -97,23 +97,30 @@ export function createFakeInstagram({
     requests.push({ method: request.method, path: url.pathname, operation });
     if (operation === "unknown") return graphError(400, 100, "Unsupported request");
 
-    const token = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? url.searchParams.get("access_token");
+    const token =
+      request.headers.get("authorization")?.replace(/^Bearer /, "") ?? url.searchParams.get("access_token");
     const account = tokenAccount(token);
-    if (account === undefined) return graphError(400, 190, "Invalid OAuth access token - Cannot parse access token");
+    if (account === undefined)
+      return graphError(400, 190, "Invalid OAuth access token - Cannot parse access token");
     if (account.expired) {
-      return graphError(400, 190, "Error validating access token: Session has expired.", { error_subcode: 463 });
+      return graphError(400, 190, "Error validating access token: Session has expired.", {
+        error_subcode: 463,
+      });
     }
 
     const failure = failures.get(operation)?.shift();
-    if (failure === "transient") return graphError(500, 2, "Service temporarily unavailable", { is_transient: true });
-    if (failure === "rate-limit") return graphError(400, 4, "Application request limit reached", { is_transient: true });
+    if (failure === "transient")
+      return graphError(500, 2, "Service temporarily unavailable", { is_transient: true });
+    if (failure === "rate-limit")
+      return graphError(400, 4, "Application request limit reached", { is_transient: true });
     if (failure === "publish-limit") {
       return graphError(400, 9, "The account has reached its publishing limit.", { error_subcode: 2207042 });
     }
 
     const response = await answer(operation, request, url, parts, account, token ?? "");
     if (failure === "lost") return graphError(500, 1, "An unknown error occurred", { is_transient: true });
-    if (failure === "hang") return new Promise((resolve) => hanging.push(() => resolve(new Response(null, { status: 504 }))));
+    if (failure === "hang")
+      return new Promise((resolve) => hanging.push(() => resolve(new Response(null, { status: 504 }))));
     return response;
   }
 
@@ -129,10 +136,13 @@ export function createFakeInstagram({
       case "me":
         return Response.json({ user_id: account.userId, username: account.username, id: account.userId });
       case "refresh": {
-        if (url.searchParams.get("grant_type") !== "ig_refresh_token") return graphError(400, 100, "Invalid grant_type");
+        if (url.searchParams.get("grant_type") !== "ig_refresh_token")
+          return graphError(400, 100, "Invalid grant_type");
         // Meta refreshes a long-lived token only once it is a day old.
         if (clock.now() - account.issuedAt < DAY) {
-          return graphError(400, 190, "The access token is too new to be refreshed.", { error_subcode: 2207051 });
+          return graphError(400, 190, "The access token is too new to be refreshed.", {
+            error_subcode: 2207051,
+          });
         }
         const fresh = `${token.split("~")[0]}~${newId()}`;
         tokens.set(fresh, { ...account, issuedAt: clock.now(), expired: false });
@@ -216,7 +226,12 @@ export function createFakeInstagram({
     if (token === null || token === "") return undefined;
     const found = tokens.get(token);
     if (found !== undefined || !acceptAnyToken) return found;
-    const account: Token = { userId: newId(), username: "fake_account", issuedAt: clock.now(), expired: false };
+    const account: Token = {
+      userId: newId(),
+      username: "fake_account",
+      issuedAt: clock.now(),
+      expired: false,
+    };
     tokens.set(token, account);
     return account;
   }
@@ -302,7 +317,15 @@ function operationOf(method: string, parts: string[], query: URLSearchParams): F
 
 function graphError(status: number, code: number, message: string, extra: Record<string, unknown> = {}) {
   return Response.json(
-    { error: { message, type: code === 190 ? "OAuthException" : "IGApiException", code, ...extra, fbtrace_id: "AfakeTrace" } },
+    {
+      error: {
+        message,
+        type: code === 190 ? "OAuthException" : "IGApiException",
+        code,
+        ...extra,
+        fbtrace_id: "AfakeTrace",
+      },
+    },
     { status },
   );
 }

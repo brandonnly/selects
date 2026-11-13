@@ -127,7 +127,12 @@ describe("loadConfig: the bucket", () => {
   test("refuses an endpoint or public base URL that is not an http(s) URL, naming it only", () => {
     let message = "";
     try {
-      loadConfig({ ...minimal, ...bucket, BUCKET_ENDPOINT: "ftp://nope-4410", BUCKET_PUBLIC_URL: "nope-4411" });
+      loadConfig({
+        ...minimal,
+        ...bucket,
+        BUCKET_ENDPOINT: "ftp://nope-4410",
+        BUCKET_PUBLIC_URL: "nope-4411",
+      });
     } catch (error) {
       message = (error as Error).message;
     }

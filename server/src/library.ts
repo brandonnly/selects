@@ -34,7 +34,12 @@ export type Select = CaptureData & {
   width: number;
   height: number;
   alreadyPosted: boolean;
-  /** Not posted and not marked as already posted: eligible to be picked. */
+  /**
+   * Its post: `publishing` while one is being sent or retried, `published` once it is out. Null
+   * when it is in no such post; a post that failed for good leaves it null again.
+   */
+  post: "publishing" | "published" | null;
+  /** Not posted, not being posted and not marked as already posted: eligible to be picked. */
   inPool: boolean;
   addedAt: string;
 };
@@ -110,6 +115,8 @@ type SelectRow = {
   captured_at: string | null;
   already_posted: 0 | 1;
   added_at: string;
+  /** The state of a post that holds it and has not failed, if any. */
+  post_state: "publishing" | "retrying" | "published" | null;
 };
 
 type RejectionRow = {
@@ -156,8 +163,7 @@ export function createLibrary({
     join(dirs.originals, `${row.id}.${EXTENSIONS[row.format]}`);
   const thumbnailPath = (id: string) => join(dirs.thumbnails, `${id}.jpg`);
 
-  const selectRow = (id: string) =>
-    db.query<SelectRow, [string]>("SELECT * FROM selects WHERE id = ?").get(id);
+  const selectRow = (id: string) => db.query<SelectRow, [string]>(`${SELECT_WITH_POST} WHERE id = ?`).get(id);
   const rejectionRow = (id: string) =>
     db.query<RejectionRow, [string]>("SELECT * FROM rejections WHERE id = ?").get(id);
 
@@ -400,18 +406,20 @@ export function createLibrary({
     /** Every select, newest first. */
     list(): Select[] {
       return db
-        .query<SelectRow, []>("SELECT * FROM selects ORDER BY added_at DESC, rowid DESC")
+        .query<SelectRow, []>(`${SELECT_WITH_POST} ORDER BY added_at DESC, rowid DESC`)
         .all()
         .map(toSelect);
     },
 
     /**
-     * The IDs of selects that may be picked, oldest first: never those marked as already
-     * posted. The picker builds on this.
+     * The IDs of selects that may be picked, oldest first: never those marked as already posted,
+     * published, or in a post being published. The picker builds on this.
      */
     pool(): string[] {
       return db
-        .query<{ id: string }, []>("SELECT id FROM selects WHERE already_posted = 0 ORDER BY added_at, rowid")
+        .query<{ id: string }, []>(
+          `SELECT id FROM (${SELECT_WITH_POST}) WHERE already_posted = 0 AND post_state IS NULL ORDER BY added_at, rowid`,
+        )
         .all()
         .map((row) => row.id);
     },
@@ -493,8 +501,19 @@ export function createLibrary({
 
 export type Library = ReturnType<typeof createLibrary>;
 
+/**
+ * Selects with the state of the post that holds each, when one is being published or is out. A
+ * post that failed for good is left out, which returns its select to the pool.
+ */
+const SELECT_WITH_POST = `SELECT selects.*, rowid, (
+    SELECT posts.state FROM post_selects JOIN posts ON posts.id = post_selects.post_id
+    WHERE post_selects.select_id = selects.id AND posts.state IN ('publishing', 'retrying', 'published')
+    ORDER BY posts.state = 'published' DESC LIMIT 1
+  ) AS post_state FROM selects`;
+
 function toSelect(row: SelectRow): Select {
   const alreadyPosted = row.already_posted === 1;
+  const post = row.post_state === null ? null : row.post_state === "published" ? "published" : "publishing";
   return {
     id: row.id,
     fileName: row.file_name,
@@ -513,7 +532,8 @@ function toSelect(row: SelectRow): Select {
     longitude: row.longitude,
     capturedAt: row.captured_at,
     alreadyPosted,
-    inPool: !alreadyPosted,
+    post,
+    inPool: !alreadyPosted && post === null,
     addedAt: row.added_at,
   };
 }

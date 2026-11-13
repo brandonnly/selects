@@ -112,7 +112,10 @@ export function createInstagramApi({ baseUrl }: { baseUrl: string }): InstagramA
   return {
     async me(token) {
       const body = await call(token, `${versioned("me")}?fields=user_id,username`);
-      return { userId: text(body.user_id ?? body.id, "account ID"), username: text(body.username, "username") };
+      return {
+        userId: text(body.user_id ?? body.id, "account ID"),
+        username: text(body.username, "username"),
+      };
     },
 
     async refresh(token) {
