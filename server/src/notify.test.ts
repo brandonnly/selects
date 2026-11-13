@@ -93,7 +93,7 @@ describe("ntfy", () => {
     expect(JSON.parse(request?.body ?? "")).toMatchObject({
       topic: TOPIC,
       title: "Selects test",
-      message: "Notifications from Selects reach this topic.",
+      message: "A test notice from Selects: notifications arrive here.",
     });
   });
 });

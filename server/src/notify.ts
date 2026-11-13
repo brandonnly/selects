@@ -206,7 +206,7 @@ async function post(url: string, body: unknown, headers: Record<string, string>,
 const TEST_NOTICE: Notice = {
   event: "test",
   title: "Selects test",
-  message: "Notifications from Selects reach this topic.",
+  message: "A test notice from Selects: notifications arrive here.",
 };
 
 // An unexpected error is told without its message, which may hold the URL, and tried again.
