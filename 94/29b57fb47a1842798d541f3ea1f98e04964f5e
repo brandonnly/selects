@@ -1,0 +1,25 @@
+web/index.html
+  s_9f8c542a508e22::t_6926d649178163 7-8,12
+brand/favicon/site.webmanifest
+  s_9f8c542a508e22::t_6926d649178163 4-6
+web/src/pwa.test.ts
+  s_9f8c542a508e22::t_dcc7a9b7017dab 1-55
+brand/scripts/build.mjs
+  s_9f8c542a508e22::t_6926d649178163 51-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9429b57fb47a1842798d541f3ea1f98e04964f5e",
+  "prompts": {},
+  "sessions": {
+    "s_9f8c542a508e22": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7f2a488-3a64-43e0-bdcf-e81f50f4578f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
