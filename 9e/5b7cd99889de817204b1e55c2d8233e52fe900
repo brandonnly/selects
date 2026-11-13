@@ -1,0 +1,69 @@
+.env.example
+  s_c4e8006bf0d88c::t_3028c13d7bb088 32-34
+GLOSSARY.md
+  s_c4e8006bf0d88c::t_fa7b2971ed0e83 22
+docs/adr/0008-gallery-output.md
+  s_c4e8006bf0d88c::t_7bda67d379fc01 1-90
+docs/manifest.md
+  s_c4e8006bf0d88c::t_26bb71ebc7db3a 1-123
+server/src/app.ts
+  s_c4e8006bf0d88c::t_26e095e3242c5e 22-23,41,151-161,172,175-176,190,225,304,458
+server/src/bucket.test.ts
+  s_c4e8006bf0d88c::t_6797a0cc20476b 31-69
+server/src/bucket.ts
+  s_c4e8006bf0d88c::t_5867b487ca29b4 29-39,43-51,118-145
+server/src/config.test.ts
+  s_c4e8006bf0d88c::t_e59b3cd0e0b701 167-173
+server/src/config.ts
+  s_c4e8006bf0d88c::t_d16cdeb73373ef 53-57,117-124
+server/src/fake-bucket.ts
+  s_c4e8006bf0d88c::t_a3abb0ee05961c 47-48,75-78,124-126,132,134-137,161-164
+server/src/fakes.test.ts
+  s_c4e8006bf0d88c::t_1eb3445f0d9707 21-36
+server/src/fakes.ts
+  s_c4e8006bf0d88c::t_b9dae608aaf8e3 13-14,21-27
+server/src/gallery-api.test.ts
+  s_c4e8006bf0d88c::t_3f94377fb141e8 1-182
+server/src/gallery-routes.ts
+  s_c4e8006bf0d88c::t_858f6bbc910464 1-35
+server/src/gallery.test.ts
+  s_c4e8006bf0d88c::t_775c7f6e61c44b 1-1051
+server/src/gallery.ts
+  s_c4e8006bf0d88c::t_2e0a256f71ff64 1-701
+server/src/main.ts
+  s_c4e8006bf0d88c::t_33e57e66f56f7a 17-18,42,53-55,105-109,121
+server/src/migrations.ts
+  s_c4e8006bf0d88c::t_a3ce13f024977d 242-274
+server/src/publisher.ts
+  s_c4e8006bf0d88c::t_f5dbdcef0084c2 133-142,177-179,181,197-198,225-227,292-293,324-327,330,332-342,349-350,428-430,439-440,619,622,672-679,771-774,860,866,870,899-900,1038-1040
+server/src/settings.ts
+  s_c4e8006bf0d88c::t_d67629def338d8 8-11,53-63
+web/src/components/gallery-settings.tsx
+  s_c4e8006bf0d88c::t_85db8aa3f56797 1-99
+web/src/components/publishing-settings.tsx
+  s_c4e8006bf0d88c::t_51262a48c48311 258-259
+web/src/lib/gallery.test.ts
+  s_c4e8006bf0d88c::t_622c11c2c7aae2 1-102
+web/src/lib/gallery.ts
+  s_c4e8006bf0d88c::t_645f33d8cf2c98 1-68
+web/src/screens/posted.tsx
+  s_c4e8006bf0d88c::t_4020d869873f97 1,3,7,17,22,29,31-35,48-63,73-75,89-95,121-131,181-188,194-296
+web/src/screens/settings.tsx
+  s_c4e8006bf0d88c::t_13b44840ec7f17 3,46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9e5b7cd99889de817204b1e55c2d8233e52fe900",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
