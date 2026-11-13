@@ -94,7 +94,9 @@ Every field is always present. A value the select lacks is `null`, never left ou
   allowing `GET` from the gallery's origin.
 - Selects writes the whole file from its database each time; it never reads the bucket's copy.
   An entry is listed only once its images are stored, and an image is deleted only once a
-  manifest without it is stored, so an entry never points at a missing image.
+  manifest without it is stored, so an entry does not point at a missing image. The one
+  exception is a write that was given up on and lands late over a newer one: it is replaced on
+  the next run.
 
 ## Location privacy
 

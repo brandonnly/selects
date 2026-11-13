@@ -771,6 +771,35 @@ describe("the public base URL", () => {
   });
 });
 
+describe("run without a public base URL after having had one", () => {
+  test("the public manifest still loses a location hidden since, its framed image, and a post removed", async () => {
+    const before = setup();
+    await connect(before.account);
+    const id = await addFile(large);
+    const hidden = await postNow(before, id);
+    const removed = await postNow(before, await addSelect("square"));
+    expect(manifest()?.posts).toHaveLength(2);
+    const frame = keyOf(manifest()?.posts.find((p) => p.id === hidden.id)?.images.framed?.url ?? "");
+    expect(fakeBucket.objects.has(frame)).toBe(true);
+
+    // The same bucket and database, started again with no public base URL.
+    const after = setup({ publicBaseUrl: null });
+    after.captures.save(id, { edits: {}, locationHidden: true });
+    after.gallery.remove(removed.id);
+    await after.gallery.runDue();
+    await after.gallery.settled();
+
+    const posts = manifest()?.posts ?? [];
+    expect(posts.map((p) => p.id)).toEqual([hidden.id]);
+    expect(posts[0]?.location).toBeNull();
+    expect(posts[0]?.images.framed).toBeNull();
+    expect(JSON.stringify(posts)).not.toContain("20°");
+    expect(fakeBucket.objects.has(frame)).toBe(false);
+    // Still at the address it was public under.
+    expect(posts[0]?.images.clean.url).toStartWith(`${fakeBucket.publicBaseUrl}/`);
+  });
+});
+
 describe("a fake-mode restart", () => {
   test("writes again what the in-memory bucket lost, so the manifest never lists a missing file", async () => {
     const before = setup();

@@ -48,7 +48,7 @@ so a coordinate or file name in it is published for good.
   Selects is stopped, or running in the other mode.
 - **The switch.** Off by default, and available only with a public base URL, which the URLs in
   the manifest are built on; a presigned link is never listed. Turning it off stops new posts
-  writing to the gallery. Posts already there stay until removed, and their entries keep
+  writing to the gallery; a post published while it was on is still taken in. Posts already there stay until removed, and their entries keep
   following privacy changes.
 - **Remove from gallery** marks the post at once and finishes in the background: the entry
   leaves the manifest, then its images are deleted. The post and its select are untouched.
@@ -78,8 +78,12 @@ so a coordinate or file name in it is published for good.
 - The framed image keeps the headers the publisher uploads it with, which set no caching.
 - Withholding a location after the fact empties a hand-written caption in the manifest, even
   where it held no coordinates.
-- Without a public base URL the manifest is not written at all, privacy changes included, until
-  one is set again.
+- Run without a public base URL after having had one, the manifest already public is still
+  rewritten, under the base it was last written with, so locations hidden and posts removed
+  since leave it; new posts are not added until a public base URL is set again.
+- A manifest write given up on can land after a newer one and be public until it is written
+  again on the next run: for that long it can list what the newer one withheld, or an image
+  since deleted.
 - In fake mode a restart loses the gallery's files; they are written again, less the framed
   images.
 - Unverified until a live run: that the bucket in use accepts unsigned `Content-Type` and

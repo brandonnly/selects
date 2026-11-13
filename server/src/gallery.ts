@@ -173,6 +173,27 @@ export function createGallery(options: GalleryOptions) {
       )
       .get(postId)?.select_id ?? undefined;
 
+  /**
+   * The public base URL the gallery was last written under, kept so that a manifest already
+   * public goes on following privacy changes and removals when the bucket is later run without
+   * one. Undefined when gallery output never had a public base URL: nothing is public then.
+   */
+  const baseKey = `gallery.publicBase.${mode}`;
+  function publicBase(current: Bucket): string | undefined {
+    if (current.urlKind === "public") {
+      // `urlFor` puts a key after the base and a slash.
+      const base = current.urlFor("");
+      db.query(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+      ).run(baseKey, JSON.stringify(base));
+      return base;
+    }
+    const saved = db
+      .query<{ value: string }, [string]>("SELECT value FROM settings WHERE key = ?")
+      .get(baseKey);
+    return saved === null ? undefined : (JSON.parse(saved.value) as string);
+  }
+
   function availability(): GalleryAvailability {
     if (bucket === undefined) {
       const missing = "missing" in options.bucket ? options.bucket.missing : [];
@@ -325,7 +346,7 @@ export function createGallery(options: GalleryOptions) {
    * The manifest as it should be now, from the database, and its hash. Each URL is built on the
    * bucket's public base URL as it is now, so a changed one moves every entry.
    */
-  function build(bucket: Bucket): { body: string; hash: string } {
+  function build(base: string): { body: string; hash: string } {
     const rows = db
       .query<Listed, [InstagramMode]>(
         `SELECT g.*, p.caption, p.alt_text, p.withheld_caption, p.withheld_alt_text, p.capture,
@@ -338,7 +359,7 @@ export function createGallery(options: GalleryOptions) {
     const currentZones = zones.list();
     const body = JSON.stringify({
       version: MANIFEST_VERSION,
-      posts: rows.map((row) => entry(bucket, row, currentZones)),
+      posts: rows.map((row) => entry(base, row, currentZones)),
     } satisfies Manifest);
     return { body, hash: createHash("sha256").update(body).digest("hex") };
   }
@@ -368,7 +389,7 @@ export function createGallery(options: GalleryOptions) {
     );
   }
 
-  function entry(bucket: Bucket, row: Listed, currentZones: ReturnType<Zones["list"]>): ManifestEntry {
+  function entry(base: string, row: Listed, currentZones: ReturnType<Zones["list"]>): ManifestEntry {
     const sent = snapshotOf(row.capture);
     const hidden = withheld(sent, row.post_id, currentZones);
     const latitude = sent?.latitude ?? null;
@@ -381,14 +402,14 @@ export function createGallery(options: GalleryOptions) {
       altText: hidden ? (row.withheld_alt_text ?? "") : row.alt_text,
       images: {
         clean: {
-          url: bucket.urlFor(row.image_key ?? ""),
+          url: `${base}${row.image_key ?? ""}`,
           width: row.image_width ?? 0,
           height: row.image_height ?? 0,
         },
         framed:
           row.frame_key === null || hidden
             ? null
-            : { url: bucket.urlFor(row.frame_key), width: FRAME_WIDTH, height: FRAME_HEIGHT },
+            : { url: `${base}${row.frame_key}`, width: FRAME_WIDTH, height: FRAME_HEIGHT },
       },
       capture: {
         camera: sent?.camera ?? null,
@@ -412,8 +433,12 @@ export function createGallery(options: GalleryOptions) {
       .get(mode);
     // A gallery never used writes nothing to the bucket.
     if ((any?.n ?? 0) === 0) return;
-    // Its URLs are built on the public base URL: a presigned link is never listed.
-    if (bucket.urlKind !== "public") {
+    // Its URLs are built on the public base URL: a presigned link is never listed. Run without
+    // one, a manifest already public is still rewritten under the base it was last written
+    // with, so a location hidden or a post removed since leaves it. New posts are not added
+    // (their images are not written without a public base URL).
+    const base = publicBase(bucket);
+    if (base === undefined) {
       manifest.error = "Gallery output needs a public base URL: set BUCKET_PUBLIC_URL.";
       return;
     }
@@ -434,7 +459,7 @@ export function createGallery(options: GalleryOptions) {
       .all(mode)
       .filter((row) => withheld(snapshotOf(row.capture), row.post_id, currentZones))
       .map((row) => ({ postId: row.post_id, key: row.frame_key }));
-    const { body, hash } = build(bucket);
+    const { body, hash } = build(base);
     if (hash !== manifest.hash) {
       // A privacy change or a removal never waits behind the backoff of an earlier manifest.
       if (hash !== manifest.failedHash) Object.assign(manifest, { failures: 0, nextAt: 0 });
@@ -597,8 +622,8 @@ export function createGallery(options: GalleryOptions) {
     },
 
     view(): GalleryView {
-      const listed =
-        bucket !== undefined && manifest.hash !== undefined && build(bucket).hash === manifest.hash;
+      const base = bucket === undefined ? undefined : publicBase(bucket);
+      const listed = base !== undefined && manifest.hash !== undefined && build(base).hash === manifest.hash;
       const posts = db
         .query<Row, []>("SELECT * FROM gallery_posts ORDER BY added_at DESC, post_id")
         .all()
