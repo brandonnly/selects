@@ -1,0 +1,25 @@
+README.md
+  s_c4e8006bf0d88c::t_581e86f2f27a00 39-40
+server/src/library.ts
+  s_c4e8006bf0d88c::t_dae3cafd545d9e 304-314,317,520-525
+server/src/main.ts
+  s_c4e8006bf0d88c::t_9925ef4a1febf4 6,57
+web/src/screens/library.tsx
+  s_c4e8006bf0d88c::t_640355631406e3 38-45,90-95,97,296-305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eb70c8538995453cfd1b669e479387d3bfbf3d82",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
