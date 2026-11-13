@@ -1,0 +1,45 @@
+.env.example
+  s_c4e8006bf0d88c::t_e9f6308b4ef1e9 15-18
+README.md
+  s_c4e8006bf0d88c::t_cb12667f05da1f 134-152
+docs/adr/0009-notifications-and-backups.md
+  s_c4e8006bf0d88c::t_ae2e1467ba8030 19,57-62
+server/src/app.ts
+  s_c4e8006bf0d88c::t_049b154ca1d359 28,500-501
+server/src/backup.ts
+  s_c4e8006bf0d88c::t_2466944bfe1b5b 27,98-99,116-121
+server/src/config.test.ts
+  s_c4e8006bf0d88c::t_03452e36369726 174-184
+server/src/config.ts
+  s_c4e8006bf0d88c::t_c632107c60985d 58-62,118-123,135
+server/src/main.ts
+  s_c4e8006bf0d88c::t_4fe1e9d66c2671 54,59-63
+server/src/notify.test.ts
+  s_c4e8006bf0d88c::t_770248d1fe540a 258,419-432
+server/src/notify.ts
+  s_c4e8006bf0d88c::t_486b90bb439d84 178-180,186,239-242,360,392-393,430-431
+server/src/publisher.test.ts
+  s_c4e8006bf0d88c::t_9a89233b268d72 856-877
+server/src/publisher.ts
+  s_c4e8006bf0d88c::t_725dbe99c9b639 1020-1032
+web/src/components/backup-status.tsx
+  s_c4e8006bf0d88c::t_aec3aa01e120b9 43-44
+web/src/components/notification-settings.tsx
+  s_c4e8006bf0d88c::t_4d1adacb733c79 205-210,257-261,377,392,398,476,491,497
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "343c44489f7482c57a7afc354ae73c8b4de4c841",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
