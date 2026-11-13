@@ -1,0 +1,27 @@
+server/src/publisher.ts
+  s_c4e8006bf0d88c::t_0ec7b08a7570b7 690
+server/src/scheduler.test.ts
+  s_c4e8006bf0d88c::t_85e2c16079d329 938-952
+server/src/scheduler.ts
+  s_c4e8006bf0d88c::t_282187c6969566 575-583,637,639-640,847-853
+web/src/lib/freshness.ts
+  s_c4e8006bf0d88c::t_1ca301b5683ad2 6-8,12-13,26-34,36-38
+web/src/screens/queue.tsx
+  s_c4e8006bf0d88c::t_26db89ff1b17bc 35-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2e6472409bf1730f7caeb316ccef2f01669ccf75",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
