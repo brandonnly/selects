@@ -4,7 +4,7 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import sharp from "sharp";
-import { type Bucket, createBucket } from "./bucket";
+import { type Bucket, BucketError, createBucket } from "./bucket";
 import { createCaptionStore } from "./caption-store";
 import { createCaptures } from "./capture";
 import { createFakeClock, type FakeClock } from "./clock";
@@ -403,5 +403,310 @@ describe("the manifest", () => {
     await parts.gallery.runDue();
 
     expect(manifest()?.posts[0]?.capture.camera).toBe("Fixture Optics FX-3");
+  });
+});
+
+const objectKeys = () => [...fakeBucket.objects.keys()].sort();
+const manifestWrites = () =>
+  fakeBucket.requests.filter((r) => r.method === "PUT" && r.path.endsWith("/posts.json")).length;
+
+describe("the gallery switch", () => {
+  test("off, as it is by default, deletes the framed image once published and writes nothing else", async () => {
+    const parts = setup({ gallery: false });
+    await connect(parts.account);
+    expect(parts.gallery.view().enabled).toBe(false);
+
+    const post = await postNow(parts, await addSelect("portrait"));
+
+    expect(post.state).toBe("published");
+    expect(objectKeys()).toEqual([]);
+    expect(fakeBucket.requests.some((r) => r.path.endsWith("/posts.json"))).toBe(false);
+  });
+
+  test("turned off later stops new posts writing to the gallery, and leaves earlier ones listed", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const first = await postNow(parts, await addSelect("portrait"));
+
+    parts.gallery.setEnabled(false);
+    await postNow(parts, await addSelect("square"));
+    await parts.gallery.runDue();
+
+    expect(manifest()?.posts.map((p) => p.id)).toEqual([first.id]);
+    // The first post's two images, and the manifest: the second post's frame is gone.
+    expect(objectKeys()).toHaveLength(3);
+  });
+
+  test("is unavailable without a public base URL, saying why, and cannot be turned on", async () => {
+    const parts = setup({ publicBaseUrl: null });
+    await connect(parts.account);
+
+    const availability = parts.gallery.availability();
+    expect(availability.available).toBe(false);
+    expect(availability.available ? "" : availability.reason).toContain("public base URL");
+    expect(parts.gallery.setEnabled(true).ok).toBe(false);
+    expect(parts.gallery.view().enabled).toBe(false);
+
+    await postNow(parts, await addSelect("portrait"));
+    expect(objectKeys()).toEqual([]);
+  });
+});
+
+describe("remove from gallery", () => {
+  test("deletes the post's public images and its manifest entry, and leaves the select posted", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const id = await addSelect("portrait");
+    const post = await postNow(parts, id);
+    const other = await postNow(parts, await addSelect("square"));
+    const instagramRequests = instagram.requests.length;
+
+    expect(parts.gallery.remove(post.id)).toBe("removing");
+    await parts.gallery.settled();
+
+    expect(manifest()?.posts.map((p) => p.id)).toEqual([other.id]);
+    const left = manifest()?.posts[0];
+    expect(objectKeys()).toEqual(
+      ["posts.json", keyOf(left?.images.clean.url ?? ""), keyOf(left?.images.framed?.url ?? "")].sort(),
+    );
+    expect(parts.publisher.post(post.id)?.state).toBe("published");
+    expect(library.get(id)?.inPool).toBe(false);
+    expect(instagram.requests.length).toBe(instagramRequests);
+    expect(parts.gallery.view().posts.find((p) => p.postId === post.id)?.state).toBe("removed");
+  });
+
+  test("works while the bucket is failing, finishing once it answers again", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const post = await postNow(parts, await addSelect("portrait"));
+    const listed = manifest()?.posts[0];
+
+    fakeBucket.failNext(1000);
+    parts.gallery.remove(post.id);
+    await parts.gallery.settled();
+    expect(parts.gallery.view().posts[0]?.state).toBe("removing");
+    // The manifest could not be rewritten, so the images it lists are still there.
+    expect(manifest()?.posts).toHaveLength(1);
+    expect(fakeBucket.objects.has(keyOf(listed?.images.clean.url ?? ""))).toBe(true);
+
+    fakeBucket.failNext(0);
+    clock.advance(60 * 60 * 1000);
+    await parts.gallery.runDue();
+    await parts.publisher.runDue();
+
+    expect(manifest()?.posts).toEqual([]);
+    expect(objectKeys()).toEqual(["posts.json"]);
+    expect(parts.gallery.view().posts[0]?.state).toBe("removed");
+  });
+
+  test("deletes images that fail to delete later, through the cleanup record", async () => {
+    let deletesFail = true;
+    const parts = setup({
+      wrapBucket: (bucket) => ({
+        ...bucket,
+        delete: async (key) => {
+          if (deletesFail) throw new BucketError("The bucket refused to delete the object.");
+          return bucket.delete(key);
+        },
+      }),
+    });
+    await connect(parts.account);
+    const post = await postNow(parts, await addSelect("portrait"));
+
+    parts.gallery.remove(post.id);
+    await parts.gallery.settled();
+    expect(manifest()?.posts).toEqual([]);
+    expect(objectKeys()).toHaveLength(3);
+
+    deletesFail = false;
+    await parts.publisher.runDue();
+    expect(objectKeys()).toEqual(["posts.json"]);
+  });
+
+  test("twice, or of a post not in the gallery, changes nothing more", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const post = await postNow(parts, await addSelect("portrait"));
+
+    parts.gallery.remove(post.id);
+    parts.gallery.remove(post.id);
+    await parts.gallery.settled();
+
+    expect(manifest()?.posts).toEqual([]);
+    expect(parts.gallery.remove("no-such-post")).toBe("not-found");
+  });
+});
+
+/** A bucket whose object uploads fail while `failing.on` is set, for keys that `failing.match`. */
+function failingObjects(failing: { on: boolean; match: (key: string) => boolean }) {
+  return (bucket: Bucket): Bucket => ({
+    ...bucket,
+    putObject: async (key, ...rest) => {
+      if (failing.on && failing.match(key)) throw new BucketError("The bucket refused to store the object.");
+      return bucket.putObject(key, ...rest);
+    },
+  });
+}
+
+describe("gallery output that fails", () => {
+  test("never fails, undoes or repeats the post, and is retried on its own", async () => {
+    const failing = { on: true, match: (key: string) => key.startsWith("gallery/") };
+    const parts = setup({ wrapBucket: failingObjects(failing) });
+    await connect(parts.account);
+    const id = await addSelect("portrait");
+
+    const post = await postNow(parts, id);
+
+    expect(post.state).toBe("published");
+    expect(post.error).toBeNull();
+    expect(library.get(id)?.inPool).toBe(false);
+    const [state] = parts.gallery.view().posts;
+    expect(state?.state).toBe("writing");
+    expect(state?.error).toBe("The bucket refused to store the object.");
+    expect(manifest()?.posts ?? []).toEqual([]);
+
+    failing.on = false;
+    // Not before its wait is over.
+    await parts.gallery.runDue();
+    expect(manifest()?.posts ?? []).toEqual([]);
+    clock.advance(60 * 1000);
+    await parts.gallery.runDue();
+    await parts.publisher.runDue();
+
+    expect(manifest()?.posts.map((p) => p.id)).toEqual([post.id]);
+    expect(parts.gallery.view().posts[0]).toMatchObject({ state: "listed", error: null });
+    expect(instagram.media).toHaveLength(1);
+    expect(parts.publisher.post(post.id)?.state).toBe("published");
+  });
+
+  test("never records or shows a link to the bucket in its error", async () => {
+    const parts = setup({ wrapBucket: failingObjects({ on: true, match: () => true }) });
+    await connect(parts.account);
+
+    await postNow(parts, await addSelect("portrait"));
+
+    expect(JSON.stringify(parts.gallery.view())).not.toContain("X-Amz");
+    const stored = db.query<{ error: string | null }, []>("SELECT error FROM gallery_posts").all();
+    expect(stored.map((row) => row.error)).toEqual(["The bucket refused to store the object."]);
+  });
+});
+
+describe("a stop part way", () => {
+  test("between storing the images and the manifest lists the post on the next run after the restart", async () => {
+    const failing = { on: true, match: (key: string) => key === "posts.json" };
+    const before = setup({ wrapBucket: failingObjects(failing) });
+    await connect(before.account);
+    const post = await postNow(before, await addSelect("portrait"));
+    expect(manifest()).toBeUndefined();
+
+    // Restarted: a new gallery over the same database.
+    failing.on = false;
+    const after = setup();
+    await after.gallery.runDue();
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry?.id).toBe(post.id);
+    expect(fakeBucket.objects.has(keyOf(entry?.images.clean.url ?? ""))).toBe(true);
+  });
+
+  test("after storing the clean image but before recording it stores it again under the same key", async () => {
+    // The image lands, and the answer is lost.
+    let lose = true;
+    const parts = setup({
+      wrapBucket: (bucket) => ({
+        ...bucket,
+        putObject: async (key, ...rest) => {
+          await bucket.putObject(key, ...rest);
+          if (lose && key.startsWith("gallery/")) throw new BucketError("The bucket did not answer in time.");
+        },
+      }),
+    });
+    await connect(parts.account);
+    await postNow(parts, await addSelect("portrait"));
+
+    lose = false;
+    clock.advance(60 * 1000);
+    await parts.gallery.runDue();
+
+    const gallery = objectKeys().filter((key) => key.startsWith("gallery/"));
+    expect(gallery).toHaveLength(1);
+    expect(keyOf(manifest()?.posts[0]?.images.clean.url ?? "")).toBe(gallery[0] ?? "missing");
+  });
+});
+
+describe("modes", () => {
+  test("a post made in fake mode never has gallery files written to or deleted from another mode's bucket", async () => {
+    const fake = setup();
+    await connect(fake.account);
+    const post = await postNow(fake, await addSelect("portrait"));
+    const requests = fakeBucket.requests.length;
+
+    // Restarted in live mode, against a bucket that stands in for the live one.
+    const live = setup({ mode: "live" });
+    await live.gallery.runDue();
+    expect(live.gallery.remove(post.id)).toBe("other-mode");
+    await live.gallery.settled();
+
+    expect(fakeBucket.requests.length).toBe(requests);
+  });
+});
+
+describe("manifest writes", () => {
+  test("keep entries newest first in a stable order, and are not repeated when nothing changed", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const first = await postNow(parts, await addSelect("portrait"));
+    clock.advance(60 * 1000);
+    const second = await postNow(parts, await addSelect("square"));
+    const writes = manifestWrites();
+
+    await parts.gallery.runDue();
+    await parts.gallery.runDue();
+
+    expect(manifest()?.posts.map((p) => p.id)).toEqual([second.id, first.id]);
+    expect(manifestWrites()).toBe(writes);
+  });
+
+  test("list a post once however often it is reported published", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const post = await postNow(parts, await addSelect("portrait"));
+
+    parts.gallery.published(post.id);
+    parts.gallery.published(post.id);
+    await parts.gallery.settled();
+
+    expect(manifest()?.posts.map((p) => p.id)).toEqual([post.id]);
+    expect(objectKeys().filter((key) => key.startsWith("gallery/"))).toHaveLength(1);
+  });
+
+  test("write nothing to a bucket whose gallery was never used", async () => {
+    const parts = setup();
+    await parts.gallery.runDue();
+    expect(fakeBucket.requests).toEqual([]);
+  });
+});
+
+describe("a post Instagram had not confirmed", () => {
+  test("marked as posted by the owner is listed, with no framed image since its frame was deleted", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    instagram.fail("publish", "lost");
+    let post = await postNow(parts, await addSelect("portrait"));
+    instagram.fail("status", "transient", "transient", "transient");
+    while (post.state === "retrying") {
+      clock.advance((post.nextAttemptAt ?? 0) - clock.now());
+      await parts.publisher.runDue();
+      post = parts.publisher.post(post.id) ?? post;
+    }
+    expect(post.state).toBe("unconfirmed");
+
+    await parts.publisher.resolve(post.id, { posted: true, permalink: "https://www.instagram.com/p/abc/" });
+    await parts.gallery.settled();
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry).toMatchObject({ id: post.id, permalink: "https://www.instagram.com/p/abc/" });
+    expect(entry?.images.framed).toBeNull();
+    expect(fakeBucket.objects.has(keyOf(entry?.images.clean.url ?? ""))).toBe(true);
   });
 });
