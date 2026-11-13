@@ -1,0 +1,21 @@
+docs/adr/0007-scheduling.md
+  s_6c98985e810c0a::t_2fccca556ccce9 139-140
+server/src/publisher.ts
+  s_6c98985e810c0a::t_9afe90d20e8ee2 751
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4a52dddbfd64d03bf7fbd723bf380a2225a837eb",
+  "prompts": {},
+  "sessions": {
+    "s_6c98985e810c0a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d49a-007b-70a0-b5d9-b740021033e9",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
