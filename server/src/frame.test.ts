@@ -97,10 +97,18 @@ describe("the rendered frame", () => {
   });
 
   test("stays under 8 MB for a photo that compresses as badly as any can", async () => {
-    const noise = Buffer.alloc(1200 * 1500 * 3);
-    for (let i = 0; i < noise.length; i++) noise[i] = Math.imul(i, 2654435761) >>> 24;
+    // Noise with no pattern, filling the whole canvas at a zero border: the worst case to encode.
+    const [width, height] = [1440, 1720];
+    const noise = Buffer.alloc(width * height * 3);
+    let state = 0x9e3779b9;
+    for (let i = 0; i < noise.length; i++) {
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      noise[i] = state & 0xff;
+    }
     const path = join(dir, "noise.png");
-    await sharp(noise, { raw: { width: 1200, height: 1500, channels: 3 } })
+    await sharp(noise, { raw: { width, height, channels: 3 } })
       .png()
       .toFile(path);
     const photo = await inspectPhoto(path);

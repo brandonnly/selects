@@ -196,3 +196,15 @@ describe("a select's frame", () => {
     expect((await request("/api/selects/nope/frame")).status).toBe(404);
   });
 });
+
+describe("a frame that cannot be rendered", () => {
+  test("is not found when the original has gone from the data folder", async () => {
+    const id = await addSelect("portrait");
+    rmSync(join(dataDir, "originals"), { recursive: true, force: true });
+
+    const response = await request(`/api/selects/${id}/frame`);
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain(dataDir);
+  });
+});

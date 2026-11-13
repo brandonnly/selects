@@ -81,14 +81,18 @@ function typeface(font: Font): Typeface {
   };
 }
 
-/** Parsed fonts by path, size and modified time, kept for the life of the process. */
-const parsed = new Map<string, Typeface | null>();
+/** The parsed font for each path, with the size and modified time it was parsed at. */
+const parsed = new Map<string, { version: string; font: Typeface | null }>();
 
 function load(path: string): Typeface | null {
   const stats = statSync(path, { throwIfNoEntry: false });
-  if (stats === undefined) return null;
-  const key = `${path}\0${stats.size}\0${stats.mtimeMs}`;
-  if (parsed.has(key)) return parsed.get(key) ?? null;
+  if (stats === undefined) {
+    parsed.delete(path);
+    return null;
+  }
+  const version = `${stats.size}\0${stats.mtimeMs}`;
+  const known = parsed.get(path);
+  if (known?.version === version) return known.font;
   let loaded: Typeface | null = null;
   try {
     loaded = typeface(parse(readFileSync(path)));
@@ -98,7 +102,7 @@ function load(path: string): Typeface | null {
     // Logged once per version of the file. Its name is the user's own, so it stays out.
     console.error(`A font file could not be read or laid out (${errorKind(error)}).`);
   }
-  parsed.set(key, loaded);
+  parsed.set(path, { version, font: loaded });
   return loaded;
 }
 
@@ -130,10 +134,14 @@ export function createFontSource(dataDir: string) {
       return path === undefined ? null : { fileName: basename(path), usable: load(path) !== null };
     },
 
-    font(id: TypefaceId): Typeface {
+    /**
+     * The font to set `text` in. An override that lacks one of its characters is passed over
+     * for the chosen typeface, so a line never prints the override's missing-glyph boxes.
+     */
+    font(id: TypefaceId, text = ""): Typeface {
       const override = overridePath();
       const font = override === undefined ? null : load(override);
-      if (font !== null) return font;
+      if (font !== null && [...text].every((character) => font.hasGlyph(character))) return font;
       const chosen = TYPEFACES.find((t) => t.id === id) ?? TYPEFACES[0];
       const bundled = load(join(FONTS_DIR, chosen.file));
       if (bundled === null) throw new Error(`The bundled font ${chosen.file} could not be read`);

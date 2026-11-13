@@ -13,7 +13,7 @@ import {
   type FrameSettings,
   MAX_BORDER,
 } from "./frame";
-import { createLibrary, duplicateMessage, type Library } from "./library";
+import { createLibrary, duplicateMessage, errorKind, type Library } from "./library";
 import { passwordGate } from "./password";
 import { createSettings } from "./settings";
 import { TYPEFACE_IDS, TYPEFACES, type TypefaceId } from "./typefaces";
@@ -137,7 +137,14 @@ function createRoutes({
           ...given,
           fields: fields === undefined ? saved.fields : fieldSwitches(fields),
         };
-        const jpeg = await renderer.render({ path: original.path, capture: select }, frame, { width });
+        let jpeg: Buffer;
+        try {
+          jpeg = await renderer.render({ path: original.path, capture: select }, frame, { width });
+        } catch (error) {
+          // The error's message can carry the photo's path, so only its kind is logged.
+          console.error(`A frame could not be rendered (${errorKind(error)}).`);
+          return status(404, notFound);
+        }
         return new Response(new Uint8Array(jpeg), {
           headers: { "content-type": "image/jpeg", "cache-control": "private, no-cache" },
         });

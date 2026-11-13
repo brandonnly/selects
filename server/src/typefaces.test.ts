@@ -78,11 +78,28 @@ describe("the font override", () => {
     const fonts = createFontSource(dataDir);
 
     expect(fonts.override()).toEqual({ fileName: "House Mono.ttf", usable: true });
-    expect(fonts.font("ibm-plex-mono").width("Override", 100)).toBe(
-      fonts.font("space-mono").width("Override", 100),
+    const bundled = createFontSource(join(dataDir, "elsewhere"));
+    expect(fonts.font("eb-garamond").width("Override", 100)).toBe(
+      bundled.font("space-mono").width("Override", 100),
     );
-    expect(fonts.font("ibm-plex-mono").width("Override", 100)).not.toBe(
-      createFontSource(join(dataDir, "elsewhere")).font("ibm-plex-mono").width("Override", 100),
+    expect(fonts.font("eb-garamond").width("Override", 100)).not.toBe(
+      bundled.font("eb-garamond").width("Override", 100),
+    );
+  });
+
+  test("an override missing a character of the line gives way to the chosen typeface", () => {
+    mkdirSync(overrideDir());
+    copyFileSync(fontFile("space-mono"), join(overrideDir(), "House Mono.ttf"));
+    const fonts = createFontSource(dataDir);
+    const bundled = createFontSource(join(dataDir, "elsewhere"));
+    // Inter has Greek; Space Mono does not.
+    const text = "\u03b17 IV";
+    expect(bundled.font("space-mono").hasGlyph("\u03b1")).toBe(false);
+    expect(bundled.font("inter").hasGlyph("\u03b1")).toBe(true);
+
+    expect(fonts.font("inter", text).width(text, 100)).toBe(bundled.font("inter").width(text, 100));
+    expect(fonts.font("inter", "A7 IV").width("A7 IV", 100)).toBe(
+      bundled.font("space-mono").width("A7 IV", 100),
     );
   });
 

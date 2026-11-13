@@ -202,7 +202,7 @@ export function createFrameRenderer({ dataDir }: { dataDir: string }) {
       const layers: OverlayOptions[] = [{ input: photo, left: place.photo.left, top: place.photo.top }];
       const text = frameText(source.capture, settings);
       if (text !== "") {
-        const svg = textSvg(text, fonts.font(settings.typeface), colors.text, border);
+        const svg = textSvg(text, fonts.font(settings.typeface, text), colors.text, border);
         layers.push({ input: Buffer.from(svg), left: 0, top: place.textTop });
       }
 

@@ -1,5 +1,5 @@
 import type { FontOverride, FrameField, FrameSettings, Select } from "@selects/server";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api";
 import { debounce, previewUrl } from "@/lib/frame";
 import { cn } from "@/lib/utils";
@@ -49,6 +49,13 @@ export function FrameScreen() {
   const lastSaved = useRef<string | undefined>(undefined);
   const latest = useRef<FrameSettings | undefined>(undefined);
   latest.current = settings;
+  /** Saves go one after another, so an earlier one can never land after a later one. */
+  const saving = useRef<Promise<unknown>>(Promise.resolve());
+  const send = useCallback((next: FrameSettings) => {
+    const sent = saving.current.then(() => api.frame.put(next));
+    saving.current = sent.catch(() => {});
+    return sent;
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -84,15 +91,14 @@ export function FrameScreen() {
     if (json === lastSaved.current) return;
     lastSaved.current = json;
     setSave("saving");
-    api.frame
-      .put(settled)
+    send(settled)
       .then(({ error }) => {
         if (lastSaved.current === json) setSave(error ? "failed" : "saved");
       })
       .catch(() => {
         if (lastSaved.current === json) setSave("failed");
       });
-  }, [settled]);
+  }, [settled, send]);
 
   // Leaving the screen before a change has settled still saves it.
   useEffect(
@@ -100,9 +106,9 @@ export function FrameScreen() {
       const pending = latest.current;
       if (pending === undefined || lastSaved.current === undefined) return;
       if (JSON.stringify(pending) === lastSaved.current) return;
-      api.frame.put(pending).catch(() => {});
+      send(pending).catch(() => {});
     },
-    [],
+    [send],
   );
 
   const change = (update: Partial<FrameSettings>) =>
