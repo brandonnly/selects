@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import sharp from "sharp";
@@ -288,5 +288,120 @@ describe("the clean image", () => {
     // Read as if they were sRGB, these differ by about 5 on average; converted, by rounding and JPEG noise.
     expect(difference(srgb?.data ?? Buffer.alloc(0), wide?.data ?? Buffer.alloc(0))).toBeLessThan(2);
     expect(difference(srgb?.data ?? Buffer.alloc(0), sixteen?.data ?? Buffer.alloc(0))).toBeLessThan(2);
+  });
+});
+
+/** Every field path in a value, with its JSON type: `posts[].images.clean.url` is a string. */
+function shapeOf(value: unknown, path = "", into = new Map<string, Set<string>>()) {
+  const add = (type: string) => {
+    if (path !== "") into.set(path, (into.get(path) ?? new Set()).add(type));
+  };
+  if (Array.isArray(value)) {
+    add("array");
+    for (const item of value) shapeOf(item, `${path}[]`, into);
+  } else if (value !== null && typeof value === "object") {
+    add("object");
+    for (const [key, item] of Object.entries(value))
+      shapeOf(item, path === "" ? key : `${path}.${key}`, into);
+  } else {
+    add(value === null ? "null" : typeof value);
+  }
+  return into;
+}
+
+/** The fields docs/manifest.md lists, with the types it allows each: rows like "| `version` | number | … |". */
+function documentedShape() {
+  const doc = readFileSync(join(import.meta.dir, "../../docs/manifest.md"), "utf8");
+  const fields = new Map<string, Set<string>>();
+  for (const [, path, types] of doc.matchAll(/^\| `([^`]+)` \| ([a-z ,]+?) \|/gm)) {
+    fields.set(path ?? "", new Set((types ?? "").split(/\s*(?:,|or)\s*/).filter(Boolean)));
+  }
+  return fields;
+}
+
+/** A zone around the large fixture's location, as a privacy zone added in Settings would be. */
+const zoneAroundLarge = { latitude: -20.5, longitude: -120.75, radiusMetres: 1000 };
+
+describe("the manifest", () => {
+  test("has the shape docs/manifest.md documents, every field listed and no other", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    // One entry with every field, one with nulls where a select lacks a field or its location.
+    await postNow(parts, await addFile(large));
+    await postNow(parts, await addSelect("noExif"));
+
+    const documented = documentedShape();
+    const written = shapeOf(manifest());
+    expect([...written.keys()].sort()).toEqual([...documented.keys()].sort());
+    for (const [path, types] of written) {
+      for (const type of types)
+        expect(`${path}: ${[...(documented.get(path) ?? [])].join(", ")}`).toContain(type);
+    }
+  });
+
+  test("holds no coordinates, in any field, for a select whose location is hidden", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const id = await addFile(large);
+    parts.captures.save(id, { edits: {}, locationHidden: true });
+
+    await postNow(parts, id);
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry?.location).toBeNull();
+    const text = new TextDecoder().decode(fakeBucket.objects.get("posts.json")?.bytes);
+    for (const printed of ["20.5", "120.75", "20°30'00\"S", "120°45'00\"W"])
+      expect(text).not.toContain(printed);
+  });
+
+  test("lists a select's coordinates, in its caption too, while they may be published", async () => {
+    const parts = setup();
+    await connect(parts.account);
+
+    await postNow(parts, await addFile(large));
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry?.location).toEqual({ latitude: -20.5, longitude: -120.75 });
+    expect(entry?.caption).toBe(`20°30'00"S 120°45'00"W\nFixture Optics FX-3 · Fixture 85mm F1.8\n\n#film`);
+  });
+
+  test("is rewritten without a location hidden after the post, caption included, on the next run", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const id = await addFile(large);
+    await postNow(parts, id);
+
+    parts.captures.save(id, { edits: {}, locationHidden: true });
+    await parts.gallery.runDue();
+
+    const [entry] = manifest()?.posts ?? [];
+    expect(entry?.location).toBeNull();
+    expect(entry?.caption).toBe("Fixture Optics FX-3 · Fixture 85mm F1.8\n\n#film");
+    const text = new TextDecoder().decode(fakeBucket.objects.get("posts.json")?.bytes);
+    for (const printed of ["20.5", "120.75", "20°30'"]) expect(text).not.toContain(printed);
+  });
+
+  test("is rewritten without a location inside a privacy zone added after the post", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    await postNow(parts, await addFile(large));
+
+    parts.zones.add(zoneAroundLarge);
+    await parts.gallery.runDue();
+
+    expect(manifest()?.posts[0]?.location).toBeNull();
+    expect(manifest()?.posts[0]?.caption).not.toContain("20°30'");
+  });
+
+  test("keeps the capture data a post was published with, whatever is edited later", async () => {
+    const parts = setup();
+    await connect(parts.account);
+    const id = await addFile(large);
+    await postNow(parts, id);
+
+    parts.captures.save(id, { edits: { camera: "Edited Camera" }, locationHidden: false });
+    await parts.gallery.runDue();
+
+    expect(manifest()?.posts[0]?.capture.camera).toBe("Fixture Optics FX-3");
   });
 });
