@@ -4,7 +4,7 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import { api } from "@/api";
 import { Button } from "@/components/ui/button";
 import { problemsIn } from "@/lib/autosave";
-import { describeGallery, galleryPolling } from "@/lib/gallery";
+import { describeGallery, galleryPolling, postName } from "@/lib/gallery";
 import { dateTime, describePost } from "@/lib/posts";
 import { cn } from "@/lib/utils";
 import { Screen } from "./screen";
@@ -178,7 +178,7 @@ function PostRow({
           <GalleryState
             entry={gallery}
             mode={mode}
-            name={`post of ${dateTime(post.publishedAt ?? post.createdAt)}`}
+            name={postName(dateTime(post.publishedAt ?? post.createdAt), post.caption)}
             onChange={onChange}
           />
         )}
@@ -196,7 +196,7 @@ function GalleryState({
 }: {
   entry: GalleryPost;
   mode: GalleryPost["mode"];
-  /** Which post this is, for a screen reader: "post of 13 Nov, 09:00". */
+  /** Which post this is, for a screen reader: its time and the start of its caption. */
   name: string;
   onChange: () => Promise<void>;
 }) {

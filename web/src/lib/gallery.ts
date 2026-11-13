@@ -43,3 +43,17 @@ export function galleryPolling(posts: Pick<GalleryPost, "state" | "error">[]): "
   if (busy.some((post) => post.error === null)) return "soon";
   return busy.length > 0 ? "later" : undefined;
 }
+
+/** Characters of a caption's first line kept in a post's name. */
+const NAME_CHARACTERS = 40;
+
+/** Which post this is, for a screen reader: its time and the start of its caption. */
+export function postName(when: string, caption: string): string {
+  const first = caption
+    .split("\n")
+    .find((line) => line.trim() !== "")
+    ?.trim();
+  if (first === undefined) return `post of ${when}`;
+  const shown = first.length > NAME_CHARACTERS ? `${first.slice(0, NAME_CHARACTERS).trimEnd()}…` : first;
+  return `post of ${when}, “${shown}”`;
+}

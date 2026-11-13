@@ -82,7 +82,7 @@ export function GallerySettings() {
                 " It stays on as saved, and writes nothing until then. Turn it off to keep it off."}
             </p>
           )}
-          {gallery.manifestError !== null && (
+          {gallery.manifestError !== null && gallery.availability.available && (
             <p className="text-destructive">
               The manifest could not be written: {gallery.manifestError} Selects tries again.
             </p>

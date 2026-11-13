@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { describeGallery, galleryPolling, gallerySwitch } from "./gallery";
+import { describeGallery, galleryPolling, gallerySwitch, postName } from "./gallery";
 
 describe("a post's gallery state in words", () => {
   test("says when it is listed, and offers removal", () => {
@@ -83,5 +83,20 @@ describe("how soon the Posted screen checks the gallery again", () => {
       ]),
     ).toBeUndefined();
     expect(galleryPolling([])).toBeUndefined();
+  });
+});
+
+describe("a post's name for a screen reader", () => {
+  test("gives its time and the start of its caption, so posts of the same minute differ", () => {
+    expect(postName("Nov 13, 9:00 AM", "Fixture Optics FX-1 · Fixture 35mm F1.4\n#film")).toBe(
+      "post of Nov 13, 9:00 AM, “Fixture Optics FX-1 · Fixture 35mm F1.4”",
+    );
+    expect(postName("Nov 13, 9:00 AM", `${"A long first line ".repeat(5)}`)).toBe(
+      "post of Nov 13, 9:00 AM, “A long first line A long first line A lo…”",
+    );
+  });
+
+  test("gives its time alone for a post with no caption", () => {
+    expect(postName("Nov 13, 9:00 AM", "  \n")).toBe("post of Nov 13, 9:00 AM");
   });
 });
