@@ -448,6 +448,11 @@ export function createLibrary({
         .map(toRejection);
     },
 
+    /** The select a rejection was matched to, when it still exists. */
+    rejectionMatch(id: string): string | null {
+      return rejectionRow(id)?.matched_select_id ?? null;
+    },
+
     /** Adds a held likely re-export anyway. */
     async acceptRejection(id: string): Promise<AcceptResult> {
       const found = rejectionRow(id);

@@ -177,9 +177,12 @@ function createRoutes({
     .get("/api/rejections", () => lib.rejections())
     .post("/api/inbox/scan", () => lib.scanInbox())
     .post("/api/rejections/:id/accept", async ({ params, status }) => {
+      const match = lib.rejectionMatch(params.id);
       const result = await lib.acceptRejection(params.id);
       switch (result.status) {
         case "added":
+          // The same picture again: a location hidden on the first stays hidden on this one.
+          if (match !== null) captures.inherit(match, result.select.id);
           return status(201, result);
         case "not-found":
           return status(404, notFound);

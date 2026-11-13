@@ -30,7 +30,8 @@ const editsSchema = t.Object(
   { additionalProperties: false },
 );
 
-const radiusMetres = t.Number({ exclusiveMinimum: 0 });
+/** Up to half way round the Earth, past which a zone covers everything. */
+const radiusMetres = t.Number({ exclusiveMinimum: 0, maximum: 20_100_000 });
 
 /** A zone at typed coordinates, or around where a select was taken. */
 const newZoneSchema = t.Union([

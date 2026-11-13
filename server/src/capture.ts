@@ -131,7 +131,16 @@ export function createCaptures({ db, library, zones }: { db: Database; library: 
         "SELECT field, value FROM capture_edits WHERE select_id = ?",
       )
       .all(id);
-    return Object.fromEntries(rows.map((row) => [row.field, JSON.parse(row.value)]));
+    const edits: Record<string, unknown> = {};
+    for (const row of rows) {
+      try {
+        edits[row.field] = JSON.parse(row.value);
+      } catch {
+        // A value that cannot be read clears its field, which never adds anything to publish.
+        edits[row.field] = null;
+      }
+    }
+    return edits as CaptureEdits;
   };
   const isHidden = (id: string) =>
     db
@@ -208,6 +217,16 @@ export function createCaptures({ db, library, zones }: { db: Database; library: 
       const { latitude, longitude } =
         file.latitude !== null && file.longitude !== null ? file : applyEdits(file, editsOf(id));
       return latitude === null || longitude === null ? null : { latitude, longitude };
+    },
+
+    /**
+     * Gives a select added as a re-export the privacy of the select it was matched to: a
+     * location hidden on the first stays hidden on the second.
+     */
+    inherit(fromId: string, toId: string): void {
+      if (isHidden(fromId)) {
+        db.query("INSERT OR IGNORE INTO hidden_locations (select_id) VALUES (?)").run(toId);
+      }
     },
 
     /** The select as its owner sees it in the Library: edits applied, coordinates kept. */

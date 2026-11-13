@@ -1,6 +1,5 @@
 import sharp, { type OverlayOptions } from "sharp";
 import type { PublishedCapture } from "./capture";
-import type { CaptureData } from "./photo";
 import { createFontSource, type PathCommand, type Typeface, type TypefaceId } from "./typefaces";
 
 /** The fields that can print on a frame, in the order they print. */
@@ -46,7 +45,7 @@ export const DEFAULT_FRAME_SETTINGS: FrameSettings = {
 const SEPARATOR = " · ";
 
 /** The line of metadata a frame prints: each shown field the select has, with nothing for the rest. */
-export function frameText(capture: CaptureData, settings: FrameSettings): string {
+export function frameText(capture: PublishedCapture, settings: FrameSettings): string {
   const values: Record<FrameField, string | null> = {
     camera: clip(capture.camera),
     lens: clip(capture.lens),

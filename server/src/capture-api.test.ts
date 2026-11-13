@@ -397,6 +397,21 @@ describe("a select's location", () => {
     expect(await frame(other)).toEqual(otherFrame);
   });
 
+  test("stays hidden on a re-export of a select whose location is hidden", async () => {
+    const id = await addSelect("portrait");
+    await putCapture(id, { edits: {}, locationHidden: true });
+    const held = await request(`/api/uploads?name=${basename(fixtures.portraitReexport)}`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: readFileSync(fixtures.portraitReexport),
+    });
+    const rejection = (await json(held)).rejection.id as string;
+
+    const accepted = await json(await request(`/api/rejections/${rejection}/accept`, { method: "POST" }));
+
+    expect((await capture(accepted.select.id)).withheld).toBe("hidden");
+  });
+
   test("can be shown again once hidden", async () => {
     const id = await addSelect("portrait");
     const withCoordinates = await frame(id);

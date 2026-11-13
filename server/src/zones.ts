@@ -28,7 +28,8 @@ export function distanceMetres(a: Point, b: Point): number {
 
 /** True when the point is inside the zone or on its edge. */
 export function insideZone(point: Point, zone: Zone): boolean {
-  return distanceMetres(point, zone) <= zone.radiusMetres;
+  // Written so that a distance or radius that is not a number counts as inside: withheld.
+  return !(distanceMetres(point, zone) > zone.radiusMetres);
 }
 
 /** A privacy zone as it is kept. */

@@ -113,8 +113,16 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
   const send = useCallback(
     (next: Payload) => {
       const json = JSON.stringify(next);
+      const before = lastSent.current;
       lastSent.current = json;
       setSave("saving");
+      // A save that failed is not what the server holds: it is sent again on the next change
+      // and when the dialog closes.
+      const failed = () => {
+        if (lastSent.current !== json) return;
+        lastSent.current = before;
+        setSave("failed");
+      };
       const sent = saving.current.then(() => api.selects({ id: selectId }).capture.put(next));
       saving.current = sent.catch(() => {});
       return sent
@@ -124,13 +132,13 @@ export function CaptureEditor({ selectId, onSaved }: { selectId: string; onSaved
             setView(data);
             setSave("saved");
             saved.current();
+          } else if (error) {
+            failed();
           } else {
-            setSave(error ? "failed" : "saved");
+            setSave("saved");
           }
         })
-        .catch(() => {
-          if (lastSent.current === json) setSave("failed");
-        });
+        .catch(failed);
     },
     [selectId],
   );
@@ -307,7 +315,7 @@ function ZoneFromSelect({ selectId, onAdded }: { selectId: string; onAdded: () =
             className="h-10 w-28 rounded-md border bg-card px-3 text-base text-card-foreground md:text-sm"
           />
         </label>
-        <Button variant="outline" disabled={!valid || state === "adding"} onClick={add}>
+        <Button variant="outline" disabled={!valid || state === "adding" || state === "added"} onClick={add}>
           {state === "adding" ? "Adding…" : "Make a privacy zone here"}
         </Button>
       </div>
