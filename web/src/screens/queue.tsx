@@ -20,29 +20,40 @@ type QueueView = { queue: Select[]; pool: Select[] };
 export function QueueScreen() {
   const [view, setView] = useState<ScheduleView | undefined>();
   const [queue, setQueue] = useState<QueueView | undefined>();
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState({ schedule: false, queue: false });
   const [queueError, setQueueError] = useState(false);
 
   const loadSchedule = useCallback(async () => {
+    let failed = true;
     try {
       const { data, error } = await api.schedule.get();
       if (data) setView(data);
-      setLoadError(error !== null);
-    } catch {
-      setLoadError(true);
-    }
+      failed = error !== null;
+    } catch {}
+    setLoadError((current) => ({ ...current, schedule: failed }));
   }, []);
 
-  // Queue changes go one after another; only the answer to the latest is shown.
+  // Queue changes go one after another; only the answer to the latest is shown. A read is shown
+  // only if no change was started or waiting while it ran: an older read never replaces a newer queue.
   const sending = useRef<Promise<unknown>>(Promise.resolve());
   const sent = useRef(0);
+  const waiting = useRef(0);
   const loadQueue = useCallback(async () => {
     const mine = sent.current;
+    const quiet = () => mine === sent.current && waiting.current === 0;
+    if (!quiet()) return;
+    let failed = true;
     try {
-      const { data } = await api.queue.get();
-      if (data && mine === sent.current) setQueue(data);
+      const { data, error } = await api.queue.get();
+      if (data && quiet()) setQueue(data);
+      failed = error !== null;
     } catch {}
+    setLoadError((current) => ({ ...current, queue: failed }));
   }, []);
+  const retry = () => {
+    void loadSchedule();
+    void loadQueue();
+  };
 
   useEffect(() => {
     void loadSchedule();
@@ -57,6 +68,7 @@ export function QueueScreen() {
   const changeQueue = (next: QueueView) => {
     setQueue(next);
     const mine = ++sent.current;
+    waiting.current++;
     const selectIds = next.queue.map((select) => select.id);
     sending.current = sending.current
       .then(() => api.queue.put({ selectIds }))
@@ -68,14 +80,12 @@ export function QueueScreen() {
       })
       .catch(() => {
         if (mine === sent.current) setQueueError(true);
+      })
+      .finally(() => {
+        waiting.current--;
       });
   };
 
-  const selects = useMemo(() => {
-    const all = new Map<string, Select>();
-    for (const select of [...(queue?.queue ?? []), ...(queue?.pool ?? [])]) all.set(select.id, select);
-    return all;
-  }, [queue]);
   const nextUp = useMemo(
     () =>
       new Set(
@@ -88,15 +98,51 @@ export function QueueScreen() {
 
   return (
     <Screen title="Queue">
-      {loadError && <p className="text-sm text-destructive">Can't reach the server.</p>}
+      {(loadError.schedule || loadError.queue) && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-destructive">
+          {view === undefined || queue === undefined
+            ? "Couldn't load the queue and the schedule."
+            : "Couldn't reach the server: what shows may be out of date."}
+          <Button variant="outline" size="sm" onClick={retry}>
+            Try again
+          </Button>
+        </div>
+      )}
       {view !== undefined && <Status view={view} queued={queue?.queue.length ?? 0} onChange={setView} />}
+
+      {view !== undefined && view.attention.length > 0 && (
+        <section aria-labelledby="attention" className="flex flex-col gap-3">
+          <h2 id="attention" className="text-sm font-medium text-destructive">
+            Needs attention
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            These can't be posted as they stand, so slots pass them over. They stay where they are until fixed
+            in the{" "}
+            <Link to="/library" className="underline underline-offset-4">
+              Library
+            </Link>
+            .
+          </p>
+          <ul className="flex flex-col gap-2 text-sm">
+            {view.attention.map((item) => (
+              <li
+                key={item.selectId}
+                className="flex flex-col gap-0.5 rounded-lg border border-destructive p-3"
+              >
+                <span className="truncate font-medium">{item.fileName}</span>
+                <span className="text-muted-foreground">{item.problems.join(" ")}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {view !== undefined && (
         <section aria-labelledby="next-up" className="flex flex-col gap-3">
           <h2 id="next-up" className="text-sm font-medium text-muted-foreground">
             Next up
           </h2>
-          <NextUp view={view} selects={selects} onChange={setView} />
+          <NextUp view={view} onChange={setView} />
         </section>
       )}
 
@@ -177,16 +223,18 @@ export function QueueScreen() {
                     <span className="font-medium">{slotTime(run.dueAt, view.schedule.timeZone)}</span>
                     <span
                       className={
-                        run.state === "posted" || run.state === "dry-run" ? "" : "text-muted-foreground"
+                        label === "Failed" || label === "Needs checking"
+                          ? "text-destructive"
+                          : run.state === "posted" || run.state === "dry-run"
+                            ? ""
+                            : "text-muted-foreground"
                       }
                     >
                       {label}
                     </span>
                   </span>
-                  {run.selectId !== null && selects.get(run.selectId) && (
-                    <span className="truncate text-muted-foreground">
-                      {selects.get(run.selectId)?.fileName}
-                    </span>
+                  {run.fileName !== null && (
+                    <span className="truncate text-muted-foreground">{run.fileName}</span>
                   )}
                   {detail !== null && <span className="text-muted-foreground">{detail}</span>}
                 </li>
@@ -223,19 +271,26 @@ function Status({
   };
 
   const notes: { text: string; alert?: boolean; link?: boolean }[] = [];
+  const zone = `${view.schedule.timeZone.replaceAll("_", " ")} time`;
   if (view.schedule.slots.length === 0)
     notes.push({ text: "No slots yet: nothing posts. Add one under Schedule." });
-  else if (view.paused) notes.push({ text: "Paused: no slot posts until this is switched off." });
-  else if (view.nextSlotAt !== null) {
+  else if (view.paused)
     notes.push({
-      text: `Next slot ${slotTime(view.nextSlotAt, view.schedule.timeZone)}, ${view.schedule.timeZone.replaceAll("_", " ")} time.`,
+      text: "Paused: no slot posts while this is on. A slot whose time passes meanwhile does not post later.",
     });
-  }
-  if (view.dryRun)
+  else if (view.nextSlotAt !== null)
+    notes.push({ text: `Next post due ${slotTime(view.nextSlotAt, view.schedule.timeZone)}, ${zone}.` });
+  else if (view.upcoming.length > 0) notes.push({ text: "No slot in the next day has anything to post." });
+  if (view.dryRun) {
     notes.push({ text: "Dry run is on: each slot records a dry run, and the select stays where it was." });
-  if (!view.paused && view.problems.length > 0) {
+    if (view.problems.length > 0)
+      notes.push({
+        text: `With dry run off, slots couldn't post yet: ${view.problems.join(" ")}`,
+        link: true,
+      });
+  } else if (!view.paused && view.problems.length > 0) {
     notes.push({
-      text: `Slots can't post: ${view.problems.join(" ")} Until then they take nothing from the queue or the pool.`,
+      text: `Slots can't post: ${view.problems.join(" ")} Until then each slot takes nothing from the queue or the pool.`,
       alert: true,
       link: true,
     });
@@ -256,7 +311,8 @@ function Status({
         Pause posting
       </label>
       <p className="text-muted-foreground">
-        Stops every slot from posting. Post now, from the Library, still works.
+        Stops scheduled slots only. Post now, from the Library, still posts, and a post already started still
+        retries.
       </p>
       {state === "failed" && <p className="text-destructive">Couldn't save. Try again.</p>}
       {notes.map((note) => (
@@ -281,15 +337,7 @@ function Status({
 }
 
 /** The slots to come within a day, each with its next up, to swap or skip. */
-function NextUp({
-  view,
-  selects,
-  onChange,
-}: {
-  view: ScheduleView;
-  selects: ReadonlyMap<string, Select>;
-  onChange: (view: ScheduleView) => void;
-}) {
+function NextUp({ view, onChange }: { view: ScheduleView; onChange: (view: ScheduleView) => void }) {
   const [problem, setProblem] = useState<{ key: string; text: string } | undefined>();
   const [busy, setBusy] = useState<string | undefined>();
 
@@ -328,8 +376,8 @@ function NextUp({
     <ul className="flex flex-col gap-3">
       {view.upcoming.map((run) => {
         const key = run.id;
-        const select = run.selectId === null ? undefined : selects.get(run.selectId);
         const skipped = run.state === "skipped";
+        const time = slotTime(run.dueAt, view.schedule.timeZone);
         return (
           <li
             key={key}
@@ -340,9 +388,9 @@ function NextUp({
             }
           >
             <div className="flex items-center gap-3">
-              {select !== undefined && !skipped ? (
+              {run.selectId !== null && !skipped ? (
                 <img
-                  src={`/api/selects/${select.id}/thumbnail`}
+                  src={`/api/selects/${run.selectId}/thumbnail`}
                   alt=""
                   className="size-16 shrink-0 rounded-md bg-muted object-cover"
                 />
@@ -350,14 +398,19 @@ function NextUp({
                 <span aria-hidden className="size-16 shrink-0 rounded-md border border-dashed" />
               )}
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="font-medium">{slotTime(run.dueAt, view.schedule.timeZone)}</span>
+                <span className="font-medium">{time}</span>
                 <span className="truncate">
                   {skipped
                     ? "Skipped: nothing posts in this slot."
                     : run.state === "posting"
                       ? "Posting…"
-                      : (select?.fileName ?? "Nothing to post")}
+                      : (run.fileName ?? "Nothing to post")}
                 </span>
+                {view.paused && !skipped && run.state === "planned" && (
+                  <span className="text-xs text-destructive">
+                    Paused: this posts only if posting is switched back on before its time.
+                  </span>
+                )}
                 {!skipped && run.picked !== null && (
                   <span className="text-xs text-muted-foreground">
                     {run.picked === "queue"
@@ -378,6 +431,7 @@ function NextUp({
                     variant="outline"
                     size="sm"
                     disabled={busy === key}
+                    aria-label={`Don't skip the slot at ${time}`}
                     onClick={() => act(run, "unskip")}
                   >
                     <Undo2 aria-hidden className="size-4" />
@@ -389,6 +443,7 @@ function NextUp({
                       variant="outline"
                       size="sm"
                       disabled={busy === key || run.selectId === null}
+                      aria-label={`Swap next up for the slot at ${time}`}
                       onClick={() => act(run, "swap")}
                     >
                       <Shuffle aria-hidden className="size-4" />
@@ -398,6 +453,7 @@ function NextUp({
                       variant="outline"
                       size="sm"
                       disabled={busy === key}
+                      aria-label={`Skip the slot at ${time}`}
                       onClick={() => act(run, "skip")}
                     >
                       <SkipForward aria-hidden className="size-4" />

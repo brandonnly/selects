@@ -4,7 +4,16 @@ import { type KeyboardEvent, type PointerEvent, useEffect, useRef, useState } fr
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-type Drag = { id: string; from: number; startY: number; dy: number; over: number; height: number };
+type Drag = {
+  id: string;
+  from: number;
+  startY: number;
+  dy: number;
+  over: number;
+  height: number;
+  /** The queue's order when the drag began: a drop onto a queue that changed since moves nothing. */
+  order: string;
+};
 
 /**
  * The queue, in order. A select is moved by dragging its handle, or with the arrow keys while the
@@ -79,7 +88,15 @@ export function QueueList({
       middles.current.set(rowId, rect.top + rect.height / 2);
     }
     const height = rows.current.get(id)?.getBoundingClientRect().height ?? 0;
-    setDrag({ id, from: index, startY: event.clientY, dy: 0, over: index, height: height + GAP });
+    setDrag({
+      id,
+      from: index,
+      startY: event.clientY,
+      dy: 0,
+      over: index,
+      height: height + GAP,
+      order: orderOf(selects),
+    });
   };
   const pointerMove = (event: PointerEvent<HTMLButtonElement>) => {
     if (drag === null) return;
@@ -89,7 +106,13 @@ export function QueueList({
   const pointerUp = () => {
     if (drag === null) return;
     setDrag(null);
-    moveTo(drag.from, drag.over, false);
+    // Resolved by select at the drop: the queue may have changed while it was dragged (a slot posted).
+    const from = selects.findIndex((select) => select.id === drag.id);
+    if (from < 0 || orderOf(selects) !== drag.order) {
+      setAnnouncement("The queue changed while you dragged. Nothing was moved.");
+      return;
+    }
+    moveTo(from, drag.over, false);
   };
 
   return (
@@ -164,6 +187,8 @@ export function QueueList({
     </>
   );
 }
+
+const orderOf = (selects: Select[]) => selects.map((select) => select.id).join(" ");
 
 /** The gap between rows, in pixels: `gap-2`. */
 const GAP = 8;
