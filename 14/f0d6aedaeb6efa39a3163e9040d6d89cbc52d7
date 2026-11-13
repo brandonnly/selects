@@ -1,0 +1,21 @@
+server/src/frame.test.ts
+  s_c4e8006bf0d88c::t_0a34450012152d 226-250
+server/src/frame.ts
+  s_c4e8006bf0d88c::t_d45dea86997bec 221-222,224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "14f0d6aedaeb6efa39a3163e9040d6d89cbc52d7",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
