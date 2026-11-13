@@ -1,6 +1,7 @@
 import { Captions, Frame, Images, ListOrdered, type LucideIcon, Send, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { Navigate, NavLink, Route, Routes } from "react-router";
+import { FakeModeBanner } from "@/components/fake-mode-banner";
 import { cn } from "@/lib/utils";
 import { CaptionsScreen } from "./screens/captions";
 import { FrameScreen } from "./screens/frame";
@@ -50,6 +51,7 @@ export function App() {
             <Brand />
           </div>
         </header>
+        <FakeModeBanner />
 
         <main className="flex-1 px-4 pt-6 pb-[calc(5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-8">
           <Routes>

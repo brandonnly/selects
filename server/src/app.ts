@@ -3,11 +3,13 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { Elysia, t } from "elysia";
 import rootPackage from "../../package.json";
+import { createBucket } from "./bucket";
 import { captionRoutes } from "./caption-routes";
 import { createCaptionStore } from "./caption-store";
 import { createCaptures } from "./capture";
 import { captureRoutes } from "./capture-routes";
-import type { Config } from "./config";
+import { type Clock, MINUTE, systemClock } from "./clock";
+import type { BucketConfig, BucketSettings, Config } from "./config";
 import { databaseStatus } from "./db";
 import {
   createFrameRenderer,
@@ -17,8 +19,12 @@ import {
   type FrameSettings,
   MAX_BORDER,
 } from "./frame";
+import { createInstagramApi, type InstagramApi, InstagramError, LIVE_INSTAGRAM_URL } from "./instagram";
+import { createInstagramAccount } from "./instagram-account";
 import { createLibrary, duplicateMessage, errorKind, type Library } from "./library";
 import { passwordGate } from "./password";
+import { publishRoutes } from "./publish-routes";
+import { createPublisher } from "./publisher";
 import { createSettings } from "./settings";
 import { TYPEFACE_IDS, TYPEFACES, type TypefaceId } from "./typefaces";
 import { serveUi } from "./ui";
@@ -28,7 +34,9 @@ import { createZones } from "./zones";
 export type { CaptionOverride, CaptionTemplates, HashtagSet, LimitCheck } from "./captions";
 export type { CaptureEdits, CaptureView, Withheld } from "./capture";
 export type { FrameField, FrameSettings } from "./frame";
+export type { AccountView } from "./instagram-account";
 export type { Rejection, ScanResult, Select, UploadResult } from "./library";
+export type { DryRunReport, Post, PostPreview, PostState } from "./publisher";
 export type { FontOverride } from "./typefaces";
 export type { PrivacyZone } from "./zones";
 
@@ -43,6 +51,17 @@ export type AppOptions = {
   maxUploadBytes?: number;
   /** How long an inbox file must have gone unchanged before a scan takes it. */
   inboxSettleMs?: number;
+  /**
+   * The Instagram API. Default: the real one when `INSTAGRAM_API=live`; otherwise none, and
+   * every request fails until the fake server is passed in (as `main.ts` does).
+   */
+  instagram?: InstagramApi;
+  /**
+   * The fake bucket, in fake mode. In fake mode the bucket in `BUCKET_*` is never used, so
+   * nothing leaves the install; without this, publishing is unavailable.
+   */
+  fakeBucket?: BucketSettings;
+  clock?: Clock;
 };
 
 const notFound = { error: "Not found" } as const;
@@ -95,20 +114,74 @@ const framePreviewQuery = t.Object({
 
 export type FramePreviewQuery = (typeof framePreviewQuery)["static"];
 
-function createRoutes({
+/** The bucket publishing uses: the one configured in live mode, only the fake one in fake mode. */
+export function bucketFor(config: Config, fakeBucket: BucketSettings | undefined): BucketConfig {
+  if (config.instagram === "live") return config.bucket;
+  return fakeBucket ?? { status: "missing", missing: [] };
+}
+
+function createServices({
   config,
   db,
-  webDir,
   library,
-  maxUploadBytes = MAX_UPLOAD_BYTES,
   inboxSettleMs,
+  instagram,
+  fakeBucket,
+  clock = systemClock,
 }: AppOptions) {
+  const bucket = bucketFor(config, fakeBucket);
   const lib = library ?? createLibrary({ db, dataDir: config.dataDir, inboxSettleMs });
-  const uploadDir = join(config.dataDir, "uploads");
   const settings = createSettings(db);
   const renderer = createFrameRenderer({ dataDir: config.dataDir });
   const zones = createZones(db);
   const captures = createCaptures({ db, library: lib, zones });
+  const captionStore = createCaptionStore(db);
+  const api =
+    instagram ??
+    (config.instagram === "live" ? createInstagramApi({ baseUrl: LIVE_INSTAGRAM_URL }) : noInstagram());
+  const account = createInstagramAccount({ db, api, clock, mode: config.instagram });
+  const publisher = createPublisher({
+    db,
+    dataDir: config.dataDir,
+    library: lib,
+    captures,
+    renderer,
+    settings,
+    captionStore,
+    account,
+    api,
+    bucket: bucket.status === "configured" ? createBucket(bucket) : bucket,
+    clock,
+    mode: config.instagram,
+    // The fake finishes a container at once; only the real API is polled as Meta advises.
+    containerPolling: config.instagram === "fake" ? { intervalMs: 1000, limitMs: MINUTE } : undefined,
+  });
+  return { library: lib, settings, renderer, zones, captures, captionStore, account, publisher, bucket };
+}
+
+/** Stands in for the fake Instagram server when none was started: every request fails. */
+function noInstagram(): InstagramApi {
+  const fail = async (): Promise<never> => {
+    throw new InstagramError("transient", "The fake Instagram server is not running.");
+  };
+  return {
+    me: fail,
+    refresh: fail,
+    createContainer: fail,
+    containerStatus: fail,
+    publish: fail,
+    permalink: fail,
+    recentMedia: fail,
+  };
+}
+
+type Services = ReturnType<typeof createServices>;
+
+function createRoutes(
+  { config, db, webDir, maxUploadBytes = MAX_UPLOAD_BYTES }: AppOptions,
+  { library: lib, settings, renderer, zones, captures, captionStore, account, publisher, bucket }: Services,
+) {
+  const uploadDir = join(config.dataDir, "uploads");
 
   return new Elysia()
     .get("/api/health", ({ status }) => {
@@ -176,11 +249,12 @@ function createRoutes({
     .put("/api/frame", ({ body }) => settings.setFrame(body), { body: frameSettingsSchema })
     .use(
       captionRoutes({
-        store: createCaptionStore(db),
+        store: captionStore,
         coordinateFormat: () => settings.frame().coordinateFormat,
         capture: (id) => captures.published(id),
       }),
     )
+    .use(publishRoutes({ publisher, account, settings, bucket, instagram: config.instagram }))
     .delete("/api/selects/:id", ({ params, status }) =>
       lib.remove(params.id) ? status(204) : status(404, notFound),
     )
@@ -325,11 +399,15 @@ export type App = ReturnType<typeof createRoutes>;
  * optional password. The gate sits outside the routes so it never widens their Eden types.
  */
 export function createApp(options: AppOptions) {
-  const routes = createRoutes(options);
+  const services = createServices(options);
+  const routes = createRoutes(options, services);
   const { password, dataDir } = options.config;
   const gate = password === undefined ? undefined : passwordGate(password, dataDir);
 
   return {
+    /** For the timers in `main.ts` and, later, the scheduler. */
+    publisher: services.publisher,
+    instagramAccount: services.account,
     fetch: async (request: Request): Promise<Response> => {
       if (isCrossOrigin(request)) return Response.json({ error: "Forbidden" }, { status: 403 });
       return (await gate?.(request)) ?? routes.handle(request);

@@ -221,9 +221,15 @@ export function LibraryScreen() {
                   loading="lazy"
                   className="size-full object-cover transition-opacity group-hover:opacity-90"
                 />
-                {select.alreadyPosted && (
+                {(select.alreadyPosted || select.post !== null) && (
                   <span className="absolute bottom-1.5 left-1.5 rounded-sm bg-background/90 px-1.5 py-0.5 text-[11px] font-medium text-foreground">
-                    Already posted
+                    {select.alreadyPosted
+                      ? "Already posted"
+                      : select.post === "published"
+                        ? "Posted"
+                        : select.post === "unconfirmed"
+                          ? "Needs checking"
+                          : "Posting"}
                   </span>
                 )}
               </button>

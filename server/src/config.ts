@@ -3,6 +3,42 @@
  * `.env.example`. Errors name the variable and never include its value.
  */
 
+/**
+ * Which Instagram the server talks to. `fake` is the fake server in this repo, run inside the
+ * process: the default, so nothing posts for real until `INSTAGRAM_API=live` is set.
+ */
+export type InstagramMode = "fake" | "live";
+
+/** An S3-compatible bucket. The keys are kept out of logs and JSON. */
+export class BucketSettings {
+  readonly status = "configured";
+  readonly #accessKeyId: string;
+  readonly #secretAccessKey: string;
+
+  constructor(
+    readonly endpoint: string,
+    readonly name: string,
+    readonly region: string,
+    /** Where the bucket's objects are public, without a trailing slash. Unset: presigned links. */
+    readonly publicBaseUrl: string | undefined,
+    keys: { accessKeyId: string; secretAccessKey: string },
+  ) {
+    this.#accessKeyId = keys.accessKeyId;
+    this.#secretAccessKey = keys.secretAccessKey;
+  }
+
+  get accessKeyId(): string {
+    return this.#accessKeyId;
+  }
+
+  get secretAccessKey(): string {
+    return this.#secretAccessKey;
+  }
+}
+
+/** The bucket, or the variables it still needs. Publishing is unavailable without it. */
+export type BucketConfig = BucketSettings | { status: "missing"; missing: string[] };
+
 export class Config {
   readonly #password: string | undefined;
 
@@ -12,6 +48,8 @@ export class Config {
     /** Directory holding the database. */
     readonly dataDir: string,
     password?: string,
+    readonly bucket: BucketConfig = { status: "missing", missing: [...BUCKET_REQUIRED] },
+    readonly instagram: InstagramMode = "fake",
   ) {
     this.#password = password;
   }
@@ -29,6 +67,15 @@ export class ConfigError extends Error {
 type Env = Record<string, string | undefined>;
 
 const DEFAULT_PORT = 3000;
+const DEFAULT_REGION = "auto";
+
+/** Every variable a bucket needs, in the order they are named when missing. */
+const BUCKET_REQUIRED = [
+  "BUCKET_ENDPOINT",
+  "BUCKET_NAME",
+  "BUCKET_ACCESS_KEY_ID",
+  "BUCKET_SECRET_ACCESS_KEY",
+] as const;
 
 export function loadConfig(env: Env): Config {
   const problems: string[] = [];
@@ -49,9 +96,50 @@ export function loadConfig(env: Env): Config {
     else problems.push("PORT must be a whole number from 1 to 65535");
   }
 
+  const bucket = readBucket(read, problems);
+
+  let instagram: InstagramMode = "fake";
+  const rawInstagram = read("INSTAGRAM_API");
+  if (rawInstagram === "live") instagram = "live";
+  else if (rawInstagram !== undefined && rawInstagram !== "fake") {
+    problems.push("INSTAGRAM_API must be fake or live");
+  }
+
   if (problems.length > 0 || dataDir === undefined) {
     throw new ConfigError(`Invalid configuration:\n  - ${problems.join("\n  - ")}`);
   }
 
-  return new Config(port, dataDir, read("SELECTS_PASSWORD"));
+  return new Config(port, dataDir, read("SELECTS_PASSWORD"), bucket, instagram);
+}
+
+function readBucket(read: (name: string) => string | undefined, problems: string[]): BucketConfig {
+  const missing = BUCKET_REQUIRED.filter((name) => read(name) === undefined);
+  const endpoint = httpUrl(read("BUCKET_ENDPOINT"), "BUCKET_ENDPOINT", problems);
+  const publicBaseUrl = httpUrl(read("BUCKET_PUBLIC_URL"), "BUCKET_PUBLIC_URL", problems);
+  // Object keys are added to the end of it, so nothing may follow its path.
+  if (publicBaseUrl !== undefined && /[?#]/.test(publicBaseUrl)) {
+    problems.push("BUCKET_PUBLIC_URL must not have a query or a fragment");
+  }
+  if (missing.length > 0) return { status: "missing", missing };
+  return new BucketSettings(
+    endpoint ?? "",
+    read("BUCKET_NAME") ?? "",
+    read("BUCKET_REGION") ?? DEFAULT_REGION,
+    publicBaseUrl?.replace(/\/+$/, ""),
+    {
+      accessKeyId: read("BUCKET_ACCESS_KEY_ID") ?? "",
+      secretAccessKey: read("BUCKET_SECRET_ACCESS_KEY") ?? "",
+    },
+  );
+}
+
+/** The value when it is an http or https URL; otherwise names the variable as a problem. */
+function httpUrl(value: string | undefined, name: string, problems: string[]): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.protocol === "http:" || url.protocol === "https:") return value;
+  } catch {}
+  problems.push(`${name} must be an http or https URL`);
+  return undefined;
 }

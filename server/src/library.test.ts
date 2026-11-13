@@ -91,6 +91,7 @@ describe("uploading a photo", () => {
         longitude: expect.closeTo(-40.25, 6),
         capturedAt: "2024-05-01T10:20:30",
         alreadyPosted: false,
+        post: null,
         inPool: true,
         addedAt: expect.any(String),
       },
