@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import type { Captures } from "./capture";
 import { type Clock, DAY, MINUTE } from "./clock";
 import { errorKind, type Library } from "./library";
-import { type Candidate, DEFAULT_PICK_RULES, type PickRules, pick } from "./pick";
+import { type Candidate, choose, DEFAULT_PICK_RULES, eligible, type PickRules } from "./pick";
 import type { Publisher } from "./publisher";
 import { isTimeZone, occurrences, type Slot } from "./slots";
 
@@ -212,33 +212,6 @@ export function createScheduler(options: SchedulerOptions) {
       .map((row) => candidate(row.select_id))
       .filter((found) => found !== undefined);
 
-  /** Next up for other slots still to come: not picked twice. */
-  const takenElsewhere = (slotId: string, date: string): Set<string> =>
-    new Set(
-      db
-        .query<{ select_id: string }, [string, string]>(
-          "SELECT select_id FROM slot_runs WHERE state = 'planned' AND select_id IS NOT NULL AND NOT (slot_id = ? AND date = ?)",
-        )
-        .all(slotId, date)
-        .map((row) => row.select_id),
-    );
-
-  function choose(row: RunRow, extra: Iterable<string> = []) {
-    const current = rules();
-    const exclude = new Set([...takenElsewhere(row.slot_id, row.date), ...extra]);
-    return pick({
-      queue: queued(),
-      pool: library
-        .pool()
-        .map(candidate)
-        .filter((found) => found !== undefined),
-      recent: recent(Math.max(current.captureDay.posts, current.place.posts)),
-      rules: current,
-      random,
-      exclude,
-    });
-  }
-
   const inPool = (id: string | null) => id !== null && library.get(id)?.inPool === true;
 
   /** Records each slot coming round from the grace period back to a day ahead, spread drawn once. */
@@ -266,20 +239,82 @@ export function createScheduler(options: SchedulerOptions) {
   }
 
   /**
-   * Chooses next up for each slot to come that has none, or whose pick left the pool. Slots are
-   * planned a day ahead, so this is a day ahead too.
+   * Plans next up for every slot still to come, soonest first, counting each earlier slot's pick
+   * as posted. A swap stands while its select is free. Any other slot takes the queue's head while
+   * the queue has a free select, so planned pool picks give way to it; otherwise it keeps its pool
+   * pick while the pick rules still allow it, or picks again. `swapping` names a slot to choose
+   * afresh for, passing over what it holds. Runs before a slot posts, after every change to who is
+   * free, and whenever next up is shown. Returns false when the swapped slot found nothing.
    */
-  function chooseNextUp() {
+  function replan(swapping?: { slotId: string; date: string }): boolean {
     const rows = db
       .query<RunRow, []>("SELECT * FROM slot_runs WHERE state = 'planned' ORDER BY due_at, slot_id")
       .all();
+    if (rows.length === 0) return false;
+    const current = rules();
+    const pool = library
+      .pool()
+      .map(candidate)
+      .filter((found) => found !== undefined);
+    const free = new Set(pool.map((found) => found.id));
+    const queue = queued();
+    const isSwapping = (row: RunRow) => row.slot_id === swapping?.slotId && row.date === swapping.date;
+    const swapStands = (row: RunRow) =>
+      row.picked === "swap" && !isSwapping(row) && row.select_id !== null && free.has(row.select_id);
+    // Swaps are the owner's: they hold their selects before anything is planned around them.
+    const taken = new Set(rows.filter(swapStands).map((row) => row.select_id as string));
+    const real = recent(Math.max(current.captureDay.posts, current.place.posts));
+    /** The picks of earlier slots, newest first: counted as posted. */
+    const ahead: Candidate[] = [];
+    const update = db.query(
+      "UPDATE slot_runs SET select_id = ?, picked = ? WHERE slot_id = ? AND date = ? AND state = 'planned'",
+    );
+    let swapped = false;
     for (const row of rows) {
-      if (inPool(row.select_id)) continue;
-      const found = choose(row, JSON.parse(row.passed) as string[]);
-      db.query(
-        "UPDATE slot_runs SET select_id = ?, picked = ? WHERE slot_id = ? AND date = ? AND state = 'planned'",
-      ).run(found?.selectId ?? null, found?.from ?? null, row.slot_id, row.date);
+      let selectId: string | null = null;
+      let picked: Run["picked"] = null;
+      if (swapStands(row)) {
+        selectId = row.select_id;
+        picked = "swap";
+      } else {
+        const passed = JSON.parse(row.passed) as string[];
+        // Passed over in a swap is a preference: a select passed over still posts when nothing else is left.
+        for (const exclude of isSwapping(row)
+          ? [[...taken, ...passed]]
+          : [[...taken, ...passed], [...taken]]) {
+          const excluded = new Set(exclude);
+          const head = queue.find((id) => !excluded.has(id));
+          if (head !== undefined) {
+            selectId = head;
+            picked = "queue";
+            break;
+          }
+          const found = eligible({ pool, recent: [...ahead, ...real], rules: current, exclude: excluded });
+          if (found !== undefined) {
+            const keep =
+              row.picked === "pool" &&
+              !isSwapping(row) &&
+              found.candidates.some((candidate) => candidate.id === row.select_id);
+            selectId = keep ? row.select_id : choose(found.candidates, current.order, random).id;
+            picked = "pool";
+            break;
+          }
+        }
+        if (isSwapping(row)) {
+          swapped = selectId !== null;
+          if (swapped) picked = "swap";
+        }
+      }
+      if (selectId !== row.select_id || picked !== row.picked) {
+        update.run(selectId, picked, row.slot_id, row.date);
+      }
+      if (selectId !== null) {
+        taken.add(selectId);
+        const found = candidate(selectId);
+        if (found !== undefined) ahead.unshift(found);
+      }
     }
+    return swapped;
   }
 
   const finish = (
@@ -336,16 +371,16 @@ export function createScheduler(options: SchedulerOptions) {
       finish(row, "missed", { note: withinGrace(row) ? MISSED_STACKED : MISSED_PAST_GRACE });
     }
     for (const row of survivor === undefined ? timely : [survivor]) {
+      // Who is free changed with each slot settled before this one: next up is planned again.
+      replan();
       const current = runRow(row.slot_id, row.date);
       if (current?.state === "planned") await post(current);
     }
   }
 
   async function post(row: RunRow) {
-    let selectId = row.select_id;
-    // Next up left the pool since it was chosen (deleted, posted by hand, marked already posted).
-    if (!inPool(selectId)) selectId = choose(row, JSON.parse(row.passed) as string[])?.selectId ?? null;
-    if (selectId === null) {
+    const selectId = row.select_id;
+    if (selectId === null || !inPool(selectId)) {
       finish(row, "empty", { note: "Nothing to post: the queue and the pool are empty.", selectId: null });
       return;
     }
@@ -368,7 +403,7 @@ export function createScheduler(options: SchedulerOptions) {
     switch (result.status) {
       case "started": {
         // A failed publish is handled by the publisher: retries, then back to the pool.
-        result.done.catch(() => {});
+        result.done.then(() => replan()).catch(() => {});
         settle(claimedRow, result.post.id, result.post.state === "dry-run");
         console.log(
           `Slot ${row.slot_id} on ${row.date}: ${result.post.state === "dry-run" ? "dry run" : "post"} ${result.post.id}.`,
@@ -409,20 +444,10 @@ export function createScheduler(options: SchedulerOptions) {
   async function tickNow() {
     const now = clock.now();
     plan(now);
+    replan();
     await fire(now);
-    // Picks from the queue follow it: a slot that took nothing leaves the head for the next one.
-    rechoose(["queue"]);
+    replan();
     prune(now);
-  }
-
-  /** Re-chooses next up where it was chosen automatically from these: the queue, or the pool. */
-  function rechoose(which: ("queue" | "pool")[]) {
-    for (const from of which) {
-      db.query(
-        "UPDATE slot_runs SET select_id = NULL, picked = NULL WHERE state = 'planned' AND picked = ?",
-      ).run(from);
-    }
-    chooseNextUp();
   }
 
   const planned = (slotId: string, date: string) => {
@@ -503,7 +528,7 @@ export function createScheduler(options: SchedulerOptions) {
         }
       })();
       plan(now);
-      chooseNextUp();
+      replan();
       return { ok: true };
     },
 
@@ -511,7 +536,11 @@ export function createScheduler(options: SchedulerOptions) {
 
     setRules(next: PickRules): PickRules {
       writeSetting("pickRules", next);
-      rechoose(["pool"]);
+      // Pool picks are made again under the new rules.
+      db.query(
+        "UPDATE slot_runs SET select_id = NULL, picked = NULL WHERE state = 'planned' AND picked = 'pool'",
+      ).run();
+      replan();
       return next;
     },
 
@@ -519,6 +548,7 @@ export function createScheduler(options: SchedulerOptions) {
 
     setPaused(value: boolean): boolean {
       writeSetting("schedulePaused", value);
+      replan();
       return value;
     },
 
@@ -534,7 +564,7 @@ export function createScheduler(options: SchedulerOptions) {
           db.query("INSERT INTO queue (select_id, position) VALUES (?, ?)").run(id, position);
         }
       })();
-      rechoose(keep.length > 0 ? ["queue", "pool"] : ["queue"]);
+      replan();
       return queued();
     },
 
@@ -584,41 +614,52 @@ export function createScheduler(options: SchedulerOptions) {
       return preview.problems;
     },
 
-    /** Chooses another next up for a slot to come. "none" when there is nothing else to choose. */
+    /**
+     * Chooses another next up for a slot to come, passing over each select in turn and coming
+     * round again once all have been passed. "none" when there is nothing else to choose.
+     */
     swap(slotId: string, date: string): Run | "not-found" | "none" {
+      replan();
       const row = planned(slotId, date);
       if (row === undefined) return "not-found";
       const current = row.select_id === null ? [] : [row.select_id];
-      let passed = [...(JSON.parse(row.passed) as string[]), ...current];
-      let found = choose(row, passed);
-      if (found === undefined) {
+      const setPassed = db.query("UPDATE slot_runs SET passed = ? WHERE slot_id = ? AND date = ?");
+      setPassed.run(JSON.stringify([...(JSON.parse(row.passed) as string[]), ...current]), slotId, date);
+      if (!replan({ slotId, date })) {
         // Every other select has been passed over: round again from the start.
-        passed = [];
-        found = choose(row, current);
+        setPassed.run(JSON.stringify(current), slotId, date);
+        if (!replan({ slotId, date })) {
+          db.query(
+            "UPDATE slot_runs SET select_id = ?, picked = ?, passed = ? WHERE slot_id = ? AND date = ?",
+          ).run(row.select_id, row.picked, row.passed, slotId, date);
+          replan();
+          return "none";
+        }
       }
-      if (found === undefined) return "none";
-      db.query(
-        "UPDATE slot_runs SET select_id = ?, picked = 'swap', passed = ? WHERE slot_id = ? AND date = ?",
-      ).run(found.selectId, JSON.stringify(passed), slotId, date);
+      replan();
       return toRun(runRow(slotId, date) as RunRow);
     },
 
-    /** Leaves a slot to come empty. Its select stays where it was. */
+    /** Leaves a slot to come empty. Its select stays where it was, free for the slots after. */
     skip(slotId: string, date: string): Run | "not-found" {
       const row = planned(slotId, date);
       if (row === undefined) return "not-found";
       db.query(
         "UPDATE slot_runs SET state = 'skipped', select_id = NULL, picked = NULL, passed = '[]' WHERE slot_id = ? AND date = ?",
       ).run(slotId, date);
+      replan();
       return toRun(runRow(slotId, date) as RunRow);
     },
 
-    /** Takes back a skip while the slot is still to come. */
+    /** Takes back a skip while the slot is still to come: next up is chosen afresh. */
     unskip(slotId: string, date: string): Run | "not-found" {
       const row = runRow(slotId, date);
       if (row?.state !== "skipped" || row.due_at <= clock.now()) return "not-found";
-      db.query("UPDATE slot_runs SET state = 'planned' WHERE slot_id = ? AND date = ?").run(slotId, date);
-      chooseNextUp();
+      db.query("UPDATE slot_runs SET state = 'planned', passed = '[]' WHERE slot_id = ? AND date = ?").run(
+        slotId,
+        date,
+      );
+      replan();
       return toRun(runRow(slotId, date) as RunRow);
     },
   };

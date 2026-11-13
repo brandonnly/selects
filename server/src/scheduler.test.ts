@@ -249,6 +249,111 @@ describe("the queue", () => {
     expect(postedSelects(publisher)).toEqual([first]);
   });
 
+  describe("always goes first, whatever left a queued select free", () => {
+    const TWO_SLOTS = {
+      slots: [everyDay("10:00", "morning"), everyDay("20:00", "evening")],
+      timeZone: "UTC",
+      graceMinutes: 120,
+    };
+
+    test("a slot paused: the following posts are the queue's, then the pool's", async () => {
+      const { scheduler, publisher } = await setup();
+      const q1 = await addSelect("portrait");
+      const q2 = await addSelect("landscape");
+      const pooled = await addSelect("square");
+      scheduler.setQueue([q1, q2]);
+      scheduler.setSchedule(TWO_SLOTS);
+      await runUntil(scheduler, publisher, "2026-11-13T19:00:00Z");
+      scheduler.setPaused(true);
+      await runUntil(scheduler, publisher, "2026-11-13T21:00:00Z");
+      scheduler.setPaused(false);
+      await runUntil(scheduler, publisher, "2026-11-14T21:00:00Z");
+      expect(postedSelects(publisher)).toEqual([q1, q2, pooled]);
+    });
+
+    test("a slot that could not post: the next takes the queue's head, not its pool pick", async () => {
+      const { scheduler, publisher, account } = await setup({ connect: false });
+      const queued = await addSelect("portrait");
+      await addSelect("landscape");
+      scheduler.setQueue([queued]);
+      scheduler.setSchedule(TWO_SLOTS);
+      await runUntil(scheduler, publisher, "2026-11-13T11:00:00Z");
+      instagram.addAccount(TOKEN, { userId: "1784140001", username: "selects_test" });
+      await account.connect(TOKEN);
+      await runUntil(scheduler, publisher, "2026-11-13T21:00:00Z");
+      expect(postedSelects(publisher)).toEqual([queued]);
+    });
+
+    test("a dry run: the next real slot takes the queue's head", async () => {
+      const { scheduler, publisher, settings } = await setup();
+      const queued = await addSelect("portrait");
+      await addSelect("landscape");
+      scheduler.setQueue([queued]);
+      scheduler.setSchedule(TWO_SLOTS);
+      settings.setPublishing({ dryRun: true });
+      await runUntil(scheduler, publisher, "2026-11-13T11:00:00Z");
+      settings.setPublishing({ dryRun: false });
+      await runUntil(scheduler, publisher, "2026-11-13T21:00:00Z");
+      expect(postedSelects(publisher)).toEqual([queued]);
+    });
+
+    test("a slot skipped: the next one shows the queue's head as soon as the skip is answered", async () => {
+      const { scheduler, publisher } = await setup();
+      const queued = await addSelect("portrait");
+      const pooled = await addSelect("landscape");
+      scheduler.setQueue([queued]);
+      scheduler.setSchedule(TWO_SLOTS);
+      expect(scheduler.upcoming().map((run) => run.selectId)).toEqual([queued, pooled]);
+      scheduler.skip("morning", "2026-11-13");
+      expect(scheduler.upcoming().map((run) => run.selectId)).toEqual([null, queued]);
+      scheduler.unskip("morning", "2026-11-13");
+      expect(scheduler.upcoming().map((run) => run.selectId)).toEqual([queued, pooled]);
+      scheduler.skip("morning", "2026-11-13");
+      await runUntil(scheduler, publisher, "2026-11-13T21:00:00Z");
+      expect(postedSelects(publisher)).toEqual([queued]);
+    });
+
+    test("a slot swapped away from the head: the next one takes it at once", async () => {
+      const { scheduler } = await setup();
+      const queued = await addSelect("portrait");
+      const pooled = await addSelect("landscape");
+      scheduler.setQueue([queued]);
+      scheduler.setSchedule(TWO_SLOTS);
+      expect(scheduler.swap("morning", "2026-11-13")).toMatchObject({ selectId: pooled });
+      expect(scheduler.upcoming().map((run) => run.selectId)).toEqual([pooled, queued]);
+    });
+
+    test("slots missed in downtime: the one that posts late takes the queue's head", async () => {
+      const { scheduler, publisher, restart } = await setup();
+      const q1 = await addSelect("portrait");
+      const q2 = await addSelect("landscape");
+      await addSelect("square");
+      scheduler.setQueue([q1, q2]);
+      scheduler.setSchedule({
+        slots: [everyDay("10:00", "ten"), everyDay("11:00", "eleven")],
+        timeZone: "UTC",
+        graceMinutes: 120,
+      });
+      expect(scheduler.upcoming().map((run) => run.selectId)).toEqual([q1, q2]);
+      clock.advance(at("2026-11-13T11:05:00Z") - clock.now());
+      const restarted = restart();
+      restarted.recover();
+      await restarted.tick();
+      await publisher.settled();
+      expect(postedSelects(publisher)).toEqual([q1]);
+      expect(restarted.queue()).toEqual([q2]);
+    });
+
+    test("a select queued after the pool was picked from takes the next slot", async () => {
+      const { scheduler } = await setup();
+      await addSelect("portrait");
+      const queued = await addSelect("landscape");
+      scheduler.setSchedule(TWO_SLOTS);
+      scheduler.setQueue([queued]);
+      expect(scheduler.upcoming()[0]?.selectId).toBe(queued);
+    });
+  });
+
   test("a queued select ignores the pick rules", async () => {
     const { scheduler, publisher, captures } = await setup();
     const portrait = await addSelect("portrait");
@@ -369,13 +474,14 @@ describe("next up", () => {
     scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
     expect(scheduler.upcoming()[0]?.selectId).toBe(deleted);
     library.remove(deleted);
-    // Swapped to the landscape, which is then posted by hand.
-    expect(scheduler.swap("daily", "2026-11-13")).toMatchObject({ selectId: byHand });
-    const now = await publisher.publish({ selectIds: [byHand] });
+    // Chosen again at once, then swapped past the landscape to the square, which is posted by hand.
+    expect(scheduler.swap("daily", "2026-11-13")).toMatchObject({ selectId: left });
+    const now = await publisher.publish({ selectIds: [left] });
     if (now.status !== "started") throw new Error(now.status);
     await now.done;
+    // The landscape was passed over, but it is all that is left: the slot posts it.
     await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");
-    expect(postedSelects(publisher)).toEqual([byHand, left]);
+    expect(postedSelects(publisher)).toEqual([left, byHand]);
   });
 
   test("two slots on a day get different selects", async () => {
@@ -691,6 +797,40 @@ describe("pick rules", () => {
     expect(scheduler.upcoming()[0]?.selectId).not.toBe(oldest);
     scheduler.setRules({ ...scheduler.rules(), order: "oldest" });
     expect(scheduler.upcoming()[0]?.selectId).toBe(oldest);
+  });
+
+  test("spacing by capture day counts the picks of earlier slots that have not posted yet", async () => {
+    const { scheduler, publisher, captures } = await setup();
+    const a = await addSelect("portrait");
+    const b = await addSelect("landscape");
+    const c = await addSelect("square");
+    // a and b were taken the same day; c another.
+    captures.save(b, { edits: { capturedAt: "2024-05-01T18:00:00" }, locationHidden: false });
+    scheduler.setSchedule({
+      slots: [everyDay("10:00", "ten"), everyDay("12:00", "noon")],
+      timeZone: "UTC",
+      graceMinutes: 120,
+    });
+    expect(scheduler.upcoming().map((run) => run.selectId)).toEqual([a, c]);
+    await runUntil(scheduler, publisher, "2026-11-13T13:00:00Z");
+    expect(postedSelects(publisher)).toEqual([a, c]);
+    expect(b).toBeDefined();
+  });
+
+  test("a planned pick that no longer meets the rules when its slot comes is picked again", async () => {
+    const { scheduler, publisher, captures } = await setup();
+    const a = await addSelect("portrait");
+    const b = await addSelect("landscape");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    expect(scheduler.upcoming()[0]?.selectId).toBe(a);
+    // A posted by hand from the same capture day as a, before the slot comes.
+    const sameDay = await addSelect("square");
+    captures.save(sameDay, { edits: { capturedAt: "2024-05-01T08:00:00" }, locationHidden: false });
+    const now = await publisher.publish({ selectIds: [sameDay] });
+    if (now.status !== "started") throw new Error(now.status);
+    await now.done;
+    await runUntil(scheduler, publisher, "2026-11-13T12:30:00Z");
+    expect(postedSelects(publisher)).toEqual([sameDay, b]);
   });
 
   test("spacing by place never puts a location in the logs", async () => {

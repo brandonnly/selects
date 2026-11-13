@@ -60,8 +60,22 @@ export function pick({ queue, pool, recent, rules, random, exclude }: PickInput)
   const allowed = (id: string) => !exclude?.has(id);
   const queued = queue.find(allowed);
   if (queued !== undefined) return { selectId: queued, from: "queue", relaxed: [] };
+  const found = eligible({ pool, recent, rules, exclude });
+  if (found === undefined) return undefined;
+  return { selectId: choose(found.candidates, rules.order, random).id, from: "pool", relaxed: found.relaxed };
+}
 
-  const open = pool.filter((candidate) => allowed(candidate.id));
+/**
+ * The pool's selects the pick rules allow now, relaxed as little as leaves any: each is one `pick`
+ * could choose before order is applied. Undefined when the pool leaves nothing.
+ */
+export function eligible({
+  pool,
+  recent,
+  rules,
+  exclude,
+}: Omit<PickInput, "queue" | "random">): { candidates: Candidate[]; relaxed: RelaxableRule[] } | undefined {
+  const open = pool.filter((candidate) => !exclude?.has(candidate.id));
   if (open.length === 0) return undefined;
 
   const day = (candidate: Candidate) => candidate.capturedAt?.slice(0, 10) ?? null;
@@ -90,15 +104,15 @@ export function pick({ queue, pool, recent, rules, random, exclude }: PickInput)
 
   for (const relaxed of RELAXING) {
     const kept = (Object.keys(passes) as RelaxableRule[]).filter((rule) => !relaxed.includes(rule));
-    const eligible = open.filter((candidate) => kept.every((rule) => passes[rule](candidate)));
-    if (eligible.length === 0) continue;
+    const candidates = open.filter((candidate) => kept.every((rule) => passes[rule](candidate)));
     // Each step is reached only when keeping its rules left nothing, so every rule it drops mattered.
-    return { selectId: choose(eligible, rules.order, random).id, from: "pool", relaxed };
+    if (candidates.length > 0) return { candidates, relaxed };
   }
   return undefined;
 }
 
-function choose(eligible: Candidate[], order: PickOrder, random: () => number): Candidate {
+/** The candidate the order takes: one at random, or the oldest or newest by capture time. */
+export function choose(eligible: Candidate[], order: PickOrder, random: () => number): Candidate {
   if (order === "random") {
     const index = Math.min(eligible.length - 1, Math.floor(random() * eligible.length));
     return eligible[index] as Candidate;
