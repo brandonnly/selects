@@ -13,7 +13,7 @@ type Loaded = {
   caption: Built;
   /** What the templates make, whether or not something is written for the select. */
   fromTemplate: Built;
-  limits: { characters: number; hashtags: number };
+  limits: { characters: number; hashtags: number; mentions: number; altTextCharacters: number };
 };
 
 type Draft = { caption: string | null; altText: string | null };
@@ -29,6 +29,8 @@ export function SelectCaption({ selectId }: { selectId: string }) {
     { state: "idle" | "saving" | "saved" } | { state: "failed"; problems: string[] }
   >({ state: "idle" });
   const [check, setCheck] = useState<LimitCheck | undefined>();
+  /** A save is on its way: the next waits for it, so two never cross. */
+  const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
@@ -76,10 +78,19 @@ export function SelectCaption({ selectId }: { selectId: string }) {
   if (loaded === undefined) return null;
 
   const changed = JSON.stringify(normal(draft)) !== JSON.stringify(loaded.own);
-  const blocked = (check?.problems.length ?? 0) > 0;
+  // Only what is written here can stop a save: text from the template is not this editor's to fix.
+  const { limits } = loaded;
+  const blocked =
+    check !== undefined &&
+    ((draft.caption !== null &&
+      (check.captionCharacters > limits.characters ||
+        check.hashtags > limits.hashtags ||
+        check.mentions > limits.mentions)) ||
+      (draft.altText !== null && check.altTextCharacters > limits.altTextCharacters));
 
   latestDraft.current = draft;
   const save = async () => {
+    setBusy(true);
     setState({ state: "saving" });
     const sent = draft;
     try {
@@ -98,6 +109,8 @@ export function SelectCaption({ selectId }: { selectId: string }) {
       }
     } catch {
       setState({ state: "failed", problems: [] });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -151,8 +164,8 @@ export function SelectCaption({ selectId }: { selectId: string }) {
         </p>
       )}
       <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={save} disabled={!changed || blocked || state.state === "saving"}>
-          {state.state === "saving" ? "Saving…" : "Save caption"}
+        <Button onClick={save} disabled={!changed || blocked || busy}>
+          {busy ? "Saving…" : "Save caption"}
         </Button>
         <p role="status" className="text-sm text-muted-foreground">
           {state.state === "saved" && "Saved."}

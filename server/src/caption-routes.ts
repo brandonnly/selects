@@ -92,7 +92,10 @@ export function captionRoutes({ store, coordinateFormat, capture }: CaptionRoute
       ({ body, status }) => {
         const templates = tidyTemplates(body.templates);
         const check = checkTemplates(templates);
-        if (body.selectId === undefined) return { caption: null, measure: null, check };
+        // A template with problems is not built: only a sound one is worth expanding.
+        if (body.selectId === undefined || check.problems.length > 0) {
+          return { caption: null, measure: null, check };
+        }
         const data = capture(body.selectId);
         if (data === undefined) return status(404, notFound);
         const caption = buildCaption({

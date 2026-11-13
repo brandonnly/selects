@@ -253,6 +253,20 @@ describe("a select's own caption", () => {
   });
 });
 
+describe("a preview of a template with problems", () => {
+  test("is not built, so a template of repeated hashtags is never expanded", async () => {
+    const id = await addSelect("portrait");
+    const response = await send("POST", "/api/captions/preview", {
+      selectId: id,
+      templates: { ...custom, caption: "{hashtags}".repeat(1000) },
+    });
+
+    const body = await json(response);
+    expect(body.caption).toBeNull();
+    expect(body.check.problems).toEqual(["The caption can have {hashtags} once."]);
+  });
+});
+
 describe("caption check", () => {
   test("measures text being written against Instagram's limits without saving it", async () => {
     const response = await send("POST", "/api/captions/check", {
