@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { describeRun, move, slotTime, toSchedule } from "./schedule";
+import { describeRun, minutes, move, parsePickRules, parseSchedule, slotTime, wholeNumber } from "./schedule";
 
 describe("move", () => {
   test("moves an item to a new place, keeping the rest in order", () => {
@@ -13,30 +13,118 @@ describe("move", () => {
   });
 });
 
-describe("toSchedule", () => {
-  test("sends only slots with a day and a time, with the spread as a whole number", () => {
-    const draft = {
-      slots: [
-        { id: "a", days: [3, 1], time: "18:30", spreadText: "15" },
-        { id: "b", days: [], time: "09:00", spreadText: "" },
-        { id: "c", days: [2], time: "", spreadText: "" },
-        { id: "d", days: [7], time: "07:05", spreadText: "abc" },
-      ],
-      timeZone: "Europe/Berlin",
-      graceText: "90",
-    };
-    expect(toSchedule(draft)).toEqual({
-      slots: [
-        { id: "a", days: [1, 3], time: "18:30", spreadMinutes: 15 },
-        { id: "d", days: [7], time: "07:05", spreadMinutes: 0 },
-      ],
-      timeZone: "Europe/Berlin",
-      graceMinutes: 90,
+describe("wholeNumber", () => {
+  const bounds = { min: 1, max: 1000 };
+
+  test("takes digits within the bounds", () => {
+    expect(wholeNumber(" 42 ", bounds)).toEqual({ ok: true, value: 42 });
+    expect(wholeNumber("1000", bounds)).toEqual({ ok: true, value: 1000 });
+  });
+
+  test("refuses anything else, and never reads it as another number", () => {
+    for (const text of ["1,000", "1.5", "1e2", "-3", "0", "1001", "abc", "", "0x10"]) {
+      const parsed = wholeNumber(text, bounds);
+      expect(parsed.ok).toBe(false);
+      if (!parsed.ok) expect(parsed.problem).toBe("A whole number from 1 to 1,000.");
+    }
+  });
+
+  test("an empty field can stand for a value", () => {
+    expect(wholeNumber("", { min: 0, max: 720, empty: 0 })).toEqual({ ok: true, value: 0 });
+  });
+});
+
+describe("parseSchedule", () => {
+  const draft = {
+    slots: [
+      { id: "a", days: [3, 1], time: "18:30", spreadText: "15" },
+      { id: "d", days: [7], time: "07:05", spreadText: "" },
+    ],
+    timeZone: "Europe/Berlin",
+    graceText: "90",
+  };
+
+  test("is the schedule to save when every field is whole", () => {
+    expect(parseSchedule(draft)).toEqual({
+      schedule: {
+        slots: [
+          { id: "a", days: [1, 3], time: "18:30", spreadMinutes: 15 },
+          { id: "d", days: [7], time: "07:05", spreadMinutes: 0 },
+        ],
+        timeZone: "Europe/Berlin",
+        graceMinutes: 90,
+      },
+      errors: { slots: {} },
     });
   });
 
-  test("an empty grace period is the default two hours", () => {
-    expect(toSchedule({ slots: [], timeZone: "UTC", graceText: "" }).graceMinutes).toBe(120);
+  test("a slot with its last day or its time cleared holds back the whole save, never drops the slot", () => {
+    const noDay = parseSchedule({
+      ...draft,
+      slots: [{ ...draft.slots[0], days: [] }, draft.slots[1]],
+    } as never);
+    expect(noDay.schedule).toBeUndefined();
+    expect(noDay.errors.slots.a?.days).toBe("Pick at least one day.");
+    const noTime = parseSchedule({
+      ...draft,
+      slots: [{ ...draft.slots[0], time: "" }, draft.slots[1]],
+    } as never);
+    expect(noTime.schedule).toBeUndefined();
+    expect(noTime.errors.slots.a?.time).toBe("Set a time.");
+  });
+
+  test("a spread or grace period that is not a whole number within bounds is a field error", () => {
+    const spread = parseSchedule({ ...draft, slots: [{ ...draft.slots[0], spreadText: "1.5" }] } as never);
+    expect(spread.schedule).toBeUndefined();
+    expect(spread.errors.slots.a?.spread).toBe("A whole number from 0 to 720.");
+    for (const graceText of ["", "1e2", "1,000", "1441"]) {
+      const grace = parseSchedule({ ...draft, graceText });
+      expect(grace.schedule).toBeUndefined();
+      expect(grace.errors.grace).toBe("A whole number from 0 to 1,440.");
+    }
+    expect(parseSchedule({ ...draft, graceText: "0" }).schedule?.graceMinutes).toBe(0);
+  });
+});
+
+describe("parsePickRules", () => {
+  const saved = {
+    captureDay: { on: true, posts: 5 },
+    place: { on: false, km: 10, posts: 5 },
+    order: "random",
+  } as const;
+  const draft = {
+    captureDay: { on: true, posts: "3" },
+    place: { on: true, km: "25", posts: "4" },
+    order: "oldest" as const,
+  };
+
+  test("is the rules to save when every number is whole and within bounds", () => {
+    expect(parsePickRules(draft, saved)).toEqual({
+      rules: { captureDay: { on: true, posts: 3 }, place: { on: true, km: 25, posts: 4 }, order: "oldest" },
+      errors: {},
+    });
+  });
+
+  test("a number out of bounds is a field error and nothing is saved", () => {
+    for (const posts of ["0", "51", "1.5"]) {
+      const parsed = parsePickRules({ ...draft, captureDay: { on: true, posts } }, saved);
+      expect(parsed.rules).toBeUndefined();
+      expect(parsed.errors.captureDayPosts).toBe("A whole number from 1 to 50.");
+    }
+    const km = parsePickRules({ ...draft, place: { ...draft.place, km: "20001" } }, saved);
+    expect(km.errors.placeKm).toBe("A whole number from 1 to 20,000.");
+  });
+
+  test("a switched-off rule keeps its saved numbers, so it never blocks a save", () => {
+    const parsed = parsePickRules({ ...draft, place: { on: false, km: "1e9", posts: "" } }, saved);
+    expect(parsed.rules?.place).toEqual({ on: false, km: 10, posts: 5 });
+  });
+});
+
+describe("minutes", () => {
+  test("says one minute, or several", () => {
+    expect(minutes(1)).toBe("1 minute");
+    expect(minutes(15)).toBe("15 minutes");
   });
 });
 
@@ -49,13 +137,32 @@ describe("slotTime", () => {
 
 describe("describeRun", () => {
   test("says what became of each slot", () => {
-    expect(describeRun({ state: "unavailable", note: "No Instagram account is connected." })).toEqual({
+    expect(
+      describeRun({ state: "unavailable", note: "No Instagram account is connected.", post: null }),
+    ).toEqual({
       label: "Not posted",
       detail: "No Instagram account is connected.",
     });
-    expect(describeRun({ state: "posted", note: null }).label).toBe("Posted");
-    expect(describeRun({ state: "missed", note: "Selects was not running at its time." }).label).toBe(
-      "Missed",
-    );
+    expect(
+      describeRun({ state: "missed", note: "Selects was not running at its time.", post: null }).label,
+    ).toBe("Missed");
+  });
+
+  test("follows a slot's post to the end, never a bare Posted for one that failed", () => {
+    const posted = (
+      state: "publishing" | "retrying" | "unconfirmed" | "published" | "failed",
+      error: string | null,
+    ) => describeRun({ state: "posted", note: null, post: { state, error } });
+    expect(posted("published", null).label).toBe("Posted");
+    expect(posted("publishing", null).label).toBe("Posting…");
+    expect(posted("retrying", "Instagram did not answer.")).toEqual({
+      label: "Retrying",
+      detail: "Instagram did not answer.",
+    });
+    expect(posted("unconfirmed", null).label).toBe("Needs checking");
+    expect(posted("failed", "The image was refused.")).toEqual({
+      label: "Failed",
+      detail: "The image was refused. The select is back where it was.",
+    });
   });
 });

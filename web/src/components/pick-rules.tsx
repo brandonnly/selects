@@ -2,45 +2,22 @@ import type { PickRules } from "@selects/server";
 import { useMemo, useState } from "react";
 import { api } from "@/api";
 import { useAutosave } from "@/lib/autosave";
+import { LIMITS, type PickRulesDraft, parsePickRules, toRulesDraft } from "@/lib/schedule";
 import { SaveStatus } from "./schedule-editor";
 
 const SETTLE_MS = 600;
 
-type Draft = {
-  captureDay: { on: boolean; posts: string };
-  place: { on: boolean; km: string; posts: string };
-  order: PickRules["order"];
-};
-
-const count = (text: string, fallback: number) => (/^\d+$/.test(text.trim()) ? Number(text) : fallback);
-const distance = (text: string, fallback: number) => {
-  const value = Number(text.trim().replace(",", "."));
-  return text.trim() !== "" && Number.isFinite(value) && value > 0 ? value : fallback;
-};
-
-/** The pick rules for picks from the pool, each with a switch and its numbers. Saved as they change. */
+/**
+ * The pick rules for picks from the pool, each with a switch and its numbers. Saved as they
+ * change, and only while every number is whole and within bounds. Newer rules from the server
+ * are taken up while nothing is unsaved.
+ */
 export function PickRulesEditor({ rules, onSaved }: { rules: PickRules; onSaved: () => void }) {
-  const [loaded] = useState(rules);
-  const [draft, setDraft] = useState<Draft>({
-    captureDay: { on: rules.captureDay.on, posts: String(rules.captureDay.posts) },
-    place: { on: rules.place.on, km: String(rules.place.km), posts: String(rules.place.posts) },
-    order: rules.order,
-  });
-  const value = useMemo<PickRules>(
-    () => ({
-      captureDay: { on: draft.captureDay.on, posts: count(draft.captureDay.posts, loaded.captureDay.posts) },
-      place: {
-        on: draft.place.on,
-        km: distance(draft.place.km, loaded.place.km),
-        posts: count(draft.place.posts, loaded.place.posts),
-      },
-      order: draft.order,
-    }),
-    [draft, loaded],
-  );
+  const [draft, setDraft] = useState<PickRulesDraft>(() => toRulesDraft(rules));
+  const parsed = useMemo(() => parsePickRules(draft, rules), [draft, rules]);
   const save = useAutosave({
-    value,
-    loaded,
+    value: parsed.rules,
+    loaded: rules,
     save: async (next) => {
       const answer = await api["pick-rules"].put(next);
       if (answer.data) onSaved();
@@ -48,18 +25,36 @@ export function PickRulesEditor({ rules, onSaved }: { rules: PickRules; onSaved:
     },
     url: "/api/pick-rules",
     ms: SETTLE_MS,
+    onNewer: (newer) => setDraft(toRulesDraft(newer)),
   });
+  const { errors } = parsed;
 
-  const numberInput = (label: string, text: string, change: (text: string) => void, disabled: boolean) => (
+  const numberInput = (
+    label: string,
+    text: string,
+    change: (text: string) => void,
+    disabled: boolean,
+    error: string | undefined,
+    id: string,
+  ) => (
     <input
-      inputMode="decimal"
+      inputMode="numeric"
+      pattern="[0-9]*"
       aria-label={label}
+      aria-invalid={error !== undefined}
+      aria-describedby={error === undefined ? undefined : id}
       value={text}
       disabled={disabled}
       onChange={(event) => change(event.currentTarget.value)}
-      className="h-10 w-16 rounded-md border bg-background px-2 text-center text-base disabled:opacity-50 md:text-sm"
+      className="h-10 w-20 rounded-md border bg-background px-2 text-center text-base aria-invalid:border-destructive disabled:opacity-50 md:text-sm"
     />
   );
+  const fieldError = (error: string | undefined, id: string, what: string) =>
+    error === undefined ? null : (
+      <p id={id} className="text-destructive">
+        {what}: {error}
+      </p>
+    );
 
   return (
     <form
@@ -91,9 +86,12 @@ export function PickRulesEditor({ rules, onSaved }: { rules: PickRules; onSaved:
             draft.captureDay.posts,
             (posts) => setDraft((d) => ({ ...d, captureDay: { ...d.captureDay, posts } })),
             !draft.captureDay.on,
+            errors.captureDayPosts,
+            "capture-day-posts-error",
           )}
           posts.
         </p>
+        {fieldError(errors.captureDayPosts, "capture-day-posts-error", "Posts")}
       </div>
       <div className="flex flex-col gap-2 rounded-lg border bg-card p-3 text-card-foreground">
         <label className="flex items-center gap-2 font-medium">
@@ -115,6 +113,8 @@ export function PickRulesEditor({ rules, onSaved }: { rules: PickRules; onSaved:
             draft.place.km,
             (km) => setDraft((d) => ({ ...d, place: { ...d.place, km } })),
             !draft.place.on,
+            errors.placeKm,
+            "place-km-error",
           )}
           km of any of the last
           {numberInput(
@@ -122,9 +122,13 @@ export function PickRulesEditor({ rules, onSaved }: { rules: PickRules; onSaved:
             draft.place.posts,
             (posts) => setDraft((d) => ({ ...d, place: { ...d.place, posts } })),
             !draft.place.on,
+            errors.placePosts,
+            "place-posts-error",
           )}
           posts.
         </p>
+        {fieldError(errors.placeKm, "place-km-error", "Kilometres")}
+        {fieldError(errors.placePosts, "place-posts-error", "Posts")}
         <p className="text-xs text-muted-foreground">
           Uses every select's location, hidden or not, only to choose. It never publishes one.
         </p>
@@ -154,7 +158,16 @@ export function PickRulesEditor({ rules, onSaved }: { rules: PickRules; onSaved:
         </div>
         <p className="text-xs text-muted-foreground">Oldest and newest go by when each photo was taken.</p>
       </fieldset>
-      <SaveStatus save={save} />
+      <p className="text-xs text-muted-foreground">
+        Posts: 1 to {LIMITS.posts}. Kilometres: 1 to {LIMITS.km.toLocaleString("en-US")}.
+      </p>
+      {parsed.rules === undefined ? (
+        <p role="status" className="text-sm text-destructive">
+          Not saved until the numbers marked above are fixed.
+        </p>
+      ) : (
+        <SaveStatus save={save} />
+      )}
     </form>
   );
 }

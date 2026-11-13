@@ -1,4 +1,4 @@
-import type { Run, Schedule, Weekday } from "@selects/server";
+import type { PickRules, Run, Schedule, Weekday } from "@selects/server";
 
 /** Monday first, as the server numbers them (ISO: 1 is Monday). */
 export const WEEKDAYS: { day: Weekday; short: string; long: string }[] = [
@@ -11,30 +11,67 @@ export const WEEKDAYS: { day: Weekday; short: string; long: string }[] = [
   { day: 7, short: "Sun", long: "Sunday" },
 ];
 
-export const DEFAULT_GRACE_MINUTES = 120;
+/** What the server accepts: `SCHEDULE_LIMITS` and `PICK_RULE_LIMITS` on the server. */
+export const LIMITS = { spreadMinutes: 720, graceMinutes: 24 * 60, posts: 50, km: 20_000 } as const;
 
 /** A slot as the editor holds it: the spread as typed. */
 export type SlotDraft = { id: string; days: number[]; time: string; spreadText: string };
 export type ScheduleDraft = { slots: SlotDraft[]; timeZone: string; graceText: string };
 
-const wholeNumber = (text: string, fallback: number) => {
+type Parsed = { ok: true; value: number } | { ok: false; problem: string };
+
+/**
+ * A whole number typed in a field, within bounds. Anything else ("1,000", "1.5", "1e2") is a
+ * problem, never read as some other number. `empty` is what an empty field stands for, if anything.
+ */
+export function wholeNumber(text: string, bounds: { min: number; max: number; empty?: number }): Parsed {
   const trimmed = text.trim();
-  return /^\d+$/.test(trimmed) ? Number(trimmed) : fallback;
+  if (trimmed === "" && bounds.empty !== undefined) return { ok: true, value: bounds.empty };
+  const value = Number(trimmed);
+  if (/^\d+$/.test(trimmed) && value >= bounds.min && value <= bounds.max) return { ok: true, value };
+  return {
+    ok: false,
+    problem: `A whole number from ${bounds.min.toLocaleString("en-US")} to ${bounds.max.toLocaleString("en-US")}.`,
+  };
+}
+
+export type ScheduleErrors = {
+  grace?: string;
+  slots: Record<string, { days?: string; time?: string; spread?: string }>;
 };
 
-/** The schedule to save: a slot with no day or no time yet is left out until it has both. */
-export function toSchedule(draft: ScheduleDraft): Schedule {
-  return {
-    slots: draft.slots
-      .filter((slot) => slot.days.length > 0 && /^\d{2}:\d{2}$/.test(slot.time))
-      .map((slot) => ({
+/**
+ * The schedule to save, or undefined while any field is not whole: a slot with no day or no time,
+ * or a number out of bounds, holds back the whole save. A slot is only ever removed by its
+ * remove button, never by being left incomplete.
+ */
+export function parseSchedule(draft: ScheduleDraft): {
+  schedule: Schedule | undefined;
+  errors: ScheduleErrors;
+} {
+  const errors: ScheduleErrors = { slots: {} };
+  const slots: Schedule["slots"] = [];
+  for (const slot of draft.slots) {
+    const slotErrors: ScheduleErrors["slots"][string] = {};
+    if (slot.days.length === 0) slotErrors.days = "Pick at least one day.";
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(slot.time)) slotErrors.time = "Set a time.";
+    const spread = wholeNumber(slot.spreadText, { min: 0, max: LIMITS.spreadMinutes, empty: 0 });
+    if (!spread.ok) slotErrors.spread = spread.problem;
+    if (Object.keys(slotErrors).length > 0) errors.slots[slot.id] = slotErrors;
+    else if (spread.ok)
+      slots.push({
         id: slot.id,
-        days: [...slot.days].sort() as Weekday[],
+        days: [...new Set(slot.days)].sort() as Weekday[],
         time: slot.time,
-        spreadMinutes: wholeNumber(slot.spreadText, 0),
-      })),
-    timeZone: draft.timeZone,
-    graceMinutes: wholeNumber(draft.graceText, DEFAULT_GRACE_MINUTES),
+        spreadMinutes: spread.value,
+      });
+  }
+  const grace = wholeNumber(draft.graceText, { min: 0, max: LIMITS.graceMinutes });
+  if (!grace.ok) errors.grace = grace.problem;
+  const whole = grace.ok && Object.keys(errors.slots).length === 0;
+  return {
+    schedule: whole ? { slots, timeZone: draft.timeZone, graceMinutes: grace.value } : undefined,
+    errors,
   };
 }
 
@@ -49,6 +86,65 @@ export function toDraft(schedule: Schedule): ScheduleDraft {
     timeZone: schedule.timeZone,
     graceText: String(schedule.graceMinutes),
   };
+}
+
+/** The pick rules as the editor holds them: the numbers as typed. */
+export type PickRulesDraft = {
+  captureDay: { on: boolean; posts: string };
+  place: { on: boolean; km: string; posts: string };
+  order: PickRules["order"];
+};
+
+export type PickRulesErrors = { captureDayPosts?: string; placeKm?: string; placePosts?: string };
+
+export function toRulesDraft(rules: PickRules): PickRulesDraft {
+  return {
+    captureDay: { on: rules.captureDay.on, posts: String(rules.captureDay.posts) },
+    place: { on: rules.place.on, km: String(rules.place.km), posts: String(rules.place.posts) },
+    order: rules.order,
+  };
+}
+
+/**
+ * The rules to save, or undefined while a number is not whole and within bounds. A rule switched
+ * off keeps the numbers last saved, so a field it greys out never blocks a save.
+ */
+export function parsePickRules(
+  draft: PickRulesDraft,
+  saved: PickRules,
+): { rules: PickRules | undefined; errors: PickRulesErrors } {
+  const errors: PickRulesErrors = {};
+  const field = (on: boolean, text: string, max: number, fallback: number, key: keyof PickRulesErrors) => {
+    if (!on) return fallback;
+    const parsed = wholeNumber(text, { min: 1, max });
+    if (parsed.ok) return parsed.value;
+    errors[key] = parsed.problem;
+    return fallback;
+  };
+  const rules: PickRules = {
+    captureDay: {
+      on: draft.captureDay.on,
+      posts: field(
+        draft.captureDay.on,
+        draft.captureDay.posts,
+        LIMITS.posts,
+        saved.captureDay.posts,
+        "captureDayPosts",
+      ),
+    },
+    place: {
+      on: draft.place.on,
+      km: field(draft.place.on, draft.place.km, LIMITS.km, saved.place.km, "placeKm"),
+      posts: field(draft.place.on, draft.place.posts, LIMITS.posts, saved.place.posts, "placePosts"),
+    },
+    order: draft.order,
+  };
+  return { rules: Object.keys(errors).length === 0 ? rules : undefined, errors };
+}
+
+/** "1 minute", "15 minutes". */
+export function minutes(count: number): string {
+  return `${count} ${count === 1 ? "minute" : "minutes"}`;
 }
 
 /** The list with the item at `from` moved to `to`, clamped to the ends. */
@@ -75,13 +171,35 @@ export function slotTime(at: number, timeZone: string, locale?: string): string 
   return `${part("weekday")} ${part("day")} ${part("month")}, ${part("hour")}:${part("minute")}`;
 }
 
-/** What became of a slot, in words. */
-export function describeRun(run: Pick<Run, "state" | "note">): { label: string; detail: string | null } {
+/** What became of a slot, in words: for one that posted, what became of its post. */
+export function describeRun(run: Pick<Run, "state" | "note" | "post">): {
+  label: string;
+  detail: string | null;
+} {
+  if (run.state === "posted" && run.post !== null) {
+    const { state, error } = run.post;
+    switch (state) {
+      case "publishing":
+        return { label: "Posting…", detail: null };
+      case "retrying":
+        return { label: "Retrying", detail: error };
+      case "unconfirmed":
+        return { label: "Needs checking", detail: error ?? "Instagram has not said whether it posted it." };
+      case "failed":
+        return {
+          label: "Failed",
+          detail: `${error ?? "It could not be posted."} The select is back where it was.`,
+        };
+      case "published":
+      case "dry-run":
+        return { label: "Posted", detail: run.note };
+    }
+  }
   const labels: Record<Run["state"], string> = {
     planned: "To come",
     skipped: "Skipped",
     posting: "Posting…",
-    posted: "Posted",
+    posted: "Sent to post",
     "dry-run": "Dry run",
     missed: "Missed",
     paused: "Paused",
