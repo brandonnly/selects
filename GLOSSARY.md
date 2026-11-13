@@ -19,7 +19,7 @@
 | **Hashtag set** | A named list of hashtags. One set is chosen at random for each post. |
 | **Privacy zone** | A point and a radius. A select taken inside one never has its location published. |
 | **Gallery output** | The clean image and manifest entry written to the bucket for a public gallery. |
-| **Manifest** | `posts.json` in the bucket: one entry per post, read by the gallery and other sites. |
+| **Manifest** | `posts.json` in the bucket: one entry per post, read by the gallery and other sites. Its format is in [docs/manifest.md](docs/manifest.md). |
 | **Dry run** | A mode that renders and logs everything a post would do without publishing. |
 | **Fake mode** | The default: Instagram and the bucket are fakes inside Selects, and nothing leaves the install. `INSTAGRAM_API=live` turns it off. |
 | **Unconfirmed post** | A post Instagram was asked to publish without confirming whether it did. Its select stays out of the pool until Instagram or the owner says. |

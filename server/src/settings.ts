@@ -5,6 +5,10 @@ export type PublishingSettings = { dryRun: boolean };
 
 const DEFAULT_PUBLISHING: PublishingSettings = { dryRun: false };
 
+export type GallerySettings = { enabled: boolean };
+
+const DEFAULT_GALLERY: GallerySettings = { enabled: false };
+
 /**
  * Settings changed in the UI, kept in the database. Values are validated before they are saved;
  * a setting added since a value was saved takes its default.
@@ -44,6 +48,17 @@ export function createSettings(db: Database) {
 
     setPublishing(settings: PublishingSettings): PublishingSettings {
       write("publishing", settings);
+      return settings;
+    },
+
+    /** The gallery output switch: off by default. */
+    gallery(): GallerySettings {
+      const saved = read("gallery") as Partial<GallerySettings> | undefined;
+      return { ...DEFAULT_GALLERY, ...saved };
+    },
+
+    setGallery(settings: GallerySettings): GallerySettings {
+      write("gallery", settings);
       return settings;
     },
   };

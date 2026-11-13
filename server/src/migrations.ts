@@ -239,7 +239,39 @@ export const migrations: readonly Migration[] = [
     refresh TEXT NOT NULL DEFAULT 'refreshed' CHECK (refresh IN ('refreshed', 'too-new', 'failed'))
   );
   `,
-  // 8: the queue, and each time a slot comes round: when it posts, with its random spread drawn
+  // 8: gallery output. One row per post written to the gallery, holding its public objects; and
+  // with each post, its caption and alt text as they read with its location withheld.
+  // Self-contained, so it can take any position.
+  `
+  -- Built with the caption when the post is sent: the caption and alt text with the coordinates
+  -- left out, with the same templates and hashtag set. Empty for text written by hand.
+  ALTER TABLE posts ADD COLUMN withheld_caption TEXT;
+  ALTER TABLE posts ADD COLUMN withheld_alt_text TEXT;
+  -- 1 when the post was recorded as published with gallery output on, in that same update: the
+  -- gallery takes it in, frame and all, even after a stop, and the publisher leaves its frame.
+  ALTER TABLE posts ADD COLUMN to_gallery INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE gallery_posts (
+    post_id TEXT PRIMARY KEY REFERENCES posts (id),
+    -- The mode of the post, and so the bucket its objects are in.
+    mode TEXT NOT NULL CHECK (mode IN ('fake', 'live')),
+    -- 'writing': its clean image is not yet stored. 'written': listed in the manifest.
+    -- 'removing': taken out of the manifest, then its objects are deleted. 'removed': done.
+    state TEXT NOT NULL CHECK (state IN ('writing', 'written', 'removing', 'removed')),
+    -- Keys only: each URL is built from the public base URL when the manifest is written.
+    image_key TEXT,
+    image_width INTEGER,
+    image_height INTEGER,
+    -- The framed image Instagram was given, kept for the gallery. Null when it was not kept, or
+    -- once it was deleted for printing coordinates withheld since.
+    frame_key TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER,
+    error TEXT,
+    added_at INTEGER NOT NULL
+  );
+  CREATE INDEX gallery_posts_state ON gallery_posts (mode, state);
+  `,
+  // 9: the queue, and each time a slot comes round: when it posts, with its random spread drawn
   // once so a restart never moves it, its next up, and what became of it. A slot comes round at
   // most once a day, so (slot, date) is the key that keeps it from posting twice.
   `

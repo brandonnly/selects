@@ -164,3 +164,10 @@ describe("loadConfig: Instagram", () => {
     }
   });
 });
+
+describe("loadConfig: the fake bucket", () => {
+  test("has a public base URL in fake mode when BUCKET_PUBLIC_URL is set, whatever else is", () => {
+    expect(loadConfig(minimal).fakePublicUrl).toBe(false);
+    expect(loadConfig({ ...minimal, BUCKET_PUBLIC_URL: "https://cdn.test" }).fakePublicUrl).toBe(true);
+  });
+});

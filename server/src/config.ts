@@ -50,6 +50,11 @@ export class Config {
     password?: string,
     readonly bucket: BucketConfig = { status: "missing", missing: [...BUCKET_REQUIRED] },
     readonly instagram: InstagramMode = "fake",
+    /**
+     * Whether BUCKET_PUBLIC_URL is set. In fake mode the fake bucket then has a public base URL
+     * of its own, so gallery output can be tried; the variable's value is not used.
+     */
+    readonly fakePublicUrl = false,
   ) {
     this.#password = password;
   }
@@ -109,7 +114,14 @@ export function loadConfig(env: Env): Config {
     throw new ConfigError(`Invalid configuration:\n  - ${problems.join("\n  - ")}`);
   }
 
-  return new Config(port, dataDir, read("SELECTS_PASSWORD"), bucket, instagram);
+  return new Config(
+    port,
+    dataDir,
+    read("SELECTS_PASSWORD"),
+    bucket,
+    instagram,
+    read("BUCKET_PUBLIC_URL") !== undefined,
+  );
 }
 
 function readBucket(read: (name: string) => string | undefined, problems: string[]): BucketConfig {

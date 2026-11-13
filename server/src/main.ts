@@ -14,6 +14,8 @@ import { MAX_UPLOAD_BYTES } from "./upload";
 const INBOX_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 /** How often due retries run. */
 const RETRY_INTERVAL_MS = 30 * 1000;
+/** How often gallery output runs: retried writes, privacy changes and removals. */
+const GALLERY_INTERVAL_MS = 30 * 1000;
 /** How often the Instagram token is checked for a refresh. */
 const TOKEN_CHECK_INTERVAL_MS = HOUR;
 
@@ -37,7 +39,7 @@ mkdirSync(library.inboxDir, { recursive: true });
 
 // Unless INSTAGRAM_API=live, Instagram and the bucket are fakes run here, and BUCKET_* is not
 // used: nothing leaves the install and nothing is posted for real.
-const fakes = startFakes(config.instagram);
+const fakes = startFakes(config.instagram, { publicUrl: config.fakePublicUrl });
 const app = createApp({
   config,
   db,
@@ -48,6 +50,9 @@ const app = createApp({
 });
 // Posts a stop left mid-attempt are taken up again, before any request can start a new one.
 app.publisher.recover();
+// Posts a stop left recorded for the gallery and not yet taken in, before any frame is cleaned up.
+// In fake mode the fake bucket starts empty: the gallery writes again what it lost.
+app.gallery.recover({ bucketEmptied: config.instagram === "fake" });
 // Slots a stop left part way are settled before the schedule runs: never posted twice.
 app.scheduler.recover();
 
@@ -97,6 +102,11 @@ const runDue = () =>
   app.publisher.runDue().catch((error) => console.error(`Publishing retries failed (${errorKind(error)}).`));
 void runDue();
 const retryTimer = setInterval(runDue, RETRY_INTERVAL_MS);
+// Gallery output on a timer of its own, so a slow publish never holds up a privacy change:
+// retried writes, the manifest after a privacy change, and removals. It never throws.
+const runGallery = () => app.gallery.runDue();
+void runGallery();
+const galleryTimer = setInterval(runGallery, GALLERY_INTERVAL_MS);
 const tick = () =>
   app.scheduler.tick().catch((error) => console.error(`The schedule could not run (${errorKind(error)}).`));
 void tick();
@@ -108,6 +118,7 @@ const tokenTimer = setInterval(refreshToken, TOKEN_CHECK_INTERVAL_MS);
 const shutdown = () => {
   clearInterval(inboxTimer);
   clearInterval(retryTimer);
+  clearInterval(galleryTimer);
   clearInterval(scheduleTimer);
   clearInterval(tokenTimer);
   // Let requests in flight finish, the fakes they may be using still up, before the database closes.

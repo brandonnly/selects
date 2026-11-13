@@ -19,6 +19,8 @@ import {
   type FrameSettings,
   MAX_BORDER,
 } from "./frame";
+import { createGallery } from "./gallery";
+import { galleryRoutes } from "./gallery-routes";
 import { createInstagramApi, type InstagramApi, InstagramError, LIVE_INSTAGRAM_URL } from "./instagram";
 import { createInstagramAccount } from "./instagram-account";
 import { createLibrary, duplicateMessage, errorKind, type Library } from "./library";
@@ -36,6 +38,7 @@ import { createZones } from "./zones";
 export type { CaptionOverride, CaptionTemplates, HashtagSet, LimitCheck } from "./captions";
 export type { CaptureEdits, CaptureView, Withheld } from "./capture";
 export type { FrameField, FrameSettings } from "./frame";
+export type { GalleryPost, GalleryView } from "./gallery";
 export type { AccountView } from "./instagram-account";
 export type { Rejection, ScanResult, Select, UploadResult } from "./library";
 export type { PickRules } from "./pick";
@@ -145,6 +148,17 @@ function createServices({
     instagram ??
     (config.instagram === "live" ? createInstagramApi({ baseUrl: LIVE_INSTAGRAM_URL }) : noInstagram());
   const account = createInstagramAccount({ db, api, clock, mode: config.instagram });
+  const publishBucket = bucket.status === "configured" ? createBucket(bucket) : bucket;
+  const gallery = createGallery({
+    db,
+    library: lib,
+    captures,
+    zones,
+    settings,
+    bucket: publishBucket,
+    mode: config.instagram,
+    clock,
+  });
   const publisher = createPublisher({
     db,
     dataDir: config.dataDir,
@@ -155,9 +169,11 @@ function createServices({
     captionStore,
     account,
     api,
-    bucket: bucket.status === "configured" ? createBucket(bucket) : bucket,
+    bucket: publishBucket,
     clock,
     mode: config.instagram,
+    galleryWanted: gallery.wanted,
+    onPublished: gallery.published,
     // The fake finishes a container at once; only the real API is polled as Meta advises.
     containerPolling: config.instagram === "fake" ? { intervalMs: 1000, limitMs: MINUTE } : undefined,
   });
@@ -171,6 +187,7 @@ function createServices({
     captionStore,
     account,
     publisher,
+    gallery,
     bucket,
     scheduler,
   };
@@ -205,6 +222,7 @@ function createRoutes(
     captionStore,
     account,
     publisher,
+    gallery,
     bucket,
     scheduler,
   }: Services,
@@ -283,6 +301,7 @@ function createRoutes(
       }),
     )
     .use(publishRoutes({ publisher, account, settings, bucket, instagram: config.instagram }))
+    .use(galleryRoutes({ gallery }))
     .use(scheduleRoutes({ scheduler, library: lib, captures, settings }))
     .delete("/api/selects/:id", ({ params, status }) =>
       lib.remove(params.id) ? status(204) : status(404, notFound),
@@ -436,6 +455,7 @@ export function createApp(options: AppOptions) {
   return {
     /** For the timers in `main.ts`. */
     publisher: services.publisher,
+    gallery: services.gallery,
     scheduler: services.scheduler,
     instagramAccount: services.account,
     fetch: async (request: Request): Promise<Response> => {

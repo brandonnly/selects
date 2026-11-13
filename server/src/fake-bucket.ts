@@ -44,6 +44,8 @@ export function createFakeBucket({
   let readsFail = false;
   let hanging = false;
   let slowWrites = 0;
+  /** How far the bucket's clock runs ahead of this one, in milliseconds. */
+  let ahead = 0;
   const held: (() => void)[] = [];
 
   const server = Bun.serve({
@@ -70,7 +72,10 @@ export function createFakeBucket({
         return serve(key);
       }
 
-      if (!signedFor(request)) return error(403, "SignatureDoesNotMatch");
+      // A write is signed in its header, or through a presigned link for an object with headers.
+      if (!signedFor(request) && !(request.method === "PUT" && presignedFor(url))) {
+        return error(403, "SignatureDoesNotMatch");
+      }
       if (hanging) {
         return new Promise<Response>((resolve) =>
           held.push(() => resolve(new Response(null, { status: 504 }))),
@@ -116,14 +121,20 @@ export function createFakeBucket({
     const signedAt = Date.parse(
       date.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z"),
     );
-    return Number.isFinite(signedAt) && Number.isFinite(expires) && Date.now() <= signedAt + expires * 1000;
+    return (
+      Number.isFinite(signedAt) && Number.isFinite(expires) && Date.now() + ahead <= signedAt + expires * 1000
+    );
   }
 
   function serve(key: string): Response {
     const object = objects.get(key);
     if (object === undefined) return error(404, "NoSuchKey");
+    const cacheControl = object.headers["cache-control"];
     return new Response(object.bytes, {
-      headers: { "content-type": object.contentType ?? "binary/octet-stream" },
+      headers: {
+        "content-type": object.contentType ?? "binary/octet-stream",
+        ...(cacheControl === undefined ? {} : { "cache-control": cacheControl }),
+      },
     });
   }
 
@@ -146,6 +157,10 @@ export function createFakeBucket({
     /** Makes each write take this long before it is stored and answered. */
     slow(ms: number) {
       slowWrites = ms;
+    },
+    /** Runs the bucket's clock this far ahead, as a bucket whose clock differs from Selects'. */
+    clockAhead(ms: number) {
+      ahead = ms;
     },
     /** While on, writes and deletes are taken and never answered. */
     hang(on: boolean) {
