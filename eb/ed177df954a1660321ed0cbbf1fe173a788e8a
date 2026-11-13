@@ -1,0 +1,25 @@
+server/src/migrations.ts
+  s_c4e8006bf0d88c::t_50349e2496cb18 219-222
+server/src/publisher.test.ts
+  s_c4e8006bf0d88c::t_117ca829c023e1 75,104,516-559
+server/src/publisher.ts
+  s_c4e8006bf0d88c::t_651ec71bfafac2 179-180,343-344,349,435-447,503-510,701-703
+web/src/components/post-now.tsx
+  s_c4e8006bf0d88c::t_c21b0d909bf4a3 62-63,65,71,77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ebed177df954a1660321ed0cbbf1fe173a788e8a",
+  "prompts": {},
+  "sessions": {
+    "s_c4e8006bf0d88c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b2a2859-db62-44e6-861e-6f8cc66b6853",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
