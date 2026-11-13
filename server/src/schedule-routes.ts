@@ -50,7 +50,12 @@ export type ScheduleRoutesOptions = {
 
 /** The schedule editor, the pick rules, the pause switch, next up and the queue. */
 export function scheduleRoutes({ scheduler, library, captures, settings }: ScheduleRoutesOptions) {
-  const view = () => ({
+  // Next up is planned again first: whatever changed since (a post by hand, an edit), it shows what will happen.
+  const view = () => {
+    scheduler.refresh();
+    return shown();
+  };
+  const shown = () => ({
     schedule: scheduler.schedule(),
     paused: scheduler.paused(),
     rules: scheduler.rules(),
@@ -60,8 +65,10 @@ export function scheduleRoutes({ scheduler, library, captures, settings }: Sched
     /** Slots that came round, latest first. */
     history: scheduler.history(),
     nextSlotAt: scheduler.nextSlotAt(),
-    /** What would stop next up posting now. */
+    /** What would stop a real post now: no account, no bucket. */
     problems: scheduler.problems(),
+    /** Selects slots pass over until they are fixed, with why. */
+    attention: scheduler.attention(),
     poolSize: library.pool().length,
   });
 

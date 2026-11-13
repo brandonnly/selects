@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createApp } from "./app";
+import { createCaptionStore } from "./caption-store";
 import { createFakeClock, type FakeClock } from "./clock";
 import { BucketSettings, loadConfig } from "./config";
 import { openDatabase } from "./db";
@@ -116,8 +117,9 @@ describe("the schedule", () => {
       timeZone: "Europe/Berlin",
       graceMinutes: 90,
     });
-    // Noon in Berlin on Friday is 11:00 UTC.
-    expect(body.nextSlotAt).toBe(Date.parse("2026-11-13T11:00:00Z"));
+    // Noon in Berlin on Friday is 11:00 UTC; the next post is due within the spread after it.
+    expect(body.upcoming[0].slotAt).toBe(Date.parse("2026-11-13T11:00:00Z"));
+    expect(body.nextSlotAt).toBe(body.upcoming[0].dueAt);
     expect(body.upcoming).toEqual([
       expect.objectContaining({
         slotId: "noon",
@@ -128,6 +130,18 @@ describe("the schedule", () => {
       }),
     ]);
     expect(body.problems).toEqual(["No Instagram account is connected."]);
+    expect(body.attention).toEqual([]);
+  });
+
+  test("shows a select that cannot be posted as needing attention, with why", async () => {
+    const id = await addSelect("portrait");
+    // The caption route refuses text over the limit, so it is written as the store holds it.
+    createCaptionStore(db).setOverride(id, { caption: "x".repeat(2300), altText: null });
+    await send("PUT", "/api/queue", { selectIds: [id] });
+    const { body } = await request("/api/schedule");
+    expect(body.attention).toEqual([
+      { selectId: id, fileName: "portrait.jpg", problems: [expect.stringContaining("2,200")] },
+    ]);
   });
 
   test("refuses a timezone that is not one, and a time that is not one", async () => {

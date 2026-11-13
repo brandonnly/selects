@@ -73,6 +73,8 @@ export type Run = {
   postId: string | null;
   /** What became of the post it made, followed to the end: published, failed, waiting to be checked. */
   post: { state: PostState; error: string | null } | null;
+  /** The file name of `selectId`'s select, while it exists. */
+  fileName: string | null;
   note: string | null;
 };
 
@@ -158,6 +160,7 @@ export function createScheduler(options: SchedulerOptions) {
     picked: row.picked,
     postId: row.post_id,
     post: postOf(row.post_id),
+    fileName: row.select_id === null ? null : (library.get(row.select_id)?.fileName ?? null),
     note: row.note,
   });
   const tolerance = toleranceFor(options.intervalMs ?? SCHEDULE_INTERVAL_MS);
@@ -252,21 +255,22 @@ export function createScheduler(options: SchedulerOptions) {
 
   const inPool = (id: string | null) => id !== null && library.get(id)?.inPool === true;
 
-  /** Records each slot coming round from the grace period back to a day ahead, spread drawn once. */
+  /**
+   * Records each slot coming round up to a day ahead, spread drawn once, and back to the grace
+   * period, or to the last tick before a stop (within the history kept) so the runs a stop missed
+   * are recorded as missed.
+   */
   function plan(now: number) {
     const schedule = stored();
     if (schedule.slots.length === 0) return;
     const grace = schedule.graceMinutes * MINUTE;
     const widest = Math.max(...schedule.slots.map((slot) => slot.spreadMinutes)) * MINUTE;
+    const ticked = readSetting<number>("scheduleTickedAt");
+    const from = Math.max(now - KEEP_RUNS, Math.min(ticked ?? now, now - grace - widest - tolerance));
     const insert = db.query(
       `INSERT OR IGNORE INTO slot_runs (slot_id, date, slot_at, due_at, state) VALUES (?, ?, ?, ?, 'planned')`,
     );
-    for (const found of occurrences(
-      schedule.slots,
-      schedule.timeZone,
-      now - grace - widest,
-      now + LOOKAHEAD,
-    )) {
+    for (const found of occurrences(schedule.slots, schedule.timeZone, from, now + LOOKAHEAD)) {
       const slot = schedule.slots.find((s) => s.id === found.slotId);
       // A slot never posts for a time before it was added or last changed.
       if (slot === undefined || found.at < slot.since) continue;
@@ -441,6 +445,12 @@ export function createScheduler(options: SchedulerOptions) {
     }
   }
 
+  /** A run, for the logs: by its date and the slot's place in the schedule, never the slot's ID. */
+  const label = (row: RunRow) => {
+    const place = stored().slots.findIndex((slot) => slot.id === row.slot_id);
+    return `${place < 0 ? "A removed slot" : `Slot ${place + 1}`} on ${row.date}`;
+  };
+
   async function post(row: RunRow) {
     const selectId = row.select_id;
     if (selectId === null || !inPool(selectId)) {
@@ -464,7 +474,7 @@ export function createScheduler(options: SchedulerOptions) {
       result = await publisher.publish({ selectIds: [selectId] });
     } catch (error) {
       finish(claimedRow, "failed", { note: `The post could not be started (${errorKind(error)}).` });
-      console.error(`Slot ${row.slot_id} on ${row.date} could not post (${errorKind(error)}).`);
+      console.error(`${label(row)} could not post (${errorKind(error)}).`);
       return;
     }
     switch (result.status) {
@@ -473,14 +483,14 @@ export function createScheduler(options: SchedulerOptions) {
         result.done.then(() => replan()).catch(() => {});
         settle(claimedRow, result.post.id, result.post.state === "dry-run");
         console.log(
-          `Slot ${row.slot_id} on ${row.date}: ${result.post.state === "dry-run" ? "dry run" : "post"} ${result.post.id}.`,
+          `${label(row)}: ${result.post.state === "dry-run" ? "dry run" : "post"} ${result.post.id}.`,
         );
         return;
       }
       case "unavailable":
         // Nothing was taken: the select stays queued or in the pool for the next slot.
         finish(claimedRow, "unavailable", { note: result.problems.join(" ") });
-        console.error(`Slot ${row.slot_id} on ${row.date} did not post: publishing is unavailable.`);
+        console.error(`${label(row)} did not post: publishing is unavailable.`);
         return;
       case "not-found":
       case "not-in-pool":
@@ -501,7 +511,7 @@ export function createScheduler(options: SchedulerOptions) {
   }
 
   function prune(now: number) {
-    db.query("DELETE FROM slot_runs WHERE state != 'planned' AND state != 'posting' AND due_at < ?").run(
+    db.query("DELETE FROM slot_runs WHERE state != 'planned' AND state != 'posting' AND slot_at < ?").run(
       now - KEEP_RUNS,
     );
   }
@@ -510,6 +520,7 @@ export function createScheduler(options: SchedulerOptions) {
   async function tickNow() {
     const now = clock.now();
     plan(now);
+    writeSetting("scheduleTickedAt", now);
     replan();
     await fire(now);
     replan();
@@ -691,23 +702,28 @@ export function createScheduler(options: SchedulerOptions) {
         .map(toRun);
     },
 
-    /** The next time a slot comes round, before its spread, or null with no slots. */
+    /** When the next run that will post is due: planned, with next up, and not paused. Null if none. */
     nextSlotAt(): number | null {
-      const schedule = stored();
-      const now = clock.now();
-      const found = occurrences(schedule.slots, schedule.timeZone, now, now + 8 * DAY).find((o) => {
-        const slot = schedule.slots.find((s) => s.id === o.slotId);
-        return slot !== undefined && o.at >= slot.since && runRow(o.slotId, o.date)?.state !== "skipped";
-      });
-      return found?.at ?? null;
+      if (paused()) return null;
+      const next = db
+        .query<{ due_at: number }, []>(
+          "SELECT due_at FROM slot_runs WHERE state = 'planned' AND select_id IS NOT NULL ORDER BY due_at LIMIT 1",
+        )
+        .get();
+      return next?.due_at ?? null;
     },
 
-    /** What would stop any slot posting now: no account, no bucket. Empty in dry run. */
+    /** Plans next up again, as it would be before a slot posts. Called before next up is shown. */
+    refresh(): void {
+      replan();
+    },
+
+    /** What would stop a real post now: no account, no bucket. Said in dry run too. */
     problems(): string[] {
       const any = queued()[0] ?? library.pool()[0];
       if (any === undefined) return [];
       const preview = publisher.preview([any]);
-      if (preview === undefined || preview.dryRun) return [];
+      if (preview === undefined) return [];
       // The preview lists the select's own problems first, then those that stop every post.
       return preview.problems.slice(preview.check.problems.length);
     },

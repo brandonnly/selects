@@ -697,6 +697,36 @@ describe("downtime", () => {
     expect(scheduler.history().map((run) => run.state)).toEqual(["empty", "posted"]);
   });
 
+  test("after a long stop, the runs it missed are recorded as missed", async () => {
+    const { scheduler, publisher, restart } = await setup();
+    for (const name of ["portrait", "landscape"] as const) await addSelect(name);
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    await runUntil(scheduler, publisher, "2026-11-13T13:00:00Z");
+    // Down until Monday 13:30: Saturday and Sunday went by, and Monday is within grace.
+    clock.advance(at("2026-11-16T13:30:00Z") - clock.now());
+    const restarted = restart();
+    restarted.recover();
+    await restarted.tick();
+    await publisher.settled();
+    expect(restarted.history().map((run) => `${run.date} ${run.state}`)).toEqual([
+      "2026-11-16 posted",
+      "2026-11-15 missed",
+      "2026-11-14 missed",
+      "2026-11-13 posted",
+    ]);
+  });
+
+  test("while paused, a run already past grace is missed, not paused", async () => {
+    const { scheduler, publisher } = await setup();
+    await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 30 });
+    scheduler.setPaused(true);
+    clock.advance(at("2026-11-13T13:00:00Z") - clock.now());
+    await scheduler.tick();
+    await publisher.settled();
+    expect(scheduler.history()[0]?.state).toBe("missed");
+  });
+
   test("a slot's random spread is drawn once, and a restart neither moves it nor fires it twice", async () => {
     let draw = 0.5;
     const { scheduler, publisher, restart } = await setup({ random: () => draw });
@@ -1031,6 +1061,66 @@ describe("pick rules", () => {
     }
     const text = lines.join("\n");
     for (const coordinate of ["10.5", "40.25", "35.125", "165.75"]) expect(text).not.toContain(coordinate);
+  });
+});
+
+describe("what the Queue screen is told", () => {
+  test("the next slot is the due time of the next run that will post, or nothing", async () => {
+    const { scheduler } = await setup({ random: () => 0.5 });
+    scheduler.setSchedule({
+      slots: [everyDay("12:00", "noon", 20), everyDay("18:00", "evening")],
+      timeZone: "UTC",
+      graceMinutes: 120,
+    });
+    // Nothing to post: no run will post.
+    expect(scheduler.nextSlotAt()).toBeNull();
+    await addSelect("portrait");
+    await addSelect("landscape");
+    scheduler.refresh();
+    // The spread's draw, not the slot's time.
+    expect(scheduler.nextSlotAt()).toBe(at("2026-11-13T12:10:00Z"));
+    scheduler.skip("noon", "2026-11-13");
+    expect(scheduler.nextSlotAt()).toBe(at("2026-11-13T18:00:00Z"));
+    scheduler.setPaused(true);
+    expect(scheduler.nextSlotAt()).toBeNull();
+  });
+
+  test("each run names its select's file, posted or not", async () => {
+    const { scheduler, publisher } = await setup();
+    await addSelect("portrait");
+    scheduler.setSchedule({ slots: [everyDay("12:00")], timeZone: "UTC", graceMinutes: 120 });
+    expect(scheduler.upcoming()[0]?.fileName).toBe("portrait.jpg");
+    await runUntil(scheduler, publisher, "2026-11-13T13:00:00Z");
+    expect(scheduler.history()[0]).toMatchObject({ state: "posted", fileName: "portrait.jpg" });
+  });
+
+  test("in dry run, what a real post would lack is still said", async () => {
+    const { scheduler, settings } = await setup({ connect: false });
+    await addSelect("portrait");
+    settings.setPublishing({ dryRun: true });
+    expect(scheduler.problems()).toEqual(["No Instagram account is connected."]);
+  });
+
+  test("logs name a run by its date and the slot's place, never the slot's ID", async () => {
+    const lines: string[] = [];
+    const log = spyOn(console, "log").mockImplementation((...args) => void lines.push(args.join(" ")));
+    const error = spyOn(console, "error").mockImplementation((...args) => void lines.push(args.join(" ")));
+    try {
+      const { scheduler, publisher } = await setup({ connect: false });
+      await addSelect("portrait");
+      scheduler.setSchedule({
+        slots: [everyDay("12:00", "owners-private-name")],
+        timeZone: "UTC",
+        graceMinutes: 120,
+      });
+      await runUntil(scheduler, publisher, "2026-11-13T13:00:00Z");
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+    }
+    const text = lines.join("\n");
+    expect(text).toContain("Slot 1 on 2026-11-13");
+    expect(text).not.toContain("owners-private-name");
   });
 });
 
