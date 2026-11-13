@@ -836,6 +836,8 @@ export function createPublisher(options: PublisherOptions) {
           false,
         );
       }
+      // The account's daily limit or a restriction: no retry helps today, and it is not the select's doing.
+      if (error.kind === "account") return new PostFailure(error.message, false);
       if (error.kind === "refused") return new PostFailure(error.message, false, false, true);
       return new PostFailure(error.message, true);
     }
