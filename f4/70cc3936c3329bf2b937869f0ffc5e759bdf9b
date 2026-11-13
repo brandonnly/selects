@@ -1,0 +1,25 @@
+server/src/gallery.test.ts
+  s_72f39d106bdcce::t_5cbe0852ad3f8e 124,729-745,750,761-841
+server/src/gallery.ts
+  s_72f39d106bdcce::t_bbd1f22d7b1955 8,130,134-136,150-152,215,230-232,298-299,313-317,319-322,324-326,328,332-333,339-342,347-348,357-363,366,388-390,393
+server/src/migrations.ts
+  s_72f39d106bdcce::t_d6a7cfee5ef243 242-244,246-249
+server/src/publisher.ts
+  s_72f39d106bdcce::t_4270919e3a2a5c 172-174,176,218-220,315-318,321,323-333,340-341,419-421,430-431,662-669
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f470cc3936c3329bf2b937869f0ffc5e759bdf9b",
+  "prompts": {},
+  "sessions": {
+    "s_72f39d106bdcce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "96cce2c7-2c1c-4db6-ac89-108f23da68f7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Brandon Ly <git@brndn.ly>"
+    }
+  }
+}
